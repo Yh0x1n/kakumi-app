@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kakumi-app"
+version = "0.1.0"
+description = "Web application for managing Karate-Do tournaments"
+authors = [{name = "Yhoxin Rossell"}]
+requires-python = ">=3.8"
+dependencies = [
+    "reflex==0.8.26",
+    "alembic",
+    "annotated-types",
+    "anyio",
+    "bidict",
+    "certifi",
+    "charset-normalizer",
+    "click",
+    "et-xmlfile",
+    "granian",
+    "greenlet",
+    "h11",
+    "httpcore",
+    "httpx",
+    "idna",
+    "keyboard",
+    "mako",
+    "markdown-it-py",
+    "markupsafe",
+    "mdurl",
+    "numpy",
+    "openpyxl",
+    "pandas",
+    "packaging",
+    "pillow",
+    "pip",
+    "platformdirs",
+    "pydantic",
+    "pydantic-core",
+    "pygments",
+    "python-dateutil",
+    "python-engineio",
+    "python-multipart",
+    "python-socketio",
+    "pytz",
+    "redis",
+    "reportlab",
+    "rich",
+    "simple-websocket",
+    "six",
+    "sniffio",
+    "sqlalchemy",
+    "sqlmodel",
+    "starlette",
+    "tzdata",
+    "typing-extensions",
+    "typing-inspection",
+    "wsproto",
+    "wrapt"
+]
+
+[project.optional-dependencies]
+dev = [
+    "reflex-hosting-cli",
+    "ruff",
+    "watchfiles",
+    "pytest",
+]
+
+[project.urls]
+Homepage = "https://github.com/Yh0x1n/kakumi-app"
+
+[tool.uv]
+dev-dependencies = ["dev"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+select = ["E", "F", "W", "C90"]
+ignore = []

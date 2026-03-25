@@ -1,0 +1,107 @@
+/* styles/animations.css */
+
+/* Animaciones para Sidebar */
+@keyframes sidebar-slide-fade-in {
+    0% {
+        transform: translateX(-100%);
+        opacity: 0;
+        visibility: hidden;
+    }
+    100% {
+        transform: translateX(0);
+        opacity: 1;
+        visibility: visible;
+    }
+}
+
+@keyframes sidebar-slide-fade-out {
+    0% {
+        transform: translateX(0);
+        opacity: 1;
+        visibility: visible;
+    }
+    100% {
+        transform: translateX(-100%);
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+@keyframes overlay-fade-in {
+    0% {
+        opacity: 0;
+        visibility: hidden;
+    }
+    100% {
+        opacity: 1;
+        visibility: visible;
+    }
+}
+
+@keyframes overlay-fade-out {
+    0% {
+        opacity: 1;
+        visibility: visible;
+    }
+    100% {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+/* Clases utilitarias para animaciones */
+.sidebar-open {
+    animation: sidebar-slide-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.sidebar-close {
+    animation: sidebar-slide-fade-out 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.overlay-open {
+    animation: overlay-fade-in 0.3s ease forwards !important;
+}
+
+.overlay-close {
+    animation: overlay-fade-out 0.3s ease forwards !important;
+}
+
+/* Clases para el Drawer de Reflex personalizado */
+.custom-drawer-content[data-state="open"] {
+    animation: sidebar-slide-fade-in 0.4s ease !important;
+}
+
+.custom-drawer-content[data-state="closed"] {
+    animation: sidebar-slide-fade-out 0.4s ease !important;
+}
+
+.custom-drawer-overlay[data-state="open"] {
+    animation: overlay-fade-in 0.3s ease !important;
+    background-color: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(2px);
+}
+
+.custom-drawer-overlay[data-state="closed"] {
+    animation: overlay-fade-out 0.3s ease !important;
+}
+
+/* Efectos adicionales */
+.sidebar-glow {
+    box-shadow: 
+        5px 0 25px rgba(197, 48, 48, 0.3),
+        inset 0 0 50px rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-rounded-right {
+    border-top-right-radius: 20px !important;
+    border-bottom-right-radius: 20px !important;
+}
+
+/* Transiciones suaves */
+.smooth-transition {
+    transition: all 0.3s ease !important;
+}
+
+.smooth-transform {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
