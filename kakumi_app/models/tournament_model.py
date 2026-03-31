@@ -1,10 +1,23 @@
 import datetime
-from typing import List, Optional
+from enum import Enum
+from typing import TYPE_CHECKING, List, Optional
 
 import reflex as rx
 from sqlmodel import Field, Relationship
 
 from .athlete_model import Athlete
+
+if TYPE_CHECKING:
+    from .team_model import Team
+
+
+class TournamentStatus(str, Enum):
+    PLANIFICADO = "PLANIFICADO"
+    INSCRIPCION = "INSCRIPCION"
+    VERIFICACION = "VERIFICACION"
+    EN_CURSO = "EN_CURSO"
+    FINALIZADO = "FINALIZADO"
+    ARCHIVADO = "ARCHIVADO"
 
 
 class BaseCategory(rx.Model):
@@ -34,6 +47,8 @@ class KataCategory(BaseCategory, table=True):
     tournament: Optional["Tournament"] = Relationship(back_populates="kata_categories")
     # Relación con el campo "kata_category" del modelo "Athlete"
     athletes: List["Athlete"] = Relationship(back_populates="kata_category")
+    # Relación con equipos
+    teams: List["Team"] = Relationship(back_populates="category")
 
 
 class KumiteCategory(BaseCategory, table=True):
@@ -61,42 +76,8 @@ class Tournament(rx.Model, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True)
     date: datetime.date = Field(default_factory=datetime.date.today)
-    status: str = "Planificado"
+    status: TournamentStatus = Field(default=TournamentStatus.PLANIFICADO)
 
     # Relaciones que apuntan a cada clase hija por separado
     kata_categories: List[KataCategory] = Relationship(back_populates="tournament")
     kumite_categories: List[KumiteCategory] = Relationship(back_populates="tournament")
-
-
-class Match(rx.Model, table=True):
-    """Modelo para representar los resultados de un encuentro."""
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-
-    # 1. Llaves Foráneas a Atletas (Aka y Ao)
-    aka_id: int = Field(foreign_key="athlete.id")
-    ao_id: int = Field(foreign_key="athlete.id")
-
-    # 2. Resultados del Encuentro
-    aka_score: int = Field(default=0)
-    ao_score: int = Field(default=0)
-    winner_id: Optional[int] = Field(default=None, foreign_key="athlete.id")
-
-    # 3. Vínculo con la Categoría
-    kata_category_id: Optional[int] = Field(default=None, foreign_key="katacategory.id")
-    kumite_category_id: Optional[int] = Field(
-        default=None, foreign_key="kumitecategory.id"
-    )
-
-    # 4. Relaciones (Acceso directo a objetos)
-
-    aka: "Athlete" = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "Match.aka_id == Athlete.id"}
-    )
-    ao: "Athlete" = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "Match.ao_id == Athlete.id"}
-    )
-
-    # Relaciones con las categorías
-    kata_category: Optional["KataCategory"] = Relationship()
-    kumite_category: Optional["KumiteCategory"] = Relationship()
