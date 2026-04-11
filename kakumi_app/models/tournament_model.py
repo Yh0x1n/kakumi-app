@@ -1,102 +1,451 @@
+"""
+KAKUMI
+Módulo de modelos de torneo y categorías.
+Gestión de torneos, categorías (Kata/Kumite), encuentros y áreas de competencia.
+Implementación basada en specs.md secciones 2.3, 2.4, 2.5, 2.10.
+"""
+
 import datetime
-from typing import List, Optional
+from enum import Enum
+from typing import TYPE_CHECKING, List, Optional
 
 import reflex as rx
 from sqlmodel import Field, Relationship
 
-from .athlete_model import Athlete
+if TYPE_CHECKING:
+    from .athlete_model import Athlete
+    from .team_model import Team
+    from .referee_model import Referee
+    from .user_model import User
 
 
-class BaseCategory(rx.Model):
-    """Clase base de las categorías"""
+class Modality(str, Enum):
+    """Modalidades de competencia según WKF."""
 
-    name: str = Field(unique=True, index=True)
-    min_age: Optional[int] = None
-    max_age: Optional[int] = None
-    min_belt: Optional[int] = None
-    max_belt: Optional[int] = None
-
-
-class KataCategory(BaseCategory, table=True):
-    """Tabla Hija de Kata"""
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-
-    first_place: Optional[str] = None
-    second_place: Optional[str] = None
-    third_place: Optional[str] = None
-    fourth_place: Optional[str] = None
-
-    # Llave foránea
-    tournament_id: Optional[int] = Field(default=None, foreign_key="tournament.id")
-
-    # Relación con el campo "kata_categories" del modelo "Tournament"
-    tournament: Optional["Tournament"] = Relationship(back_populates="kata_categories")
-    # Relación con el campo "kata_category" del modelo "Athlete"
-    athletes: List["Athlete"] = Relationship(back_populates="kata_category")
+    KATA_INDIVIDUAL = "KATA_INDIVIDUAL"
+    KATA_TEAM = "KATA_TEAM"
+    KUMITE_INDIVIDUAL = "KUMITE_INDIVIDUAL"
+    KUMITE_TEAM = "KUMITE_TEAM"
 
 
-class KumiteCategory(BaseCategory, table=True):
-    """Tabla Hija de Kumite"""
+class CategoryGender(str, Enum):
+    """Géneros permitidos en categorías."""
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    weight_kg: Optional[float] = None
-    first_place: Optional[str] = None
-    second_place: Optional[str] = None
-    third_place: Optional[str] = None
-    fourth_place: Optional[str] = None
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+    MIXED = "MIXED"
 
-    # Llave foránea
-    tournament_id: Optional[int] = Field(default=None, foreign_key="tournament.id")
 
-    # Relación con el campo "kata_categories" del modelo "Tournament"
-    tournament: Optional["Tournament"] = Relationship(
-        back_populates="kumite_categories"
-    )
-    # Relación con el campo "kumite_category" del modelo "Athlete"
-    athletes: List["Athlete"] = Relationship(back_populates="kumite_category")
+class CompetitionSystem(str, Enum):
+    """Sistemas de competencia."""
+
+    ROUND_ROBIN = "ROUND_ROBIN"
+    ELIMINATION = "ELIMINATION"
+    DOUBLE_ELIMINATION = "DOUBLE_ELIMINATION"
+
+
+class CategoryStatus(str, Enum):
+    """Estados de categoría."""
+
+    PENDING = "PENDING"
+    READY = "READY"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+
+
+class MatchType(str, Enum):
+    """Tipos de encuentro según specs.md sección 2.5."""
+
+    ELIMINATION = "ELIMINATION"
+    BRONZE = "BRONZE"
+    FINAL = "FINAL"
+    ROUND_ROBIN = "ROUND_ROBIN"
+
+
+class MatchStatus(str, Enum):
+    """Estados de encuentro según specs.md sección 2.5."""
+
+    PENDING = "PENDING"
+    READY = "READY"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    DISQUALIFIED = "DISQUALIFIED"
+
+
+class Participant(str, Enum):
+    """Participante en un encuentro (Aka=Rojo, Ao=Azul)."""
+
+    AKA = "AKA"
+    AO = "AO"
+
+
+class ParticipantSide(str, Enum):
+    """Participante incluyendo BOTH para penalizaciones."""
+
+    AKA = "AKA"
+    AO = "AO"
+    BOTH = "BOTH"
+
+
+class ScoreType(str, Enum):
+    """Tipos de puntuación en Kumite según WKF 2026."""
+
+    IPPON = "IPPON"
+    WAZA_ARI = "WAZA_ARI"
+    YUKO = "YUKO"
+    PENALTY = "PENALTY"
+    WARNING = "WARNING"
+
+
+class PenaltyType(str, Enum):
+    """Tipos de penalización según WKF 2026."""
+
+    CHUI = "CHUI"
+    HANSOKU_CHUI = "HANSOKU_CHUI"
+    HANSOKU = "HANSOKU"
+    SHIKKAKU = "SHIKKAKU"
+
+
+class TournamentStatus(str, Enum):
+    """Estados del torneo según specs.md sección 6.1."""
+
+    PLANIFICADO = "PLANIFICADO"
+    INSCRIPCION = "INSCRIPCION"
+    VERIFICACION = "VERIFICACION"
+    EN_CURSO = "EN_CURSO"
+    FINALIZADO = "FINALIZADO"
+    ARCHIVADO = "ARCHIVADO"
+
+
+# ==============================================================================
+# TOURNAMENT (Sección 2.3 specs.md)
+# ==============================================================================
 
 
 class Tournament(rx.Model, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(unique=True)
-    date: datetime.date = Field(default_factory=datetime.date.today)
-    status: str = "Planificado"
+    """
+    Modelo de Torneo principal.
 
-    # Relaciones que apuntan a cada clase hija por separado
-    kata_categories: List[KataCategory] = Relationship(back_populates="tournament")
-    kumite_categories: List[KumiteCategory] = Relationship(back_populates="tournament")
+    Estados: PLANIFICADO -> INSCRIPCION -> VERIFICACION -> EN_CURSO -> FINALIZADO -> ARCHIVADO
+    """
+
+    __tablename__ = "tournaments"
+
+    # Campos obligatorios
+    name: str = Field(unique=True, max_length=255)
+    venue: str = Field(max_length=255)  # Lugar de realización
+    start_date: datetime.date = Field(index=True)
+    end_date: datetime.date
+    tatami_count: int = Field(default=1)  # 1-8 tatamis
+    status: str = Field(default=TournamentStatus.PLANIFICADO.value)
+    is_public: bool = Field(default=True)
+
+    # Flag de transición en progreso (previene race conditions)
+    is_transitioning: bool = Field(default=False)
+
+    # Campos opcionales
+    description: Optional[str] = Field(default=None)
+    organizing_federation: Optional[str] = Field(default=None, max_length=255)
+    license_number: Optional[str] = Field(default=None, max_length=50)
+    viewer_code: Optional[str] = Field(default=None, max_length=8)
+
+    # Foreign Keys
+    created_by_id: Optional[int] = Field(default=None, foreign_key="users.id")
+
+    # Timestamps
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    updated_at: datetime.datetime = Field(
+        default_factory=datetime.datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.datetime.utcnow},
+    )
+
+    # Relaciones
+    categories: List["TournamentCategory"] = Relationship(
+        back_populates="tournament",
+        sa_relationship_kwargs={"foreign_keys": "[TournamentCategory.tournament_id]"},
+    )
+    tatamis: List["Tatami"] = Relationship(
+        back_populates="tournament",
+        sa_relationship_kwargs={"foreign_keys": "[Tatami.tournament_id]"},
+    )
+    created_by: Optional["User"] = Relationship(
+        back_populates="created_tournaments",
+        sa_relationship_kwargs={"foreign_keys": "[Tournament.created_by_id]"},
+    )
+
+
+# ==============================================================================
+# TOURNAMENT CATEGORY (Sección 2.4 specs.md)
+# ==============================================================================
+
+
+class TournamentCategory(rx.Model, table=True):
+    """
+    Modelo unificado de categoría (Kata/Kumite - Individual/Team).
+    Reemplaza los modelos separados KataCategory y KumiteCategory.
+    """
+
+    __tablename__ = "tournament_categories"
+
+    # Campos obligatorios
+    name: str = Field(max_length=255, index=True)
+    modality: str = Field(
+        default=Modality.KATA_INDIVIDUAL.value
+    )  # KATA_INDIVIDUAL, etc.
+    gender: str = Field(default=CategoryGender.MALE.value)  # MALE, FEMALE, MIXED
+    min_age: int = Field(default=0)  # Edad mínima (inclusive)
+    max_age: int = Field(default=99)  # Edad máxima (inclusive)
+    competition_system: str = Field(default=CompetitionSystem.ELIMINATION.value)
+    bracket_size: int = Field(default=8)  # 4, 8, 16, 32
+    status: str = Field(default=CategoryStatus.PENDING.value)
+
+    # Foreign Keys
+    tournament_id: int = Field(foreign_key="tournaments.id", index=True)
+
+    # Campos opcionales para Kata
+    min_belt_rank: Optional[str] = Field(default=None, max_length=10)
+    max_belt_rank: Optional[str] = Field(default=None, max_length=10)
+    flag_count: Optional[int] = Field(default=None)  # 1-3 flags
+    has_bunkai: bool = Field(default=False)
+    judge_panel_size: int = Field(default=3)  # 3 o 5
+    scoring_type: Optional[str] = Field(default=None)  # STANDARD, FLAG
+
+    # Campos opcionales para Kumite
+    min_weight_kg: Optional[float] = Field(default=None)
+    max_weight_kg: Optional[float] = Field(default=None)
+    match_duration_seconds: int = Field(default=180)  # 180-300
+    extension_duration_seconds: int = Field(default=60)  # 60-180
+    has_weight_tolerance: bool = Field(default=False)
+    weight_tolerance_kg: Optional[float] = Field(default=None)
+
+    # Resultados (nullable hasta que finalice la categoría)
+    first_place_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+    second_place_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+    third_place_ids: Optional[str] = Field(default=None)  # JSON array de IDs
+
+    # Timestamps
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+
+    # Relaciones
+    tournament: "Tournament" = Relationship(
+        back_populates="categories",
+        sa_relationship_kwargs={"foreign_keys": "[TournamentCategory.tournament_id]"},
+    )
+
+    # Atletas inscritos (Kata)
+    athletes: List["Athlete"] = Relationship(
+        back_populates="kata_category",
+        sa_relationship_kwargs={"foreign_keys": "[Athlete.kata_category_id]"},
+    )
+
+    # Atletas inscritos (Kumite)
+    kumite_athletes: List["Athlete"] = Relationship(
+        back_populates="kumite_category",
+        sa_relationship_kwargs={"foreign_keys": "[Athlete.kumite_category_id]"},
+    )
+
+    # Equipos (para Kata/Kumite por equipos)
+    teams: List["Team"] = Relationship(
+        back_populates="category",
+        sa_relationship_kwargs={"foreign_keys": "[Team.category_id]"},
+    )
+
+    # Encuentros de la categoría
+    matches: List["Match"] = Relationship(
+        back_populates="category",
+        sa_relationship_kwargs={"foreign_keys": "[Match.category_id]"},
+    )
+
+
+# ==============================================================================
+# MATCH (Sección 2.5 specs.md)
+# ==============================================================================
 
 
 class Match(rx.Model, table=True):
-    """Modelo para representar los resultados de un encuentro."""
+    """
+    Modelo de encuentro entre dos atletas/equipos.
+    """
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    __tablename__ = "matches"
 
-    # 1. Llaves Foráneas a Atletas (Aka y Ao)
-    aka_id: int = Field(foreign_key="athlete.id")
-    ao_id: int = Field(foreign_key="athlete.id")
+    # Identificación
+    round: int = Field(default=1)  # Ronda del bracket (1=primera, 2=cuartos, etc.)
+    match_number: int = Field(default=1)  # Número de encuentro dentro de la ronda
+    position: int = Field(default=0)  # Posición en el bracket
+    match_type: str = Field(
+        default=MatchType.ELIMINATION.value
+    )  # ELIMINATION, BRONZE, FINAL, ROUND_ROBIN
 
-    # 2. Resultados del Encuentro
+    # Foreign Keys
+    category_id: int = Field(foreign_key="tournament_categories.id", index=True)
+
+    # Participantes (uno requerido: bye)
+    aka_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+    ao_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+
+    # Resultados
     aka_score: int = Field(default=0)
     ao_score: int = Field(default=0)
-    winner_id: Optional[int] = Field(default=None, foreign_key="athlete.id")
+    winner_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+    status: str = Field(
+        default=MatchStatus.PENDING.value
+    )  # PENDING, READY, IN_PROGRESS, COMPLETED, DISQUALIFIED
 
-    # 3. Vínculo con la Categoría
-    kata_category_id: Optional[int] = Field(default=None, foreign_key="katacategory.id")
-    kumite_category_id: Optional[int] = Field(
-        default=None, foreign_key="kumitecategory.id"
+    # Tiempos
+    start_time: Optional[datetime.datetime] = Field(default=None)
+    end_time: Optional[datetime.datetime] = Field(default=None)
+
+    # Asignaciones
+    tatami_id: Optional[int] = Field(default=None, foreign_key="tatamis.id")
+    referee_id: Optional[int] = Field(default=None, foreign_key="referees.id")
+    judge_panel_id: Optional[int] = Field(default=None)
+
+    # Notas
+    notes: Optional[str] = Field(default=None)
+
+    # Relaciones
+    category: "TournamentCategory" = Relationship(
+        back_populates="matches",
+        sa_relationship_kwargs={"foreign_keys": "[Match.category_id]"},
     )
 
-    # 4. Relaciones (Acceso directo a objetos)
-
-    aka: "Athlete" = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "Match.aka_id == Athlete.id"}
-    )
-    ao: "Athlete" = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "Match.ao_id == Athlete.id"}
+    aka: Optional["Athlete"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Match.aka_id]"}
     )
 
-    # Relaciones con las categorías
-    kata_category: Optional["KataCategory"] = Relationship()
-    kumite_category: Optional["KumiteCategory"] = Relationship()
+    ao: Optional["Athlete"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Match.ao_id]"}
+    )
+
+    tatami: Optional["Tatami"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Match.tatami_id]"}
+    )
+
+    referee: Optional["Referee"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Match.referee_id]"}
+    )
+
+    # Penalizaciones del encuentro
+    penalties: List["Penalty"] = Relationship(
+        back_populates="match",
+        sa_relationship_kwargs={"foreign_keys": "[Penalty.match_id]"},
+    )
+
+    # Puntuaciones de jueces
+    scores: List["MatchScore"] = Relationship(
+        back_populates="match",
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.match_id]"},
+    )
+
+
+# ==============================================================================
+# MATCH SCORE (Sección 2.6 specs.md)
+# ==============================================================================
+
+
+class MatchScore(rx.Model, table=True):
+    """
+    Puntuación otorgada por un juez en un encuentro.
+    """
+
+    __tablename__ = "match_scores"
+
+    # Foreign Keys
+    match_id: int = Field(foreign_key="matches.id", index=True)
+    judge_id: int = Field(foreign_key="referees.id")
+
+    # Datos de la puntuación
+    participant: str = Field(default=Participant.AKA.value)  # AKA o AO
+    score_value: float = Field(default=0.0)
+    score_type: str = Field(
+        default=ScoreType.YUKO.value
+    )  # IPPON, WAZA_ARI, YUKO, PENALTY, WARNING
+    technique_time: Optional[int] = Field(default=None)  # Segundos desde inicio
+    is_valid: bool = Field(default=True)
+
+    # Timestamp
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+
+    # Relaciones
+    match: "Match" = Relationship(
+        back_populates="scores",
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.match_id]"},
+    )
+
+    judge: "Referee" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.judge_id]"}
+    )
+
+
+# ==============================================================================
+# PENALTY (Sección 2.8 specs.md)
+# ==============================================================================
+
+
+class Penalty(rx.Model, table=True):
+    """
+    Penalización aplicada en un encuentro.
+    Implementa la secuencia: CHUI -> CHUI -> CHUI -> HANSOKU_CHUI -> HANSOKU
+    """
+
+    __tablename__ = "penalties"
+
+    # Foreign Keys
+    match_id: int = Field(foreign_key="matches.id", index=True)
+    given_by_id: int = Field(foreign_key="referees.id")
+
+    # Datos de la penalización
+    participant: str = Field(default=ParticipantSide.AKA.value)  # AKA, AO, o BOTH
+    penalty_type: str = Field(
+        default=PenaltyType.CHUI.value
+    )  # CHUI, HANSOKU_CHUI, HANSOKU, SHIKKAKU
+    reason: str = Field(max_length=255)
+    rule_reference: Optional[str] = Field(default=None, max_length=50)  # Referencia WKF
+    is_accumulated: bool = Field(default=False)  # Si es por acumulación
+    match_time_seconds: Optional[int] = Field(default=None)  # Tiempo cuando se impuso
+
+    # Timestamp
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+
+    # Relaciones
+    match: "Match" = Relationship(
+        back_populates="penalties",
+        sa_relationship_kwargs={"foreign_keys": "[Penalty.match_id]"},
+    )
+
+    given_by: "Referee" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Penalty.given_by_id]"}
+    )
+
+
+# ==============================================================================
+# TATAMI / TOURNAMENT AREA (Sección 2.10 specs.md)
+# ==============================================================================
+
+
+class Tatami(rx.Model, table=True):
+    """
+    Área de competencia (Tatami) dentro de un torneo.
+    """
+
+    __tablename__ = "tatamis"
+
+    # Campos
+    name: str = Field(max_length=50)  # "Tatami 1", etc.
+    location: Optional[str] = Field(default=None, max_length=255)
+    is_active: bool = Field(default=True)
+
+    # Foreign Keys
+    tournament_id: int = Field(foreign_key="tournaments.id", index=True)
+    current_match_id: Optional[int] = Field(default=None, foreign_key="matches.id")
+
+    # Relaciones
+    tournament: "Tournament" = Relationship(
+        back_populates="tatamis",
+        sa_relationship_kwargs={"foreign_keys": "[Tatami.tournament_id]"},
+    )
+
+    current_match: Optional["Match"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Tatami.current_match_id]"}
+    )

@@ -12,7 +12,7 @@ def test_database_flow():
         if results:
             print(
                 f"Categorías del torneo: {results.name}\n{
-                    '\n'.join([str(cat.name) for cat in results.kata_categories])
+                    '\n'.join([str(cat.name) for cat in results.categories])
                 }"
             )
 

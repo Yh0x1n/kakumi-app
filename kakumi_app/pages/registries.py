@@ -21,21 +21,21 @@ def athletes() -> rx.Component:
             align="left",
             color="white",
         ),
-        rx.link(rx.button("Volver a registros Atletas"), href="/registries"),
+        rx.link(rx.button("Volver a registros"), href="/registries"),
     )
 
 
 # Subpágina de categorías
-@rx.page(route="/registries/categories")
+@rx.page(route="/registries/tournaments")
 def categories() -> rx.Component:
     return rx.box(
         rx.text(
-            "Aquí se mostrarán los registros de las categorías.",
+            "Aquí se mostrarán los registros de los torneos (gestión de status y categorías).",
             font_size=16,
             align="left",
             color="white",
         ),
-        rx.link(rx.button("Volver a registros Categorias"), href="/registries"),
+        rx.link(rx.button("Volver a registros"), href="/registries"),
     )
 
 
@@ -49,7 +49,7 @@ def referees() -> rx.Component:
             align="left",
             color="white",
         ),
-        rx.link(rx.button("Volver a registros Árbitros"), href="/registries"),
+        rx.link(rx.button("Volver a registros"), href="/registries"),
     )
 
 

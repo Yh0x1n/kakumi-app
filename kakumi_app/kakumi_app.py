@@ -15,8 +15,7 @@ from .components.sidebar import sidebar
 from .models.athlete_model import Athlete  # noqa [F401]
 from .models.referee_model import Referee  # noqa [F401]
 from .models.tournament_model import (  # noqa [F401]
-    KataCategory,
-    KumiteCategory,
+    TournamentCategory,
     Tournament,
 )
 from .pages.exhibition import exhibition

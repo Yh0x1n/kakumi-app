@@ -1,9 +1,97 @@
 assets/external/
-*.db
-__pycache__/
-.web
 *.py[cod]
+__pycache__/
 .states
-.gga
-.venv/
+.web
+# === Local / environment (do NOT push) ===
+# Local Python virtualenvs (project-level)
+/.venv/
+/venv/
+/env/
+
+# Byte-compiled / optimized / DLL files
+**/__pycache__/
+**/*.py[cod]
+
+# Pytest cache (project-level)
+/.pytest_cache/
+
+# Coverage and report directories
+/.coverage
+coverage.xml
+htmlcov/
+
+# MyPy cache
+.mypy_cache/
+
+# Distribution / packaging
+/build/
+/dist/
+/pip-wheel-metadata/
+/*.egg-info/
+
+# Installer logs
+installdeps.log
+
+# Unit test / tox
+.tox/
+
+# Virtualenv marker file
+.Python
+
+# IDEs and editors
+/.idea/
+/.vscode/
+*.sublime-project
+*.sublime-workspace
+*.iml
+
+# macOS
+.DS_Store
+
+# Logs and temp files
 *.log
+/tmp/
+/temp/
+logs/
+
+# Database files (local/dev) — do NOT commit local DBs
+/kakumi.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Local environment variables / secrets
+/.env
+.env.*
+.secrets
+credentials.json
+secrets.json
+*.pem
+*.key
+
+# AWS / SSH credentials
+/.aws/
+/.ssh/
+
+# Generated static assets / node modules (if any)
+/node_modules/
+/.dist/
+
+# Opencode tool modules (local helper) - ignore installed modules
+/.opencode/node_modules/
+
+# Ignore Python egg caches
+.eggs/
+
+# Caches
+.cache/
+
+# Editor swap files
+*~
+
+# NOTE: Keep these project folders tracked (do NOT add to .gitignore)
+# - openspec/ (specs, proposals, designs)
+# - kakumi_app/ (application code)
+# - alembic/ (DB migrations)
+# - tests/ (test suite)

@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
+import reflex as rx  # noqa: E402
 from alembic import context
 
 # this is the Alembic Config object, which provides
@@ -18,7 +19,23 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = None
+from kakumi_app.models.tournament_model import (
+    Tournament,
+    TournamentCategory,
+    Match,
+    MatchScore,
+    Penalty,
+    Tatami,
+)  # noqa: E402, F401
+from kakumi_app.models.athlete_model import Athlete  # noqa: E402, F401
+from kakumi_app.models.referee_model import Referee  # noqa: E402, F401
+from kakumi_app.models.user_model import User  # noqa: E402, F401
+from kakumi_app.models.login_attempt import LoginAttempt  # noqa: E402, F401
+from kakumi_app.models.token_blacklist import TokenBlacklist  # noqa: E402, F401
+from kakumi_app.models.audit_log import AuditLog  # noqa: E402, F401
+from kakumi_app.models.team_model import Team, TeamMember  # noqa: E402, F401
+
+target_metadata = rx.Model.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -64,9 +81,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

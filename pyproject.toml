@@ -2,14 +2,17 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["kakumi_app"]
+
 [project]
 name = "kakumi-app"
 version = "0.1.0"
 description = "Web application for managing Karate-Do tournaments"
 authors = [{name = "Yhoxin Rossell"}]
-requires-python = ">=3.8"
+    requires-python = ">=3.10,<4.0"
 dependencies = [
-    "reflex==0.8.26",
+    "reflex==0.8.28.post1",
     "alembic",
     "annotated-types",
     "anyio",
@@ -71,8 +74,8 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/Yh0x1n/kakumi-app"
 
-[tool.uv]
-dev-dependencies = ["dev"]
+# Note: dependency groups for uv are managed via project.optional-dependencies
+# Tool-specific dependency-groups were removed to avoid resolver parsing issues.
 
 [tool.ruff]
 line-length = 88

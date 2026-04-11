@@ -1,0 +1,18 @@
+name: kakumi-tournament-manager-design
+status: design-created
+created: 2026-03-30
+artifacts:
+  - proposal.md
+  - design.md
+phases:
+  - name: design
+    status: completed
+  - name: tasks
+    status: pending
+  - name: apply
+    status: pending
+  - name: verify
+    status: pending
+  - name: archive
+    status: pending
+next: sdd-tasks

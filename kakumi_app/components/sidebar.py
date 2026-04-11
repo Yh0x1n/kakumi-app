@@ -78,9 +78,7 @@ def sidebar() -> rx.Component:
                                             },
                                         },
                                     ),
-                                    rx.image(
-                                        src="/icons/karategi.ico", height="1.5em"
-                                    ),
+                                    rx.image(src="/icons/karategi.ico", height="1.5em"),
                                     rx.link(
                                         rx.heading(
                                             "Kakumi",

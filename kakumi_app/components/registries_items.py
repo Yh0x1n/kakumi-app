@@ -44,7 +44,7 @@ def reg_item(text: str, icon: str, href: str) -> rx.Component:
 def reg_items() -> rx.Component:
     return rx.hstack(
         reg_item("Atletas", "icons/cinturon.png", "/registries/athletes"),
-        reg_item("Categorías", "icons/categoria.png", "/registries/categories"),
+        reg_item("Torneos", "icons/categoria.png", "/registries/categories"),
         reg_item("Árbitros", "icons/silbato.png", "/registries/referees"),
         spacing="5",
         width="100%",
