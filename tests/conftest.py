@@ -7,18 +7,22 @@ Usa DB SQLite aislada por test para evitar contaminación entre tests.
 
 import datetime
 import os
+from collections.abc import Callable
 from typing import Generator
 
 import pytest
 import reflex as rx
 import sqlmodel
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel
 
 from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.kata_model import (  # noqa: F401
+    KataJudgeScore,
+    KataRoundStanding,
+)
 from kakumi_app.models.referee_model import Referee
-from kakumi_app.models.team_model import Team, TeamMember
+from kakumi_app.models.team_model import Team
 from kakumi_app.models.tournament_model import (
     CategoryGender,
     CategoryStatus,
@@ -27,9 +31,6 @@ from kakumi_app.models.tournament_model import (
     MatchStatus,
     MatchType,
     Modality,
-    Penalty,
-    PenaltyType,
-    ScoreType,
     Tatami,
     Tournament,
     TournamentCategory,
@@ -270,3 +271,127 @@ def sample_team(sample_category: TournamentCategory) -> Team:
         session.commit()
         session.refresh(team)
         return team
+
+
+@pytest.fixture(scope="function")
+def sample_team_2(sample_category: TournamentCategory) -> Team:
+    """Crea segundo equipo de prueba para escenarios Team Kata."""
+    with rx.session() as session:
+        team = Team(
+            name="Equipo Dojo Norte",
+            category_id=sample_category.id,
+            member_count=0,
+            is_active=True,
+            dojo="Dojo Norte",
+        )
+        session.add(team)
+        session.commit()
+        session.refresh(team)
+        return team
+
+
+@pytest.fixture(scope="function")
+def sample_judges() -> Callable[[int], list[Referee]]:
+    """Factory de jueces disponibles para panel de Kata."""
+
+    def _factory(n: int = 5) -> list[Referee]:
+        judges: list[Referee] = []
+        with rx.session() as session:
+            for index in range(n):
+                judge = Referee(
+                    name=f"Juez Kata {index + 1}",
+                    license_number=f"JUDGE-KATA-{index + 1:03d}",
+                    license_level="INTERNATIONAL",
+                    role="JUDGE",
+                    is_available=True,
+                    dojo="Panel Kata",
+                    email=f"judge{index + 1}@kata.test",
+                )
+                session.add(judge)
+                judges.append(judge)
+            session.commit()
+            for judge in judges:
+                session.refresh(judge)
+        return judges
+
+    return _factory
+
+
+@pytest.fixture(scope="function")
+def kata_category(sample_tournament: Tournament) -> TournamentCategory:
+    """Categoría base de Kata individual para tests de scoring."""
+    with rx.session() as session:
+        category = TournamentCategory(
+            name="Kata Individual Senior",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender=CategoryGender.MIXED.value,
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            status=CategoryStatus.PENDING.value,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            bunkai_mode="NONE",
+        )
+        session.add(category)
+        session.commit()
+        session.refresh(category)
+        return category
+
+
+@pytest.fixture(scope="function")
+def kata_team_category(
+    sample_tournament: Tournament,
+) -> Callable[[str], TournamentCategory]:
+    """Factory de categoría Team Kata con bunkai_mode configurable."""
+
+    def _factory(bunkai_mode: str = "NONE") -> TournamentCategory:
+        with rx.session() as session:
+            category = TournamentCategory(
+                name=f"Kata Team {bunkai_mode}",
+                modality=Modality.KATA_TEAM.value,
+                gender=CategoryGender.MIXED.value,
+                min_age=16,
+                max_age=40,
+                competition_system=CompetitionSystem.ROUND_ROBIN.value,
+                bracket_size=8,
+                status=CategoryStatus.PENDING.value,
+                tournament_id=sample_tournament.id,
+                judge_panel_size=5,
+                bunkai_mode=bunkai_mode,
+            )
+            session.add(category)
+            session.commit()
+            session.refresh(category)
+            return category
+
+    return _factory
+
+
+@pytest.fixture(scope="function")
+def kata_match(
+    kata_category: TournamentCategory,
+    sample_athlete: Athlete,
+    sample_athlete_2: Athlete,
+    sample_referee: Referee,
+    sample_tatami: Tatami,
+) -> Match:
+    """Match Kata individual vinculado a kata_category."""
+    with rx.session() as session:
+        match = Match(
+            round=1,
+            match_number=1,
+            position=0,
+            match_type=MatchType.ROUND_ROBIN.value,
+            category_id=kata_category.id,
+            aka_id=sample_athlete.id,
+            ao_id=sample_athlete_2.id,
+            status=MatchStatus.PENDING.value,
+            tatami_id=sample_tatami.id,
+            referee_id=sample_referee.id,
+        )
+        session.add(match)
+        session.commit()
+        session.refresh(match)
+        return match

@@ -14,6 +14,7 @@ kakumi_app/kakumi_app.egg-info/top_level.txt
 kakumi_app/models/__init__.py
 kakumi_app/models/athlete_model.py
 kakumi_app/models/audit_log.py
+kakumi_app/models/kata_model.py
 kakumi_app/models/login_attempt.py
 kakumi_app/models/referee_model.py
 kakumi_app/models/team_model.py
@@ -36,6 +37,8 @@ kakumi_app/pages/auth/logout.py
 kakumi_app/services/auth_service.py
 kakumi_app/services/export_service.py
 kakumi_app/services/import_service.py
+kakumi_app/services/kata_scoring_service.py
+kakumi_app/services/kumite_scoring_service.py
 kakumi_app/services/tournament_service.py
 kakumi_app/services/viewer_service.py
 kakumi_app/states/athlete_state.py
@@ -48,6 +51,8 @@ kakumi_app/states/tournament_state.py
 kakumi_app/states/viewer_state.py
 tests/test_auth_models.py
 tests/test_authservice_phase2.py
+tests/test_kata_scoring_service.py
+tests/test_kumite_scoring_service.py
 tests/test_lockout_logic.py
 tests/test_models_base.py
 tests/test_models_match.py

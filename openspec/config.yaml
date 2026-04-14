@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  Tech stack: Python 3.14, Reflex 0.8.28, SQLModel, SQLite, Alembic
+  Tech stack: Python 3.10+, Reflex 0.8.28.post1, SQLModel, SQLite, Alembic
   Architecture: Pure Python Reflex (UI + backend), State management via rx.State
   Testing: pytest, ruff linter
   Domain: Karate-Do tournaments (Kata & Kumite) — WKF 2026 rules
@@ -18,7 +18,7 @@ testing:
     E2E: ❌ Not installed
   Coverage: ❌ Not configured
   Quality Tools:
-    Linter: ✅ ruff
+    Linter: ✅ ruff (line-length 88)
     Type Checker: ❌ Not configured
     Formatter: ruff (line-length 88)
 

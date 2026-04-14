@@ -34,6 +34,10 @@ from kakumi_app.models.login_attempt import LoginAttempt  # noqa: E402, F401
 from kakumi_app.models.token_blacklist import TokenBlacklist  # noqa: E402, F401
 from kakumi_app.models.audit_log import AuditLog  # noqa: E402, F401
 from kakumi_app.models.team_model import Team, TeamMember  # noqa: E402, F401
+from kakumi_app.models.kata_model import (  # noqa: E402, F401
+    KataJudgeScore,
+    KataRoundStanding,
+)
 
 target_metadata = rx.Model.metadata
 

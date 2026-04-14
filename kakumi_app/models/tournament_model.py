@@ -93,6 +93,7 @@ class ScoreType(str, Enum):
     IPPON = "IPPON"
     WAZA_ARI = "WAZA_ARI"
     YUKO = "YUKO"
+    KATA_SCORE = "KATA_SCORE"
     PENALTY = "PENALTY"
     WARNING = "WARNING"
 
@@ -126,7 +127,8 @@ class Tournament(rx.Model, table=True):
     """
     Modelo de Torneo principal.
 
-    Estados: PLANIFICADO -> INSCRIPCION -> VERIFICACION -> EN_CURSO -> FINALIZADO -> ARCHIVADO
+    Estados: PLANIFICADO -> INSCRIPCION -> VERIFICACION -> EN_CURSO
+    -> FINALIZADO -> ARCHIVADO
     """
 
     __tablename__ = "tournaments"
@@ -209,6 +211,7 @@ class TournamentCategory(rx.Model, table=True):
     has_bunkai: bool = Field(default=False)
     judge_panel_size: int = Field(default=3)  # 3 o 5
     scoring_type: Optional[str] = Field(default=None)  # STANDARD, FLAG
+    bunkai_mode: str = Field(default="NONE")
 
     # Campos opcionales para Kumite
     min_weight_kg: Optional[float] = Field(default=None)
@@ -283,11 +286,22 @@ class Match(rx.Model, table=True):
     # Participantes (uno requerido: bye)
     aka_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
     ao_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+    aka_team_id: Optional[int] = Field(default=None, foreign_key="teams.id")
+    ao_team_id: Optional[int] = Field(default=None, foreign_key="teams.id")
 
     # Resultados
     aka_score: int = Field(default=0)
     ao_score: int = Field(default=0)
+    aka_senshu: bool = Field(default=False)
+    ao_senshu: bool = Field(default=False)
+    aka_ippon_count: int = Field(default=0)
+    ao_ippon_count: int = Field(default=0)
+    aka_waza_ari_count: int = Field(default=0)
+    ao_waza_ari_count: int = Field(default=0)
+    aka_yuko_count: int = Field(default=0)
+    ao_yuko_count: int = Field(default=0)
     winner_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
+    bunkai_required: bool = Field(default=False)
     status: str = Field(
         default=MatchStatus.PENDING.value
     )  # PENDING, READY, IN_PROGRESS, COMPLETED, DISQUALIFIED
@@ -316,6 +330,14 @@ class Match(rx.Model, table=True):
 
     ao: Optional["Athlete"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[Match.ao_id]"}
+    )
+
+    aka_team: Optional["Team"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Match.aka_team_id]"}
+    )
+
+    ao_team: Optional["Team"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Match.ao_team_id]"}
     )
 
     tatami: Optional["Tatami"] = Relationship(
@@ -354,6 +376,7 @@ class MatchScore(rx.Model, table=True):
     # Foreign Keys
     match_id: int = Field(foreign_key="matches.id", index=True)
     judge_id: int = Field(foreign_key="referees.id")
+    applied_by_id: Optional[int] = Field(default=None, foreign_key="users.id")
 
     # Datos de la puntuación
     participant: str = Field(default=Participant.AKA.value)  # AKA o AO
@@ -375,6 +398,10 @@ class MatchScore(rx.Model, table=True):
 
     judge: "Referee" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[MatchScore.judge_id]"}
+    )
+
+    applied_by: Optional["User"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.applied_by_id]"}
     )
 
 
