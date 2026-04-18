@@ -79,6 +79,8 @@ Homepage = "https://github.com/Yh0x1n/kakumi-app"
 
 [tool.ruff]
 line-length = 88
-target-version = "py38"
+target-version = "py311"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "C90"]
 ignore = []

@@ -1,9 +1,8 @@
-"""
-KAKUMI Models Package
-====================
+"""KAKUMI models package.
 
-Paquete principal de modelos para la aplicación Kakumi de gestión de torneos de Karate-Do.
-Contiene todos los modelos de datos y enums necesarios para el sistema.
+Paquete principal de modelos para la aplicación Kakumi de gestión
+de torneos de Karate-Do. Contiene todos los modelos de datos y enums
+necesarios para el sistema.
 
 Exportaciones principales:
 - Modelos de datos: Athlete, Tournament, Match, Team, Referee, User
@@ -27,6 +26,7 @@ from .tournament_model import (
     Penalty,
     PenaltyType,
     ScoreType,
+    StandingsDeltaLog,
     Tatami,
     Tournament,
     TournamentCategory,
@@ -49,11 +49,15 @@ __all__ = [
     "Match",
     "MatchScore",
     "Penalty",
+    "StandingsDeltaLog",
     "Tatami",
     "Team",
     "TeamMember",
     "Referee",
     "User",
+    "LoginAttempt",
+    "TokenBlacklist",
+    "AuditLog",
     "TournamentEventLog",
     # Enums de competencia
     "Modality",

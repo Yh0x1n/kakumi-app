@@ -48,6 +48,7 @@ class Athlete(rx.Model, table=True):
 
     # Estado
     is_active: bool = Field(default=True)
+    is_disqualified: bool = Field(default=False)
 
     # Foreign Keys para categorías (relación opcional)
     kata_category_id: Optional[int] = Field(

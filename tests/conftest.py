@@ -14,6 +14,7 @@ import pytest
 import reflex as rx
 import sqlmodel
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel
 
 from kakumi_app.models.athlete_model import Athlete
@@ -22,7 +23,7 @@ from kakumi_app.models.kata_model import (  # noqa: F401
     KataRoundStanding,
 )
 from kakumi_app.models.referee_model import Referee
-from kakumi_app.models.team_model import Team
+from kakumi_app.models.team_model import Team, TeamMember
 from kakumi_app.models.tournament_model import (
     CategoryGender,
     CategoryStatus,
@@ -44,7 +45,7 @@ TEST_DB_URL = f"sqlite:///{TEST_DB_PATH}"
 
 
 @pytest.fixture(scope="function", autouse=True)
-def db_session(monkeypatch) -> Generator[Session, None, None]:
+def db_session(monkeypatch: pytest.MonkeyPatch) -> Generator[Session, None, None]:
     """
     Crea una DB de test aislada por cada test function.
 
@@ -79,6 +80,31 @@ def db_session(monkeypatch) -> Generator[Session, None, None]:
     test_engine.dispose()
     if os.path.exists(TEST_DB_PATH):
         os.remove(TEST_DB_PATH)
+
+
+@pytest.fixture(scope="function")
+def in_memory_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[Session, None, None]:
+    """Provide an isolated in-memory SQLite session for focused tests."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    def _test_session(url: str | None = None) -> Session:
+        """Return sessions bound to the in-memory engine."""
+        del url
+        return Session(engine)
+
+    monkeypatch.setattr(rx.model, "session", _test_session)
+
+    with Session(engine) as session:
+        yield session
+
+    engine.dispose()
 
 
 # =============================================================================
@@ -395,3 +421,440 @@ def kata_match(
         session.commit()
         session.refresh(match)
         return match
+
+
+@pytest.fixture(scope="function")
+def rr_pool_fixture(
+    in_memory_session: Session,
+) -> Generator[dict[str, int], None, None]:
+    """Create a 3-athlete round-robin pool with 3 matches.
+
+    Yields:
+        Dict with ids for tournament/category/referee/athletes/matches.
+    """
+    tournament = Tournament(
+        name="Penalty RR Pool",
+        venue="Dojo RR",
+        start_date=datetime.date(2026, 9, 1),
+        end_date=datetime.date(2026, 9, 1),
+        status=TournamentStatus.PLANIFICADO.value,
+        tatami_count=2,
+        is_public=True,
+    )
+    in_memory_session.add(tournament)
+    in_memory_session.commit()
+    in_memory_session.refresh(tournament)
+
+    category = TournamentCategory(
+        name="Kumite RR Integration",
+        modality=Modality.KUMITE_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ROUND_ROBIN.value,
+        tournament_id=tournament.id,
+        match_duration_seconds=180,
+    )
+    in_memory_session.add(category)
+    in_memory_session.commit()
+    in_memory_session.refresh(category)
+
+    referee = Referee(
+        name="RR Referee",
+        license_number="RR-REF-001",
+        license_level="INTERNATIONAL",
+        role="REFEREE",
+        is_available=True,
+        dojo="Dojo RR",
+        email="rr-ref@test.dev",
+    )
+    in_memory_session.add(referee)
+    in_memory_session.commit()
+    in_memory_session.refresh(referee)
+
+    athlete_a = Athlete(
+        name="RR Athlete A",
+        date_of_birth=datetime.date(2000, 1, 1),
+        gender="MALE",
+        email="rr-athlete-a@test.dev",
+        belt_rank="Dan 1",
+        is_active=True,
+    )
+    athlete_b = Athlete(
+        name="RR Athlete B",
+        date_of_birth=datetime.date(2000, 1, 1),
+        gender="MALE",
+        email="rr-athlete-b@test.dev",
+        belt_rank="Dan 1",
+        is_active=True,
+    )
+    athlete_c = Athlete(
+        name="RR Athlete C",
+        date_of_birth=datetime.date(2000, 1, 1),
+        gender="MALE",
+        email="rr-athlete-c@test.dev",
+        belt_rank="Dan 1",
+        is_active=True,
+    )
+    in_memory_session.add(athlete_a)
+    in_memory_session.add(athlete_b)
+    in_memory_session.add(athlete_c)
+    in_memory_session.commit()
+    in_memory_session.refresh(athlete_a)
+    in_memory_session.refresh(athlete_b)
+    in_memory_session.refresh(athlete_c)
+
+    tatami_1 = Tatami(
+        name="RR Tatami 1",
+        location="Zone 1",
+        is_active=True,
+        tournament_id=tournament.id,
+    )
+    tatami_2 = Tatami(
+        name="RR Tatami 2",
+        location="Zone 2",
+        is_active=True,
+        tournament_id=tournament.id,
+    )
+    in_memory_session.add(tatami_1)
+    in_memory_session.add(tatami_2)
+    in_memory_session.commit()
+    in_memory_session.refresh(tatami_1)
+    in_memory_session.refresh(tatami_2)
+
+    match_1 = Match(
+        round=1,
+        match_number=1,
+        position=1,
+        match_type=MatchType.ROUND_ROBIN.value,
+        category_id=category.id,
+        aka_id=athlete_a.id,
+        ao_id=athlete_b.id,
+        aka_score=4,
+        ao_score=1,
+        winner_id=athlete_a.id,
+        status=MatchStatus.COMPLETED.value,
+        tatami_id=tatami_1.id,
+        referee_id=referee.id,
+        start_time=datetime.datetime(2026, 9, 1, 10, 0, 0),
+    )
+    match_2 = Match(
+        round=1,
+        match_number=2,
+        position=2,
+        match_type=MatchType.ROUND_ROBIN.value,
+        category_id=category.id,
+        aka_id=athlete_a.id,
+        ao_id=athlete_c.id,
+        aka_score=0,
+        ao_score=0,
+        status=MatchStatus.IN_PROGRESS.value,
+        tatami_id=tatami_1.id,
+        referee_id=referee.id,
+        start_time=datetime.datetime(2026, 9, 1, 10, 5, 0),
+    )
+    match_3 = Match(
+        round=1,
+        match_number=3,
+        position=3,
+        match_type=MatchType.ROUND_ROBIN.value,
+        category_id=category.id,
+        aka_id=athlete_b.id,
+        ao_id=athlete_c.id,
+        aka_score=2,
+        ao_score=0,
+        winner_id=athlete_b.id,
+        status=MatchStatus.COMPLETED.value,
+        tatami_id=tatami_2.id,
+        referee_id=referee.id,
+        start_time=datetime.datetime(2026, 9, 1, 10, 10, 0),
+    )
+    in_memory_session.add(match_1)
+    in_memory_session.add(match_2)
+    in_memory_session.add(match_3)
+    in_memory_session.commit()
+    in_memory_session.refresh(match_1)
+    in_memory_session.refresh(match_2)
+    in_memory_session.refresh(match_3)
+
+    yield {
+        "tournament_id": tournament.id,
+        "category_id": category.id,
+        "referee_id": referee.id,
+        "dq_athlete_id": athlete_a.id,
+        "opponent_1_id": athlete_b.id,
+        "opponent_2_id": athlete_c.id,
+        "previous_match_id": match_1.id,
+        "current_match_id": match_2.id,
+        "pool_match_id": match_3.id,
+        "tatami_1_id": tatami_1.id,
+        "tatami_2_id": tatami_2.id,
+    }
+
+
+@pytest.fixture(scope="function")
+def team_match_fixture(
+    in_memory_session: Session,
+) -> Generator[dict[str, object], None, None]:
+    """Create one in-progress team match with two 3-athlete teams.
+
+    Yields:
+        Dict with match id and both team athlete ids.
+    """
+    tournament = Tournament(
+        name="Penalty Team Tournament",
+        venue="Dojo Team",
+        start_date=datetime.date(2026, 9, 2),
+        end_date=datetime.date(2026, 9, 2),
+        status=TournamentStatus.PLANIFICADO.value,
+        tatami_count=1,
+        is_public=True,
+    )
+    in_memory_session.add(tournament)
+    in_memory_session.commit()
+    in_memory_session.refresh(tournament)
+
+    category = TournamentCategory(
+        name="Kumite Team Integration",
+        modality=Modality.KUMITE_TEAM.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+        tournament_id=tournament.id,
+    )
+    in_memory_session.add(category)
+    in_memory_session.commit()
+    in_memory_session.refresh(category)
+
+    referee = Referee(
+        name="Team Referee",
+        license_number="TEAM-REF-001",
+        license_level="INTERNATIONAL",
+        role="REFEREE",
+        is_available=True,
+        dojo="Dojo Team",
+        email="team-ref@test.dev",
+    )
+    in_memory_session.add(referee)
+    in_memory_session.commit()
+    in_memory_session.refresh(referee)
+
+    aka_team = Team(
+        name="AKA Team Integration",
+        category_id=category.id,
+        member_count=3,
+        is_active=True,
+    )
+    ao_team = Team(
+        name="AO Team Integration",
+        category_id=category.id,
+        member_count=3,
+        is_active=True,
+    )
+    in_memory_session.add(aka_team)
+    in_memory_session.add(ao_team)
+    in_memory_session.commit()
+    in_memory_session.refresh(aka_team)
+    in_memory_session.refresh(ao_team)
+
+    aka_ids: list[int] = []
+    ao_ids: list[int] = []
+    for index in range(3):
+        aka_athlete = Athlete(
+            name=f"Team AKA Athlete {index + 1}",
+            date_of_birth=datetime.date(2000, 1, 1),
+            gender="MALE",
+            email=f"team-aka-{index + 1}@test.dev",
+            belt_rank="Dan 1",
+            is_active=True,
+        )
+        ao_athlete = Athlete(
+            name=f"Team AO Athlete {index + 1}",
+            date_of_birth=datetime.date(2000, 1, 1),
+            gender="MALE",
+            email=f"team-ao-{index + 1}@test.dev",
+            belt_rank="Dan 1",
+            is_active=True,
+        )
+        in_memory_session.add(aka_athlete)
+        in_memory_session.add(ao_athlete)
+        in_memory_session.commit()
+        in_memory_session.refresh(aka_athlete)
+        in_memory_session.refresh(ao_athlete)
+        aka_ids.append(aka_athlete.id)
+        ao_ids.append(ao_athlete.id)
+
+        in_memory_session.add(
+            TeamMember(
+                team_id=aka_team.id,
+                athlete_id=aka_athlete.id,
+                position=index + 1,
+                is_reserve=False,
+            )
+        )
+        in_memory_session.add(
+            TeamMember(
+                team_id=ao_team.id,
+                athlete_id=ao_athlete.id,
+                position=index + 1,
+                is_reserve=False,
+            )
+        )
+
+    in_memory_session.commit()
+
+    match = Match(
+        round=1,
+        match_number=1,
+        position=1,
+        match_type=MatchType.ELIMINATION.value,
+        category_id=category.id,
+        aka_team_id=aka_team.id,
+        ao_team_id=ao_team.id,
+        status=MatchStatus.IN_PROGRESS.value,
+        referee_id=referee.id,
+        aka_score=0,
+        ao_score=0,
+    )
+    in_memory_session.add(match)
+    in_memory_session.commit()
+    in_memory_session.refresh(match)
+
+    yield {
+        "match_id": match.id,
+        "aka_team_id": aka_team.id,
+        "ao_team_id": ao_team.id,
+        "aka_athlete_ids": aka_ids,
+        "ao_athlete_ids": ao_ids,
+    }
+
+
+@pytest.fixture(scope="function")
+def tatami_fixture(
+    in_memory_session: Session,
+) -> Generator[dict[str, int], None, None]:
+    """Create overlapping same-athlete matches on different tatamis.
+
+    Yields:
+        Dict with target match, athlete and conflict match identifiers.
+    """
+    tournament = Tournament(
+        name="Tatami Overlap Tournament",
+        venue="Dojo Tatami",
+        start_date=datetime.date(2026, 9, 3),
+        end_date=datetime.date(2026, 9, 3),
+        status=TournamentStatus.PLANIFICADO.value,
+        tatami_count=2,
+        is_public=True,
+    )
+    in_memory_session.add(tournament)
+    in_memory_session.commit()
+    in_memory_session.refresh(tournament)
+
+    category = TournamentCategory(
+        name="Kumite Tatami Integration",
+        modality=Modality.KUMITE_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+        tournament_id=tournament.id,
+        match_duration_seconds=180,
+    )
+    in_memory_session.add(category)
+    in_memory_session.commit()
+    in_memory_session.refresh(category)
+
+    referee = Referee(
+        name="Tatami Referee",
+        license_number="TATAMI-REF-001",
+        license_level="INTERNATIONAL",
+        role="REFEREE",
+        is_available=True,
+        dojo="Dojo Tatami",
+        email="tatami-ref@test.dev",
+    )
+    in_memory_session.add(referee)
+    in_memory_session.commit()
+    in_memory_session.refresh(referee)
+
+    shared_athlete = Athlete(
+        name="Tatami Shared Athlete",
+        date_of_birth=datetime.date(2000, 1, 1),
+        gender="MALE",
+        email="tatami-shared@test.dev",
+        belt_rank="Dan 1",
+        is_active=True,
+    )
+    opponent_a = Athlete(
+        name="Tatami Opponent A",
+        date_of_birth=datetime.date(2000, 1, 1),
+        gender="MALE",
+        email="tatami-opponent-a@test.dev",
+        belt_rank="Dan 1",
+        is_active=True,
+    )
+    opponent_b = Athlete(
+        name="Tatami Opponent B",
+        date_of_birth=datetime.date(2000, 1, 1),
+        gender="MALE",
+        email="tatami-opponent-b@test.dev",
+        belt_rank="Dan 1",
+        is_active=True,
+    )
+    in_memory_session.add(shared_athlete)
+    in_memory_session.add(opponent_a)
+    in_memory_session.add(opponent_b)
+    in_memory_session.commit()
+    in_memory_session.refresh(shared_athlete)
+    in_memory_session.refresh(opponent_a)
+    in_memory_session.refresh(opponent_b)
+
+    tatami_a = Tatami(
+        name="Tatami Overlap A",
+        location="Zone A",
+        is_active=True,
+        tournament_id=tournament.id,
+    )
+    tatami_b = Tatami(
+        name="Tatami Overlap B",
+        location="Zone B",
+        is_active=True,
+        tournament_id=tournament.id,
+    )
+    in_memory_session.add(tatami_a)
+    in_memory_session.add(tatami_b)
+    in_memory_session.commit()
+    in_memory_session.refresh(tatami_a)
+    in_memory_session.refresh(tatami_b)
+
+    conflict_match = Match(
+        round=1,
+        match_number=1,
+        position=1,
+        match_type=MatchType.ELIMINATION.value,
+        category_id=category.id,
+        aka_id=shared_athlete.id,
+        ao_id=opponent_a.id,
+        status=MatchStatus.IN_PROGRESS.value,
+        tatami_id=tatami_a.id,
+        referee_id=referee.id,
+        start_time=datetime.datetime(2026, 9, 3, 10, 0, 0),
+    )
+    target_match = Match(
+        round=1,
+        match_number=2,
+        position=2,
+        match_type=MatchType.ELIMINATION.value,
+        category_id=category.id,
+        aka_id=shared_athlete.id,
+        ao_id=opponent_b.id,
+        status=MatchStatus.READY.value,
+        tatami_id=tatami_b.id,
+        referee_id=referee.id,
+        start_time=datetime.datetime(2026, 9, 3, 10, 2, 0),
+    )
+    in_memory_session.add(conflict_match)
+    in_memory_session.add(target_match)
+    in_memory_session.commit()
+    in_memory_session.refresh(conflict_match)
+    in_memory_session.refresh(target_match)
+
+    yield {
+        "athlete_id": shared_athlete.id,
+        "target_match_id": target_match.id,
+        "conflict_match_id": conflict_match.id,
+        "category_id": category.id,
+    }

@@ -139,6 +139,7 @@ class Tournament(rx.Model, table=True):
     start_date: datetime.date = Field(index=True)
     end_date: datetime.date
     tatami_count: int = Field(default=1)  # 1-8 tatamis
+    scheduling_gap_seconds: int = Field(default=75)
     status: str = Field(default=TournamentStatus.PLANIFICADO.value)
     is_public: bool = Field(default=True)
 
@@ -444,6 +445,21 @@ class Penalty(rx.Model, table=True):
     given_by: "Referee" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[Penalty.given_by_id]"}
     )
+
+
+class StandingsDeltaLog(rx.Model, table=True):
+    """Audit log for SHIKKAKU standings changes, enabling safe revert."""
+
+    __tablename__ = "standings_delta_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    athlete_id: int = Field(foreign_key="athletes.id", index=True)
+    change_key: str = Field(index=True)
+    before_snapshot: str = Field()
+    applied_at: datetime.datetime = Field(
+        default_factory=datetime.datetime.utcnow,
+    )
+    tournament_id: int = Field(foreign_key="tournaments.id", index=True)
 
 
 # ==============================================================================

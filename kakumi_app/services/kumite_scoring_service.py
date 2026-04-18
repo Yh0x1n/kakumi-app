@@ -1,22 +1,765 @@
 """Servicio de scoring Kumite con reglas WKF 2026."""
 
 import datetime
+import json
+import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import reflex as rx
-from sqlmodel import select
+from sqlalchemy import or_
+from sqlmodel import Session, select
 
+from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.team_model import TeamMember
 from kakumi_app.models.tournament_model import (
     CompetitionSystem,
     Match,
+    MatchType,
     MatchScore,
     MatchStatus,
+    Modality,
     Participant,
     Penalty,
     PenaltyType,
     ScoreType,
+    StandingsDeltaLog,
 )
+from kakumi_app.services.exceptions import PenaltyEscalationError
+from kakumi_app.services.exceptions import PenaltyRemovalNotAllowedError
+from kakumi_app.services.exceptions import ShikkakuRevertError
+from kakumi_app.services.scheduling_service import check_athlete_scheduling_overlap
+
+MATCH_STATUS_CANCELLED = "CANCELLED"
+
+
+def _with_retry(
+    fn: Callable[[], Penalty],
+    retries: int = 3,
+    base_delay: float = 0.1,
+) -> Penalty:
+    """Execute a DB operation with exponential backoff.
+
+    Args:
+        fn: Operation callback to execute.
+        retries: Maximum total attempts.
+        base_delay: Base delay in seconds for exponential backoff.
+
+    Returns:
+        Penalty: The penalty produced by the callback.
+
+    Raises:
+        Exception: Re-raises final exception after exhausting retries.
+    """
+    for attempt in range(retries):
+        try:
+            return fn()
+        except PenaltyEscalationError:
+            raise
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            time.sleep(base_delay * (2**attempt))
+
+    raise PenaltyEscalationError("Unable to apply penalty after retries")
+
+
+def _count_penalties(session: Session, match_id: int, participant: str) -> int:
+    """Count existing penalties for one side in one match.
+
+    Args:
+        session: Active SQLModel session.
+        match_id: Target match identifier.
+        participant: Side value (`AKA` or `AO`).
+
+    Returns:
+        int: Number of penalties already recorded for the side.
+    """
+    return len(
+        session.exec(
+            select(Penalty).where(
+                Penalty.match_id == match_id,
+                Penalty.participant == participant,
+            )
+        ).all()
+    )
+
+
+def _escalate_penalty_type(count: int) -> str:
+    """Resolve automatic escalation level by existing penalty count.
+
+    Args:
+        count: Existing penalties count for one side.
+
+    Returns:
+        str: Escalated penalty level.
+    """
+    escalation_chain: list[str] = [
+        "C1",
+        "C2",
+        "C3",
+        PenaltyType.HANSOKU_CHUI.value,
+        PenaltyType.HANSOKU.value,
+    ]
+    if count >= len(escalation_chain):
+        return PenaltyType.HANSOKU.value
+    return escalation_chain[count]
+
+
+def _end_match_hansoku(session: Session, match: Match, winner_side: str) -> None:
+    """Mark match as completed by HANSOKU, setting winner side.
+
+    Args:
+        session: Active SQLModel session.
+        match: Match entity to update.
+        winner_side: Winner side string (`AKA` or `AO`).
+    """
+    match.status = MatchStatus.COMPLETED.value
+    match.end_time = datetime.datetime.utcnow()
+    match.winner_id = (
+        match.aka_id if winner_side == Participant.AKA.value else match.ao_id
+    )
+    session.add(match)
+
+
+def _assert_match_in_progress(match: Match) -> None:
+    """Ensure match is in progress before mutable penalty operations.
+
+    WKF operator correction rule allows penalty corrections only while the
+    match is active.
+
+    Args:
+        match: Match to validate.
+
+    Raises:
+        PenaltyRemovalNotAllowedError: If match is not ``IN_PROGRESS``.
+    """
+    if match.status != MatchStatus.IN_PROGRESS.value:
+        raise PenaltyRemovalNotAllowedError(
+            "Penalty removal only allowed when match is IN_PROGRESS"
+        )
+
+
+def _resolve_athlete_id_for_side(match: Match, participant_side: str) -> int:
+    """Resolve athlete id from participant side in individual matches.
+
+    Args:
+        match: Match containing AKA/AO athlete references.
+        participant_side: Penalized side (`AKA` or `AO`).
+
+    Returns:
+        int: Athlete id for the penalized side.
+
+    Raises:
+        PenaltyEscalationError: If side is invalid or athlete id is missing.
+    """
+    if participant_side == Participant.AKA.value:
+        athlete_id = match.aka_id
+    elif participant_side == Participant.AO.value:
+        athlete_id = match.ao_id
+    else:
+        raise PenaltyEscalationError(f"Invalid participant side {participant_side}")
+
+    if athlete_id is None:
+        raise PenaltyEscalationError(
+            f"Match {match.id} does not have athlete for side {participant_side}"
+        )
+    return athlete_id
+
+
+def _complete_forfeit_match(match: Match, penalized_side: str) -> None:
+    """Complete current match by forfeit according to WKF SHIKKAKU flow.
+
+    WKF Art. 10.7.2 requires opponent victory after SHIKKAKU.
+
+    Args:
+        match: Match to update.
+        penalized_side: Penalized side (`AKA` or `AO`).
+    """
+    winner_side = (
+        Participant.AO.value
+        if penalized_side == Participant.AKA.value
+        else Participant.AKA.value
+    )
+    match.status = MatchStatus.COMPLETED.value
+    match.end_time = datetime.datetime.utcnow()
+    match.winner_id = (
+        match.aka_id if winner_side == Participant.AKA.value else match.ao_id
+    )
+
+
+def _is_last_rr_match(session: Session, athlete_id: int, current_match_id: int) -> bool:
+    """Return True when current match is athlete's last RR bout.
+
+    WKF Art. 3.7.3 requires preserving prior scores only in the last bout.
+
+    Args:
+        session: Active SQLModel session.
+        athlete_id: Penalized athlete id.
+        current_match_id: Current match identifier.
+
+    Returns:
+        bool: True if there are no remaining RR matches for athlete.
+    """
+    current_match = session.get(Match, current_match_id)
+    if current_match is None:
+        raise PenaltyEscalationError(f"Match {current_match_id} not found")
+
+    remaining = session.exec(
+        select(Match).where(
+            Match.id != current_match_id,
+            Match.category_id == current_match.category_id,
+            Match.match_type == MatchType.ROUND_ROBIN.value,
+            Match.status.in_(
+                [
+                    MatchStatus.PENDING.value,
+                    MatchStatus.READY.value,
+                    MatchStatus.IN_PROGRESS.value,
+                ]
+            ),
+            or_(Match.aka_id == athlete_id, Match.ao_id == athlete_id),
+        )
+    ).all()
+    return len(remaining) == 0
+
+
+def _nullify_rr_previous_scores(
+    session: Session,
+    athlete_id: int,
+    current_match_id: int,
+) -> list[dict]:
+    """Nullify prior RR bouts scores and return pre-change snapshot.
+
+    WKF Art. 3.7.3: for non-last RR SHIKKAKU, completed/current bout scores are
+    nullified and prior victory points forfeited.
+
+    Args:
+        session: Active SQLModel session.
+        athlete_id: Penalized athlete id.
+        current_match_id: Current match identifier.
+
+    Returns:
+        list[dict]: Score snapshot BEFORE nullification.
+    """
+    current_match = session.get(Match, current_match_id)
+    if current_match is None:
+        raise PenaltyEscalationError(f"Match {current_match_id} not found")
+
+    previous_matches = session.exec(
+        select(Match).where(
+            Match.id != current_match_id,
+            Match.category_id == current_match.category_id,
+            Match.match_type == MatchType.ROUND_ROBIN.value,
+            Match.status == MatchStatus.COMPLETED.value,
+            or_(Match.aka_id == athlete_id, Match.ao_id == athlete_id),
+        )
+    ).all()
+
+    snapshot: list[dict] = []
+    for match in previous_matches:
+        snapshot.append(
+            {
+                "match_id": match.id,
+                "aka_score": match.aka_score,
+                "ao_score": match.ao_score,
+                "winner_id": match.winner_id,
+                "status": match.status,
+            }
+        )
+        match.aka_score = 0
+        match.ao_score = 0
+        match.winner_id = None
+        session.add(match)
+
+    return snapshot
+
+
+def _cancel_remaining_rr_matches(
+    session: Session,
+    athlete_id: int,
+    current_match_id: int,
+) -> None:
+    """Cancel all upcoming RR matches for a disqualified athlete.
+
+    WKF Art. 3.7.3 implies athlete cannot complete remaining bouts after
+    disqualification.
+
+    Args:
+        session: Active SQLModel session.
+        athlete_id: Penalized athlete id.
+        current_match_id: Current match identifier.
+    """
+    current_match = session.get(Match, current_match_id)
+    if current_match is None:
+        raise PenaltyEscalationError(f"Match {current_match_id} not found")
+
+    remaining_matches = session.exec(
+        select(Match).where(
+            Match.id != current_match_id,
+            Match.category_id == current_match.category_id,
+            Match.match_type == MatchType.ROUND_ROBIN.value,
+            Match.status.in_([MatchStatus.PENDING.value, MatchStatus.READY.value]),
+            or_(Match.aka_id == athlete_id, Match.ao_id == athlete_id),
+        )
+    ).all()
+
+    for match in remaining_matches:
+        match.status = MATCH_STATUS_CANCELLED
+        if match.aka_id == athlete_id:
+            match.winner_id = match.ao_id
+        else:
+            match.winner_id = match.aka_id
+        session.add(match)
+
+
+def _serialize_scores_snapshot(matches: list[Match]) -> str:
+    """Serialize match scores and status to JSON string snapshot.
+
+    Args:
+        matches: Match rows to serialize before mutating SHIKKAKU operations.
+
+    Returns:
+        str: JSON payload with one entry per match.
+    """
+    snapshot_records: list[dict[str, int | str | None]] = []
+    for match in matches:
+        snapshot_records.append(
+            {
+                "match_id": match.id,
+                "aka_score": match.aka_score,
+                "ao_score": match.ao_score,
+                "winner_id": match.winner_id,
+                "status": match.status,
+            }
+        )
+    return json.dumps(snapshot_records)
+
+
+def _deserialize_scores_snapshot(snapshot: str) -> list[dict]:
+    """Deserialize SHIKKAKU snapshot JSON payload.
+
+    Args:
+        snapshot: JSON payload stored in ``StandingsDeltaLog.before_snapshot``.
+
+    Returns:
+        list[dict]: Parsed snapshot rows.
+
+    Raises:
+        ShikkakuRevertError: If payload is not valid list JSON.
+    """
+    try:
+        decoded = json.loads(snapshot)
+    except json.JSONDecodeError as error:
+        raise ShikkakuRevertError("Stored SHIKKAKU snapshot is invalid JSON") from error
+
+    if not isinstance(decoded, list):
+        raise ShikkakuRevertError("Stored SHIKKAKU snapshot must be a list")
+    return decoded
+
+
+def _apply_shikkaku_round_robin(
+    session: Session,
+    match_id: int,
+    athlete_id: int,
+    participant_side: str,
+) -> None:
+    """Apply SHIKKAKU round-robin branch by last-bout determination.
+
+    WKF Art. 3.7.3:
+    - Last RR bout: preserve prior results.
+    - Non-last RR bout: nullify prior completed bouts and cancel remaining.
+
+    Args:
+        session: Active SQLModel session.
+        match_id: Current match identifier.
+        athlete_id: Penalized athlete id.
+        participant_side: Penalized side (`AKA` or `AO`).
+    """
+    match = session.get(Match, match_id)
+    if match is None:
+        raise PenaltyEscalationError(f"Match {match_id} not found")
+
+    is_last_match = _is_last_rr_match(session, athlete_id, match_id)
+    if not is_last_match:
+        previous_matches = session.exec(
+            select(Match).where(
+                Match.id != match_id,
+                Match.category_id == match.category_id,
+                Match.match_type == MatchType.ROUND_ROBIN.value,
+                Match.status == MatchStatus.COMPLETED.value,
+                or_(Match.aka_id == athlete_id, Match.ao_id == athlete_id),
+            )
+        ).all()
+
+        remaining_matches = session.exec(
+            select(Match).where(
+                Match.id != match_id,
+                Match.category_id == match.category_id,
+                Match.match_type == MatchType.ROUND_ROBIN.value,
+                Match.status.in_([MatchStatus.PENDING.value, MatchStatus.READY.value]),
+                or_(Match.aka_id == athlete_id, Match.ao_id == athlete_id),
+            )
+        ).all()
+
+        before_snapshot = _serialize_scores_snapshot(
+            previous_matches + remaining_matches
+        )
+        standings_log = StandingsDeltaLog(
+            athlete_id=athlete_id,
+            tournament_id=match.category.tournament_id,
+            change_key=f"shikkaku-match-{match_id}",
+            before_snapshot=before_snapshot,
+        )
+        session.add(standings_log)
+        _nullify_rr_previous_scores(session, athlete_id, match_id)
+
+    _cancel_remaining_rr_matches(session, athlete_id, match_id)
+    _complete_forfeit_match(match, participant_side)
+
+    athlete = session.get(Athlete, athlete_id)
+    if athlete is None:
+        raise PenaltyEscalationError(f"Athlete {athlete_id} not found")
+    athlete.is_disqualified = True
+    session.add(athlete)
+    session.add(match)
+
+
+def _apply_shikkaku(session: Session, match_id: int, participant: str) -> None:
+    """Apply SHIKKAKU by modality: individual athlete or whole team.
+
+    WKF Art. 10.7.2 enforces full disqualification from tournament and
+    opponent forfeit win.
+
+    Args:
+        session: Active SQLModel session.
+        match_id: Current match identifier.
+        participant: Penalized side (`AKA` or `AO`).
+    """
+    match = session.get(Match, match_id)
+    if match is None:
+        raise PenaltyEscalationError(f"Match {match_id} not found")
+
+    is_team_match = (
+        match.category.modality == Modality.KUMITE_TEAM.value
+        or match.aka_team_id is not None
+        or match.ao_team_id is not None
+    )
+
+    if is_team_match:
+        team_id = (
+            match.aka_team_id
+            if participant == Participant.AKA.value
+            else match.ao_team_id
+        )
+        if team_id is None:
+            raise PenaltyEscalationError(
+                f"Match {match_id} does not have team for side {participant}"
+            )
+
+        team_members = session.exec(
+            select(TeamMember).where(TeamMember.team_id == team_id)
+        ).all()
+        for member in team_members:
+            athlete = session.get(Athlete, member.athlete_id)
+            if athlete is not None:
+                athlete.is_disqualified = True
+                session.add(athlete)
+
+        _complete_forfeit_match(match, participant)
+        if participant == Participant.AKA.value:
+            match.aka_score = 0
+            match.ao_score = 8
+        else:
+            match.ao_score = 0
+            match.aka_score = 8
+        session.add(match)
+        return
+
+    athlete_id = _resolve_athlete_id_for_side(match, participant)
+    if match.category.competition_system == CompetitionSystem.ROUND_ROBIN.value:
+        _apply_shikkaku_round_robin(session, match_id, athlete_id, participant)
+        return
+
+    athlete = session.get(Athlete, athlete_id)
+    if athlete is None:
+        raise PenaltyEscalationError(f"Athlete {athlete_id} not found")
+    athlete.is_disqualified = True
+    _complete_forfeit_match(match, participant)
+    session.add(athlete)
+    session.add(match)
+
+
+def apply_penalty(
+    session: Session,
+    match_id: int,
+    participant: str,
+    penalty_type: Optional[PenaltyType | str] = None,
+) -> Penalty:
+    """Apply penalty with side-based escalation and row locking.
+
+    Args:
+        session: Active SQLModel session.
+        match_id: Target match identifier.
+        participant: Penalized side (`AKA` or `AO`).
+        penalty_type: Optional explicit level override.
+
+    Returns:
+        Penalty: The created penalty row.
+
+    Raises:
+        PenaltyEscalationError: If match is missing or not in progress.
+    """
+
+    return _with_retry(
+        lambda: _apply_penalty_with_rollback(
+            session=session,
+            match_id=match_id,
+            participant=participant,
+            penalty_type=penalty_type,
+        )
+    )
+
+
+def _resolve_athlete_id_for_penalty_side(
+    match: Match, participant: str
+) -> Optional[int]:
+    """Resolve athlete id from penalty side for scheduling checks."""
+    if participant == Participant.AKA.value:
+        return match.aka_id
+    if participant == Participant.AO.value:
+        return match.ao_id
+    return None
+
+
+def _resolve_tournament_gap_seconds(match: Match) -> int:
+    """Resolve configured scheduling gap from tournament with default fallback."""
+    if match.category is not None and match.category.tournament is not None:
+        return match.category.tournament.scheduling_gap_seconds
+    return 75
+
+
+def _resolve_penalty_type(
+    session: Session,
+    match_id: int,
+    participant: str,
+    penalty_type: Optional[PenaltyType | str],
+) -> str:
+    """Resolve final penalty type from explicit input or escalation chain."""
+    if penalty_type is None:
+        count = _count_penalties(session, match_id, participant)
+        return _escalate_penalty_type(count)
+    if isinstance(penalty_type, PenaltyType):
+        return penalty_type.value
+    return penalty_type
+
+
+def _apply_terminal_penalty(
+    session: Session,
+    match: Match,
+    match_id: int,
+    participant: str,
+    resolved_type: str,
+) -> None:
+    """Apply side effects for terminal penalties."""
+    if resolved_type == PenaltyType.HANSOKU.value:
+        winner_side = (
+            Participant.AO.value
+            if participant == Participant.AKA.value
+            else Participant.AKA.value
+        )
+        _end_match_hansoku(session, match, winner_side)
+        return
+    if resolved_type == PenaltyType.SHIKKAKU.value:
+        _apply_shikkaku(session, match_id, participant)
+
+
+def _apply_penalty_operation(
+    session: Session,
+    match_id: int,
+    participant: str,
+    penalty_type: Optional[PenaltyType | str],
+) -> Penalty:
+    """Perform one penalty operation transaction body."""
+    pre_match = session.get(Match, match_id)
+    if pre_match is not None:
+        athlete_id = _resolve_athlete_id_for_penalty_side(pre_match, participant)
+        if athlete_id is not None:
+            gap_seconds = _resolve_tournament_gap_seconds(pre_match)
+            check_athlete_scheduling_overlap(
+                session=session,
+                athlete_id=athlete_id,
+                match_id=match_id,
+                gap_seconds=gap_seconds,
+            )
+
+    stmt = select(Match).where(Match.id == match_id).with_for_update()
+    match = session.exec(stmt).first()
+    if match is None:
+        raise PenaltyEscalationError(f"Match {match_id} not found")
+
+    try:
+        _assert_match_in_progress(match)
+    except PenaltyRemovalNotAllowedError as error:
+        raise PenaltyEscalationError(
+            f"Cannot apply penalty to match with status {match.status}"
+        ) from error
+
+    resolved_type = _resolve_penalty_type(session, match_id, participant, penalty_type)
+    penalty = Penalty(
+        match_id=match.id,
+        given_by_id=match.referee_id or 1,
+        participant=participant,
+        penalty_type=resolved_type,
+        reason="AUTO_APPLY",
+        is_accumulated=penalty_type is None,
+    )
+    session.add(penalty)
+    _apply_terminal_penalty(
+        session=session,
+        match=match,
+        match_id=match_id,
+        participant=participant,
+        resolved_type=resolved_type,
+    )
+
+    session.commit()
+    session.refresh(penalty)
+    return penalty
+
+
+def _apply_penalty_with_rollback(
+    session: Session,
+    match_id: int,
+    participant: str,
+    penalty_type: Optional[PenaltyType | str],
+) -> Penalty:
+    """Apply penalty and rollback session on failures."""
+    try:
+        return _apply_penalty_operation(
+            session=session,
+            match_id=match_id,
+            participant=participant,
+            penalty_type=penalty_type,
+        )
+    except Exception:
+        session.rollback()
+        raise
+
+
+def remove_last_penalty(
+    session: Session,
+    match_id: int,
+    participant: str,
+) -> Penalty:
+    """Remove most recent penalty for one side in active match.
+
+    WKF operator correction rule: correction is valid only during active match.
+
+    Args:
+        session: Active database session.
+        match_id: ID of the match.
+        participant: Side (AKA/AO) whose last penalty is removed.
+
+    Returns:
+        The deleted penalty object.
+
+    Raises:
+        PenaltyRemovalNotAllowedError: If match is not ``IN_PROGRESS``.
+        ValueError: If side has no penalties.
+    """
+    match = session.get(Match, match_id)
+    if match is None:
+        raise PenaltyRemovalNotAllowedError(
+            f"Penalty removal only allowed when match is IN_PROGRESS: {match_id}"
+        )
+
+    _assert_match_in_progress(match)
+
+    penalty = session.exec(
+        select(Penalty)
+        .where(
+            Penalty.match_id == match_id,
+            Penalty.participant == participant,
+        )
+        .order_by(Penalty.id.desc())
+    ).first()
+    if penalty is None:
+        raise ValueError("No penalties to remove")
+
+    session.delete(penalty)
+    session.commit()
+    return penalty
+
+
+def revert_shikkaku(
+    session: Session,
+    change_key: str,
+) -> None:
+    """Revert a SHIKKAKU standing change using the StandingsDeltaLog snapshot.
+
+    Restores all match scores nullified by a prior SHIKKAKU application,
+    un-cancels affected matches, and clears the athlete's disqualification flag.
+    Admin-only operation (caller is responsible for permission checks).
+
+    Args:
+        session: Active database session.
+        change_key: The change key written by _apply_shikkaku_round_robin(),
+            e.g. "shikkaku-match-{match_id}".
+
+    Raises:
+        ShikkakuRevertError: If no delta log found for the given change_key.
+    """
+    delta_log = session.exec(
+        select(StandingsDeltaLog).where(StandingsDeltaLog.change_key == change_key)
+    ).first()
+    if delta_log is None:
+        raise ShikkakuRevertError(
+            f"No SHIKKAKU delta log found for change_key={change_key}"
+        )
+
+    snapshot_records = _deserialize_scores_snapshot(delta_log.before_snapshot)
+
+    for record in snapshot_records:
+        match_id = record.get("match_id")
+        if match_id is None:
+            continue
+
+        match = session.get(Match, match_id)
+        if match is None:
+            raise ShikkakuRevertError(
+                f"Match {match_id} not found during SHIKKAKU revert"
+            )
+
+        match.aka_score = int(record.get("aka_score", 0))
+        match.ao_score = int(record.get("ao_score", 0))
+        match.winner_id = record.get("winner_id")
+        status = record.get("status")
+        if status is not None:
+            match.status = str(status)
+        session.add(match)
+
+    athlete = session.get(Athlete, delta_log.athlete_id)
+    if athlete is None:
+        raise ShikkakuRevertError(
+            f"Athlete {delta_log.athlete_id} not found during SHIKKAKU revert"
+        )
+    athlete.is_disqualified = False
+    session.add(athlete)
+
+    match_id_prefix = "shikkaku-match-"
+    if change_key.startswith(match_id_prefix):
+        match_id = int(change_key[len(match_id_prefix) :])
+        shikkaku_penalties = session.exec(
+            select(Penalty).where(
+                Penalty.match_id == match_id,
+                Penalty.penalty_type == PenaltyType.SHIKKAKU.value,
+            )
+        ).all()
+        for penalty in shikkaku_penalties:
+            session.delete(penalty)
+
+    session.delete(delta_log)
+    session.commit()
 
 
 @dataclass
