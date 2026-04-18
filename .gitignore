@@ -83,10 +83,10 @@ secrets.json
 
 # Agent dev tooling — local environment only, not project code
 /.agents/
+/.atl/
 /skills-lock.json
 
 # NOTE: Keep these tracked (do NOT add to .gitignore)
-# - .atl/         (skill-registry — project agent conventions)
 # - openspec/     (SDD artifacts — proposals, specs, designs, archive reports)
 
 # Ignore Python egg caches
