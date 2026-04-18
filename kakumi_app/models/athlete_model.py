@@ -78,11 +78,14 @@ class Athlete(rx.Model, table=True):
 
     # Relaciones inversas con Match (navegación bidireccional)
     matches_as_aka: List["Match"] = Relationship(
+        back_populates="aka",
         sa_relationship_kwargs={"foreign_keys": "[Match.aka_id]"},
     )
     matches_as_ao: List["Match"] = Relationship(
+        back_populates="ao",
         sa_relationship_kwargs={"foreign_keys": "[Match.ao_id]"},
     )
     matches_won: List["Match"] = Relationship(
+        back_populates="winner",
         sa_relationship_kwargs={"foreign_keys": "[Match.winner_id]"},
     )

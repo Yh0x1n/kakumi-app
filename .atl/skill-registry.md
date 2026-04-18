@@ -19,6 +19,8 @@ See `_shared/skill-resolver.md` for the full resolution protocol.
 | Creating PRs, writing PR descriptions, using gh CLI | github-pr | /var/home/yhoxr/.agents/skills/github-pr/SKILL.md |
 | Writing Python tests | pytest | /var/home/yhoxr/.agents/skills/pytest/SKILL.md |
 | "how do I do X", "find a skill for X" | find-skills | /var/home/yhoxr/.agents/skills/find-skills/SKILL.md |
+| Interpretar reglas WKF, árbitro experto | wkf-referee | /var/home/yhoxr/Documentos/kakumi-app/.agents/skills/wkf-referee/SKILL.md |
+| Writing Pydantic models, validators, BaseSettings, SQLModel schemas | pydantic | /var/home/yhoxr/Documentos/kakumi-app/.agents/skills/pydantic/SKILL.md |
 
 ## Compact Rules
 
@@ -103,6 +105,25 @@ Pre-digested rules per skill. Delegators copy matching blocks into sub-agent pro
 - Verify quality: prefer 1K+ installs, trust official sources (vercel-labs, anthropics)
 - Present: skill name, install count, source, install command, link to learn more
 - If no skill found: offer to help directly, suggest creating own skill
+
+### wkf-referee
+- Modo experto: asume perspectiva árbitro WKF 15+ años. Prioriza seguridad reglamentaria sobre atajos.
+- Cita obligatoria: cuando una decisión técnica dependa de una regla WKF, incluir cita literal del artículo (texto exacto) y referencia (Art. X.Y.Z).
+- PDF handling: intentar extracción automática; si el pasaje no es legible, pedir al usuario el texto literal. No inventar contenido.
+- Output dual cuando se solicite: 1) Notas internas (concisas, recomendaciones), 2) Artifact-ready (redacción formal lista para openspec).
+- Prueba y referencia: indicar grado de certeza (High/Medium/Low) y listar archivos/paths consultados en /docs.
+- Si hay ambigüedad en el reglamento, marcarla y pedir confirmación al humano.
+- No aplicar cambios de diseño o código automáticamente — producir recomendaciones, tasks y criterios de aceptación.
+- Si hay discrepancias entre versiones en /docs, documentar ambas y sugerir consulta humana.
+
+### pydantic
+- Always use `ConfigDict` — never inner `class Config` (Pydantic v2)
+- Use `model_dump()` / `model_validate()` — NOT `.dict()` / `.parse_obj()` (v1 relics)
+- `from_attributes=True` required when validating SQLModel ORM objects into a Pydantic schema
+- `@field_validator` must be `@classmethod`; use `@model_validator(mode='after')` for cross-field validation
+- Never use `json_encoders` in v2 — replace with `@field_serializer`
+- `BaseSettings`: use `model_config = SettingsConfigDict(env_file='.env')` to read env vars
+- Async tests: use `@pytest.mark.anyio` (not `@pytest.mark.asyncio`) — kakumi-app uses anyio
 
 ## Project Conventions
 

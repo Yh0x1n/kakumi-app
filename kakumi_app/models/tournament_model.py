@@ -326,27 +326,43 @@ class Match(rx.Model, table=True):
     )
 
     aka: Optional["Athlete"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Match.aka_id]"}
+        back_populates="matches_as_aka",
+        sa_relationship_kwargs={"foreign_keys": "[Match.aka_id]"},
     )
 
     ao: Optional["Athlete"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Match.ao_id]"}
+        back_populates="matches_as_ao",
+        sa_relationship_kwargs={"foreign_keys": "[Match.ao_id]"},
+    )
+
+    winner: Optional["Athlete"] = Relationship(
+        back_populates="matches_won",
+        sa_relationship_kwargs={"foreign_keys": "[Match.winner_id]"},
     )
 
     aka_team: Optional["Team"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Match.aka_team_id]"}
+        back_populates="matches_as_aka",
+        sa_relationship_kwargs={"foreign_keys": "[Match.aka_team_id]"},
     )
 
     ao_team: Optional["Team"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Match.ao_team_id]"}
+        back_populates="matches_as_ao",
+        sa_relationship_kwargs={"foreign_keys": "[Match.ao_team_id]"},
     )
 
     tatami: Optional["Tatami"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Match.tatami_id]"}
+        back_populates="matches",
+        sa_relationship_kwargs={"foreign_keys": "[Match.tatami_id]"},
     )
 
     referee: Optional["Referee"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Match.referee_id]"}
+        back_populates="matches_as_referee",
+        sa_relationship_kwargs={"foreign_keys": "[Match.referee_id]"},
+    )
+
+    current_tatamis: List["Tatami"] = Relationship(
+        back_populates="current_match",
+        sa_relationship_kwargs={"foreign_keys": "[Tatami.current_match_id]"},
     )
 
     # Penalizaciones del encuentro
@@ -398,11 +414,13 @@ class MatchScore(rx.Model, table=True):
     )
 
     judge: "Referee" = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[MatchScore.judge_id]"}
+        back_populates="scores_as_judge",
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.judge_id]"},
     )
 
     applied_by: Optional["User"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[MatchScore.applied_by_id]"}
+        back_populates="applied_scores",
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.applied_by_id]"},
     )
 
 
@@ -443,7 +461,8 @@ class Penalty(rx.Model, table=True):
     )
 
     given_by: "Referee" = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Penalty.given_by_id]"}
+        back_populates="penalties_given",
+        sa_relationship_kwargs={"foreign_keys": "[Penalty.given_by_id]"},
     )
 
 
@@ -490,5 +509,11 @@ class Tatami(rx.Model, table=True):
     )
 
     current_match: Optional["Match"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Tatami.current_match_id]"}
+        back_populates="current_tatamis",
+        sa_relationship_kwargs={"foreign_keys": "[Tatami.current_match_id]"},
+    )
+
+    matches: List["Match"] = Relationship(
+        back_populates="tatami",
+        sa_relationship_kwargs={"foreign_keys": "[Match.tatami_id]"},
     )

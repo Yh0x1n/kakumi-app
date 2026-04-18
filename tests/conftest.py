@@ -8,11 +8,14 @@ Usa DB SQLite aislada por test para evitar contaminación entre tests.
 import datetime
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Generator
 
 import pytest
 import reflex as rx
 import sqlmodel
+import sqlalchemy as sa
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel
@@ -38,6 +41,109 @@ from kakumi_app.models.tournament_model import (
     TournamentStatus,
 )
 from kakumi_app.models.user_model import User, UserRole
+
+
+FK_TARGET_INDEXES: dict[str, set[str]] = {
+    "athletes": {
+        "ix_athletes_kata_category_id",
+        "ix_athletes_kumite_category_id",
+    },
+    "matches": {
+        "ix_matches_aka_id",
+        "ix_matches_ao_id",
+        "ix_matches_winner_id",
+        "ix_matches_aka_team_id",
+        "ix_matches_ao_team_id",
+        "ix_matches_referee_id",
+        "ix_matches_tatami_id",
+    },
+    "match_scores": {
+        "ix_match_scores_judge_id",
+        "ix_match_scores_applied_by_id",
+    },
+    "penalties": {
+        "ix_penalties_given_by_id",
+    },
+    "tournament_categories": {
+        "ix_tournament_categories_first_place_id",
+        "ix_tournament_categories_second_place_id",
+    },
+    "token_blacklist": {
+        "ix_token_blacklist_user_id",
+    },
+    "tournament_event_logs": {
+        "ix_tournament_event_logs_user_id",
+    },
+    "kata_judge_scores": {
+        "ix_kata_judge_scores_performer_id",
+        "ix_kata_judge_scores_team_id",
+    },
+    "kata_round_standings": {
+        "ix_kata_round_standings_athlete_id",
+        "ix_kata_round_standings_team_id",
+    },
+}
+
+
+@pytest.fixture
+def fk_target_indexes() -> dict[str, set[str]]:
+    """Return canonical FK index targets for db-schema-indexes."""
+    return FK_TARGET_INDEXES
+
+
+@pytest.fixture
+def fk_index_migration_path() -> Path:
+    """Return path to FK index migration revision file."""
+    return (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "c078f55c0552_add_fk_indexes.py"
+    )
+
+
+@pytest.fixture
+def alembic_config_for_db() -> Callable[[str], Config]:
+    """Factory fixture returning alembic config for a DB URL."""
+
+    def _factory(db_url: str) -> Config:
+        project_root = Path(__file__).resolve().parents[1]
+        config = Config(str(project_root / "alembic.ini"))
+        config.set_main_option("script_location", str(project_root / "alembic"))
+        config.set_main_option("sqlalchemy.url", db_url)
+        return config
+
+    return _factory
+
+
+@pytest.fixture
+def index_names_for_tables() -> Callable[
+    [str, dict[str, set[str]]], tuple[set[str], dict[str, set[str]]]
+]:
+    """Factory fixture for index inspection by explicit table set."""
+
+    def _factory(
+        db_url: str,
+        target_indexes: dict[str, set[str]],
+    ) -> tuple[set[str], dict[str, set[str]]]:
+        engine = sa.create_engine(db_url)
+        inspector = sa.inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+
+        indexes_by_table: dict[str, set[str]] = {}
+        for table_name in target_indexes:
+            if table_name not in existing_tables:
+                indexes_by_table[table_name] = set()
+                continue
+
+            indexes = inspector.get_indexes(table_name)
+            indexes_by_table[table_name] = {index["name"] for index in indexes}
+
+        engine.dispose()
+        return existing_tables, indexes_by_table
+
+    return _factory
+
 
 # DB de test separada de la producción
 TEST_DB_PATH = os.path.join(os.path.dirname(__file__), "test_kakumi.db")

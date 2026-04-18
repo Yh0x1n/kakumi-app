@@ -5,11 +5,7 @@ Tests para: Match, MatchScore, Penalty, Tatami
 Cubre: CRUD, relaciones, enums de scoring WKF 2026.
 """
 
-import datetime
-
-import pytest
 import reflex as rx
-from sqlmodel import select
 
 from kakumi_app.models.tournament_model import (
     Match,
@@ -594,3 +590,68 @@ class TestTatamiRelationships:
             session.refresh(tatami)
 
             assert tatami.current_match_id == sample_match.id
+
+
+class TestBidirectionalRelationshipScenarios:
+    """Escenarios REQ-1 de carga bidireccional en sesión ORM."""
+
+    def test_match_referee_reverse_collection_contains_match(
+        self,
+        sample_match: Match,
+        sample_referee,
+    ) -> None:
+        """match.referee y referee.matches_as_referee deben ser simétricos."""
+        with rx.session() as session:
+            match = session.get(Match, sample_match.id)
+            referee = session.get(type(sample_referee), sample_referee.id)
+
+            assert match.referee is not None
+            assert match.referee.id == referee.id
+            assert any(item.id == match.id for item in referee.matches_as_referee)
+
+    def test_tatami_current_match_backref_to_match_current_tatamis(
+        self,
+        sample_tatami: Tatami,
+        sample_match: Match,
+    ) -> None:
+        """Tatami.current_match debe reflejarse en Match.current_tatamis."""
+        with rx.session() as session:
+            tatami = session.get(Tatami, sample_tatami.id)
+            tatami.current_match_id = sample_match.id
+            session.add(tatami)
+            session.commit()
+
+            match = session.get(Match, sample_match.id)
+            assert match is not None
+            assert any(item.id == tatami.id for item in match.current_tatamis)
+
+    def test_athlete_winner_and_team_backrefs(
+        self,
+        sample_category,
+        sample_athlete,
+        sample_athlete_2,
+        sample_team,
+        sample_team_2,
+    ) -> None:
+        """Winner atleta y equipos AKA/AO deben exponer backrefs correctos."""
+        with rx.session() as session:
+            match = Match(
+                category_id=sample_category.id,
+                aka_id=sample_athlete.id,
+                ao_id=sample_athlete_2.id,
+                winner_id=sample_athlete.id,
+                aka_team_id=sample_team.id,
+                ao_team_id=sample_team_2.id,
+                status=MatchStatus.COMPLETED.value,
+            )
+            session.add(match)
+            session.commit()
+            session.refresh(match)
+
+            winner = session.get(type(sample_athlete), sample_athlete.id)
+            aka_team = session.get(type(sample_team), sample_team.id)
+            ao_team = session.get(type(sample_team_2), sample_team_2.id)
+
+            assert any(item.id == match.id for item in winner.matches_won)
+            assert any(item.id == match.id for item in aka_team.matches_as_aka)
+            assert any(item.id == match.id for item in ao_team.matches_as_ao)

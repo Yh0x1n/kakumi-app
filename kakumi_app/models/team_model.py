@@ -12,7 +12,7 @@ from sqlmodel import Field, Relationship
 
 if TYPE_CHECKING:
     from .athlete_model import Athlete
-    from .tournament_model import TournamentCategory
+    from .tournament_model import Match, TournamentCategory
 
 
 class Team(rx.Model, table=True):
@@ -45,6 +45,14 @@ class Team(rx.Model, table=True):
     members: List["TeamMember"] = Relationship(
         back_populates="team",
         sa_relationship_kwargs={"foreign_keys": "[TeamMember.team_id]"},
+    )
+    matches_as_aka: List["Match"] = Relationship(
+        back_populates="aka_team",
+        sa_relationship_kwargs={"foreign_keys": "[Match.aka_team_id]"},
+    )
+    matches_as_ao: List["Match"] = Relationship(
+        back_populates="ao_team",
+        sa_relationship_kwargs={"foreign_keys": "[Match.ao_team_id]"},
     )
 
 

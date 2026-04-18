@@ -12,7 +12,7 @@ import reflex as rx
 from sqlmodel import Field, Relationship
 
 if TYPE_CHECKING:
-    from .tournament_model import Tournament
+    from .tournament_model import MatchScore, Tournament
 
 
 class UserRole(str, Enum):
@@ -58,4 +58,8 @@ class User(rx.Model, table=True):
     created_tournaments: List["Tournament"] = Relationship(
         back_populates="created_by",
         sa_relationship_kwargs={"foreign_keys": "[Tournament.created_by_id]"},
+    )
+    applied_scores: List["MatchScore"] = Relationship(
+        back_populates="applied_by",
+        sa_relationship_kwargs={"foreign_keys": "[MatchScore.applied_by_id]"},
     )
