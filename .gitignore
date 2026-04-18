@@ -81,6 +81,10 @@ secrets.json
 # Opencode tool modules (local helper) - ignore installed modules
 /.opencode/node_modules/
 
+# Agent dev tooling — local environment only, not project code
+/.agents/
+/skills-lock.json
+
 # Ignore Python egg caches
 .eggs/
 
