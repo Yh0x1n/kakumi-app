@@ -2,21 +2,28 @@
 
 # Imports
 import reflex as rx
+from kakumi_app.styles.tokens import (
+    ACCENT_GOLD,
+    BRAND_RED,
+    BRAND_RED_HOVER,
+    HOVER_GRAY,
+    TEXT_WHITE,
+)
 
 
 def sidebar_item(text: str, icon: str, href: str) -> rx.Component:
     return rx.link(
         rx.hstack(
             rx.icon(icon, color="white"),
-            rx.text(text, size="5", color="#ffffff"),
+            rx.text(text, size="5", color=TEXT_WHITE),
             width="100%",
             align="center",
             padding_x="0.5rem",
             padding_y="0.75rem",
             style={
                 "_hover": {
-                    "bg": "#612727",
-                    "color": "#ffffff",
+                    "bg": BRAND_RED_HOVER,
+                    "color": TEXT_WHITE,
                     "border-radius": "0.5em",
                     "transition": "0.5s ease",
                 },
@@ -50,7 +57,7 @@ def sidebar() -> rx.Component:
                     color="black",
                     style={
                         "_hover": {
-                            "background-color": "#e0e0e0",
+                            "background-color": HOVER_GRAY,
                             "transition": "0.5s ease",
                         },
                         "border-radius": "0.5em",
@@ -71,7 +78,7 @@ def sidebar() -> rx.Component:
                                         rx.icon("x", size=30, color="white"),
                                         style={
                                             "_hover": {
-                                                "bg": "#612727",
+                                                "bg": BRAND_RED_HOVER,
                                                 "cursor": "pointer",
                                                 "border-radius": "0.5em",
                                                 "transition": "0.5s ease",
@@ -88,7 +95,7 @@ def sidebar() -> rx.Component:
                                             style={
                                                 "_hover": {
                                                     "cursor": "pointer",
-                                                    "color": "#dfc52eb0",
+                                                    "color": ACCENT_GOLD,
                                                     "transition": "0.5s ease",
                                                 }
                                             },
@@ -98,7 +105,7 @@ def sidebar() -> rx.Component:
                                     ),
                                 ),
                                 rx.divider(
-                                    border_color="#dfc52eb0", border_width="0.5px"
+                                    border_color=ACCENT_GOLD, border_width="0.5px"
                                 ),  # Separador
                                 # Objetos de la sidebar
                                 sidebar_items(),
@@ -112,7 +119,7 @@ def sidebar() -> rx.Component:
                             ),
                             # Estilo del contenedor de la sidebar
                             style={
-                                "background-color": "#c53030",
+                                "background-color": BRAND_RED,
                                 "height": "100%",
                                 "position": "fixed",
                                 "top": "0",

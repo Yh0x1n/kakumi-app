@@ -38,15 +38,17 @@ class RefereeState(rx.State):
     # Search/filter
     search_query: str = ""
 
-    def load_referees(self):
+    @rx.event
+    async def load_referees(self):
         """Load all referees from database."""
         with rx.session() as session:
             self.referees = session.exec(select(Referee)).all()
 
-    def filter_referees(self):
+    @rx.event
+    async def filter_referees(self):
         """Filter referees by search query."""
         if not self.search_query:
-            self.load_referees()
+            await self.load_referees()
             return
 
         query = self.search_query.lower()
@@ -61,6 +63,7 @@ class RefereeState(rx.State):
                 or query in r.license_number.lower()
             ]
 
+    @rx.event
     def set_form_values(self, _: Any, referee: Optional[Referee] = None):
         """Set form values for editing or creating."""
         if referee:
@@ -123,7 +126,8 @@ class RefereeState(rx.State):
 
         return True
 
-    def save_referee(self):
+    @rx.event
+    async def save_referee(self):
         """Save referee (create or update)."""
         if not self.validate_form():
             return
@@ -173,9 +177,10 @@ class RefereeState(rx.State):
             session.commit()
 
         self.show_form = False
-        self.load_referees()
+        await self.load_referees()
 
-    def delete_referee(self, referee_id: int):
+    @rx.event
+    async def delete_referee(self, referee_id: int):
         """Delete referee by ID."""
         with rx.session() as session:
             referee = session.get(Referee, referee_id)
@@ -183,10 +188,11 @@ class RefereeState(rx.State):
                 session.delete(referee)
                 session.commit()
                 self.success_message = f"Referee '{referee.name}' deleted"
-                self.load_referees()
+                await self.load_referees()
             else:
                 self.error_message = "Referee not found"
 
+    @rx.event
     def cancel_form(self):
         """Cancel form and hide it."""
         self.show_form = False

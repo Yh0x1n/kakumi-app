@@ -22,6 +22,16 @@ from .pages.exhibition import exhibition
 from .pages.registries import registries
 from .pages.tournament import tournament
 
+# Admin pages — imported for @rx.page side-effect route registration
+import kakumi_app.pages.admin.athletes_page  # noqa: F401
+import kakumi_app.pages.admin.export_page  # noqa: F401
+import kakumi_app.pages.admin.import_page  # noqa: F401
+import kakumi_app.pages.admin.referees_page  # noqa: F401
+import kakumi_app.pages.admin.teams_page  # noqa: F401
+
+# Auth pages
+import kakumi_app.pages.auth.login  # noqa: F401
+
 
 class State(rx.State):
     pass

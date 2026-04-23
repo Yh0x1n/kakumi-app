@@ -4,7 +4,7 @@ Manages CRUD operations for athletes.
 """
 
 import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, List, Optional
 
 import reflex as rx
 from sqlmodel import select
@@ -39,15 +39,17 @@ class AthleteState(rx.State):
     # Search/filter
     search_query: str = ""
 
-    def load_athletes(self):
+    @rx.event
+    async def load_athletes(self):
         """Load all athletes from database."""
         with rx.session() as session:
             self.athletes = session.exec(select(Athlete)).all()
 
-    def filter_athletes(self):
+    @rx.event
+    async def filter_athletes(self):
         """Filter athletes by search query."""
         if not self.search_query:
-            self.load_athletes()
+            await self.load_athletes()
             return
 
         query = self.search_query.lower()
@@ -61,6 +63,7 @@ class AthleteState(rx.State):
                 or (a.dojo and query in a.dojo.lower())
             ]
 
+    @rx.event
     def set_form_values(self, _: Any, athlete: Optional[Athlete] = None):
         """Set form values for editing or creating."""
         if athlete:
@@ -102,10 +105,25 @@ class AthleteState(rx.State):
 
     def validate_form(self) -> bool:
         """Validate form fields."""
+        validators = (
+            self._validate_name,
+            self._validate_date_of_birth,
+            self._validate_gender,
+            self._validate_weight,
+            self._validate_belt_rank,
+        )
+        for validate in validators:
+            if not validate():
+                return False
+        return True
+
+    def _validate_name(self) -> bool:
         if not self.name or len(self.name) < 2 or len(self.name) > 255:
             self.error_message = "Name must be 2-255 characters"
             return False
+        return True
 
+    def _validate_date_of_birth(self) -> bool:
         if not self.date_of_birth:
             self.error_message = "Date of birth is required"
             return False
@@ -118,11 +136,15 @@ class AthleteState(rx.State):
         except ValueError:
             self.error_message = "Invalid date format (YYYY-MM-DD)"
             return False
+        return True
 
+    def _validate_gender(self) -> bool:
         if self.gender not in ["MALE", "FEMALE"]:
             self.error_message = "Gender must be MALE or FEMALE"
             return False
+        return True
 
+    def _validate_weight(self) -> bool:
         if self.weight_kg:
             try:
                 weight = float(self.weight_kg)
@@ -132,17 +154,18 @@ class AthleteState(rx.State):
             except ValueError:
                 self.error_message = "Weight must be a number"
                 return False
-
-        if self.belt_rank:
-            if not (
-                self.belt_rank.startswith("Kyu ") or self.belt_rank.startswith("Dan ")
-            ):
-                self.error_message = "Belt rank must be 'Kyu 1-8' or 'Dan 1-10'"
-                return False
-
         return True
 
-    def save_athlete(self):
+    def _validate_belt_rank(self) -> bool:
+        if self.belt_rank and not (
+            self.belt_rank.startswith("Kyu ") or self.belt_rank.startswith("Dan ")
+        ):
+            self.error_message = "Belt rank must be 'Kyu 1-8' or 'Dan 1-10'"
+            return False
+        return True
+
+    @rx.event
+    async def save_athlete(self):
         """Save athlete (create or update)."""
         if not self.validate_form():
             return
@@ -197,9 +220,10 @@ class AthleteState(rx.State):
             session.commit()
 
         self.show_form = False
-        self.load_athletes()
+        await self.load_athletes()
 
-    def delete_athlete(self, athlete_id: int):
+    @rx.event
+    async def delete_athlete(self, athlete_id: int):
         """Delete athlete by ID."""
         with rx.session() as session:
             athlete = session.get(Athlete, athlete_id)
@@ -207,10 +231,11 @@ class AthleteState(rx.State):
                 session.delete(athlete)
                 session.commit()
                 self.success_message = f"Athlete '{athlete.name}' deleted"
-                self.load_athletes()
+                await self.load_athletes()
             else:
                 self.error_message = "Athlete not found"
 
+    @rx.event
     def cancel_form(self):
         """Cancel form and hide it."""
         self.show_form = False

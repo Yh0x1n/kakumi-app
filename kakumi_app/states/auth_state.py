@@ -5,7 +5,7 @@ Manages login/logout, token storage, user info, and role-based permissions.
 
 import os
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional
 
 import reflex as rx
 
@@ -27,7 +27,7 @@ class AuthState(rx.State):
 
     # Session timeout tracking
     SESSION_TIMEOUT_MINUTES = 30
-    last_activity: datetime = datetime.utcnow()
+    last_activity: str = datetime.utcnow().isoformat()
 
     # Login form fields
     username: str = ""
@@ -40,34 +40,23 @@ class AuthState(rx.State):
     # Initial admin creation flag
     admin_created: bool = False
 
-    # Role hierarchy for RBAC
-    ROLE_HIERARCHY = {
-        "ADMIN": 3,
-        "OPERATOR": 2,
-        "VIEWER": 1,
-    }
-
     def update_last_activity(self):
         """Update the last activity timestamp."""
-        self.last_activity = datetime.utcnow()
+        self.last_activity = datetime.utcnow().isoformat()
 
-    def check_session_timeout(self) -> bool:
+    @rx.event
+    async def check_session_timeout(self) -> bool:
         """Returns True if session expired due to inactivity."""
         if not self.is_authenticated:
             return False
-        elapsed = datetime.utcnow() - self.last_activity
+        elapsed = datetime.utcnow() - datetime.fromisoformat(self.last_activity)
         if elapsed > timedelta(minutes=self.SESSION_TIMEOUT_MINUTES):
-            self.logout()
+            await self.logout()
             return True
         return False
 
-    def require_role(self, required_role: str) -> bool:
-        """Check if current user has required role or higher. Returns True if authorized."""
-        user_level = self.ROLE_HIERARCHY.get(self.user_role, 0)
-        required_level = self.ROLE_HIERARCHY.get(required_role, 999)
-        return user_level >= required_level
-
-    def login(self):
+    @rx.event
+    async def login(self):
         """Authenticate user with username/password."""
         self.is_logging_in = True
         self.login_error = ""
@@ -99,7 +88,8 @@ class AuthState(rx.State):
 
         # Redirect will be handled by frontend (check is_authenticated)
 
-    def logout(self):
+    @rx.event
+    async def logout(self):
         """Log out current user."""
         # Invalidate token on server side (optional)
         if self.access_token:
@@ -137,22 +127,27 @@ class AuthState(rx.State):
             self.current_user = None
             self.user_role = ""
 
-    def check_auth(self):
+    @rx.event
+    async def check_auth(self):
         """Check authentication status (called on page load)."""
         self._load_user_from_token()
-        # If not authenticated, ensure we redirect to login
-        # This is handled by the frontend logic in each page
+        if self.is_authenticated:
+            return rx.redirect("/")
 
+    @rx.event
     def set_username(self, value: str):
         self.username = value
 
+    @rx.event
     def set_password(self, value: str):
         self.password = value
 
-    def create_initial_admin(self):
+    @rx.event
+    async def create_initial_admin(self):
         """
         Create initial admin user if no users exist.
-        Uses environment variables: ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL, ADMIN_FULL_NAME.
+        Uses env vars: ADMIN_USERNAME, ADMIN_PASSWORD,
+        ADMIN_EMAIL, ADMIN_FULL_NAME.
         """
         if self.admin_created:
             return

@@ -1,41 +1,41 @@
-"""
-Tests for RBAC in AuthState.
-"""
+"""Tests for RBAC in AuthState using AuthService as source of truth."""
 
-import pytest
-from datetime import datetime, timedelta
 from kakumi_app.states.auth_state import AuthState
 
 
-def test_require_role_admin_can_access_all():
-    """Test that ADMIN can access all roles."""
+def test_has_permission_admin_can_access_all() -> None:
+    """ADMIN can access all lower/equal roles via AuthService path."""
+    state = AuthState()
+    state.is_authenticated = True
+    state.user_role = "ADMIN"
+    assert state.has_permission("ADMIN") is True
+    assert state.has_permission("OPERATOR") is True
+    assert state.has_permission("VIEWER") is True
+
+
+def test_has_permission_operator_can_access_operator_and_viewer() -> None:
+    """OPERATOR can access OPERATOR/VIEWER but not ADMIN."""
+    state = AuthState()
+    state.is_authenticated = True
+    state.user_role = "OPERATOR"
+    assert state.has_permission("ADMIN") is False
+    assert state.has_permission("OPERATOR") is True
+    assert state.has_permission("VIEWER") is True
+
+
+def test_has_permission_viewer_can_only_access_viewer() -> None:
+    """VIEWER can only access VIEWER."""
+    state = AuthState()
+    state.is_authenticated = True
+    state.user_role = "VIEWER"
+    assert state.has_permission("ADMIN") is False
+    assert state.has_permission("OPERATOR") is False
+    assert state.has_permission("VIEWER") is True
+
+
+def test_has_permission_unauthenticated_denied() -> None:
+    """Unauthenticated users are denied regardless of role."""
     state = AuthState()
     state.user_role = "ADMIN"
-    assert state.require_role("ADMIN") == True
-    assert state.require_role("OPERATOR") == True
-    assert state.require_role("VIEWER") == True
-
-
-def test_require_role_operator_can_access_operator_and_viewer():
-    """Test that OPERATOR can access OPERATOR and VIEWER but not ADMIN."""
-    state = AuthState()
-    state.user_role = "OPERATOR"
-    assert state.require_role("ADMIN") == False
-    assert state.require_role("OPERATOR") == True
-    assert state.require_role("VIEWER") == True
-
-
-def test_require_role_viewer_can_only_access_viewer():
-    """Test that VIEWER can only access VIEWER."""
-    state = AuthState()
-    state.user_role = "VIEWER"
-    assert state.require_role("ADMIN") == False
-    assert state.require_role("OPERATOR") == False
-    assert state.require_role("VIEWER") == True
-
-
-def test_require_role_unauthenticated():
-    """Test that unauthenticated user cannot access anything."""
-    state = AuthState()
-    state.user_role = ""
-    assert state.require_role("VIEWER") == False
+    state.is_authenticated = False
+    assert state.has_permission("VIEWER") is False

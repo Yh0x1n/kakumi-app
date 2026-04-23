@@ -3,7 +3,7 @@ Export State
 Manages export of tournament results.
 """
 
-from typing import List, Optional
+from typing import List
 
 import reflex as rx
 from sqlmodel import select
@@ -27,6 +27,19 @@ class ExportState(rx.State):
     is_exporting: bool = False
     error_message: str = ""
 
+    @rx.var
+    def tournament_options(self) -> list[str]:
+        """Tournament labels for select options."""
+        return [f"{t.id}: {t.name}" for t in self.tournaments]
+
+    @rx.var
+    def export_preview(self) -> str:
+        """Short export content preview for UI."""
+        if len(self.export_content) > 500:
+            return self.export_content[:500] + "..."
+        return self.export_content
+
+    @rx.event
     def load_tournaments(self):
         """Load available tournaments."""
         with rx.session() as session:

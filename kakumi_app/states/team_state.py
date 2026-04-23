@@ -34,16 +34,23 @@ class TeamState(rx.State):
     # Search/filter
     search_query: str = ""
 
-    def load_teams(self):
+    @rx.var
+    def category_options(self) -> list[str]:
+        """Category labels for team form select."""
+        return [f"{cat.id}: {cat.name}" for cat in self.categories]
+
+    @rx.event
+    async def load_teams(self):
         """Load all teams from database."""
         with rx.session() as session:
             self.teams = session.exec(select(Team)).all()
             self.categories = session.exec(select(TournamentCategory)).all()
 
-    def filter_teams(self):
+    @rx.event
+    async def filter_teams(self):
         """Filter teams by search query."""
         if not self.search_query:
-            self.load_teams()
+            await self.load_teams()
             return
 
         query = self.search_query.lower()
@@ -55,6 +62,7 @@ class TeamState(rx.State):
                 if query in t.name.lower() or (t.dojo and query in t.dojo.lower())
             ]
 
+    @rx.event
     def set_form_values(self, _: Any, team: Optional[Team] = None):
         """Set form values for editing or creating."""
         if team:
@@ -103,7 +111,8 @@ class TeamState(rx.State):
 
         return True
 
-    def save_team(self):
+    @rx.event
+    async def save_team(self):
         """Save team (create or update)."""
         if not self.validate_form():
             return
@@ -149,9 +158,10 @@ class TeamState(rx.State):
             session.commit()
 
         self.show_form = False
-        self.load_teams()
+        await self.load_teams()
 
-    def delete_team(self, team_id: int):
+    @rx.event
+    async def delete_team(self, team_id: int):
         """Delete team by ID."""
         with rx.session() as session:
             team = session.get(Team, team_id)
@@ -159,12 +169,18 @@ class TeamState(rx.State):
                 session.delete(team)
                 session.commit()
                 self.success_message = f"Team '{team.name}' deleted"
-                self.load_teams()
+                await self.load_teams()
             else:
                 self.error_message = "Team not found"
 
+    @rx.event
     def cancel_form(self):
         """Cancel form and hide it."""
         self.show_form = False
         self.error_message = ""
         self.success_message = ""
+
+    @rx.event
+    def initialize_new_team_form(self):
+        """Prepare clean form state when opening new team route."""
+        self.set_form_values(None)

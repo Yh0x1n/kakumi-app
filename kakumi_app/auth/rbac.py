@@ -4,7 +4,7 @@ Defines permission matrix, decorators, and helper functions for authorization.
 Integrates with AuthService and AuthState.
 """
 
-from typing import List, Dict, Set, Callable, Any
+from typing import List, Dict, Callable
 from functools import wraps
 
 import reflex as rx
@@ -74,14 +74,6 @@ PERMISSION_MATRIX: Dict[str, List[str]] = {
     ],
 }
 
-# Role hierarchy for role-based checks (existing in AuthService)
-ROLE_HIERARCHY = {
-    "ADMIN": 3,
-    "OPERATOR": 2,
-    "VIEWER": 1,
-}
-
-
 def has_permission(user_role: str, permission: str) -> bool:
     """Check if a role has a specific permission."""
     allowed = PERMISSION_MATRIX.get(user_role, [])
@@ -133,43 +125,6 @@ def require_permission(permission: str):
         return wrapper
 
     return decorator
-
-
-def require_role(required_role: str):
-    """
-    Decorator to enforce role-based access control (hierarchical).
-    Uses role hierarchy: ADMIN > OPERATOR > VIEWER.
-    Example usage:
-        @require_role("OPERATOR")
-        def manage_tournament(token: str, ...):
-            ...
-    """
-
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            token = kwargs.get("token") or (args[0] if args else None)
-            if not token or not isinstance(token, str):
-                raise PermissionError("Authentication token required")
-
-            payload = AuthService.validate_token(token)
-            if not payload:
-                raise PermissionError("Invalid or expired token")
-            user_role = payload.get("role")
-            if not user_role:
-                raise PermissionError("Role not found in token")
-
-            # Use existing AuthService hierarchy check
-            if not AuthService.check_permission(user_role, required_role):
-                raise PermissionError(f"Requires role {required_role} or higher")
-
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
 # Integration with AuthState: extend AuthState with RBAC methods
 class RBACMixin:
     """Mixin to add RBAC capabilities to AuthState (optional)."""
@@ -206,7 +161,6 @@ __all__ = [
     "get_role_permissions",
     "get_all_permissions",
     "require_permission",
-    "require_role",
     "RBACMixin",
     "check_permission_state",
 ]

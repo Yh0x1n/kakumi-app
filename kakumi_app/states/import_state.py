@@ -3,9 +3,6 @@ Import State
 Manages file upload and import process for athletes.
 """
 
-import json
-from typing import Optional
-
 import reflex as rx
 
 from kakumi_app.services.import_service import ImportService
@@ -29,7 +26,8 @@ class ImportState(rx.State):
     show_results: bool = False
     error_message: str = ""
 
-    def handle_upload(self, files: list[rx.UploadFile]):
+    @rx.event
+    async def handle_upload(self, files: list[rx.UploadFile]):
         """Handle file upload."""
         if not files:
             return
@@ -47,7 +45,8 @@ class ImportState(rx.State):
             return
 
         # Read file content
-        content = file.contents
+        upload_data = await file.read()
+        content = upload_data.decode("utf-8") if upload_data else ""
         if content:
             self.file_content = content
             self.error_message = ""
