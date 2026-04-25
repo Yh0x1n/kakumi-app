@@ -10,10 +10,17 @@ from sqlmodel import select
 
 from kakumi_app.models.team_model import Team
 from kakumi_app.models.tournament_model import TournamentCategory
+from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class TeamState(rx.State):
+class TeamState(CrudStateMixin, rx.State):
     """State for team management."""
+
+    # Shared CRUD UI vars (mirrored for Reflex state registration)
+    is_editing: bool = CrudStateMixin.is_editing
+    show_form: bool = CrudStateMixin.show_form
+    error_message: str = CrudStateMixin.error_message
+    search_query: str = CrudStateMixin.search_query
 
     teams: List[Team] = []
     current_team: Optional[Team] = None
@@ -25,28 +32,20 @@ class TeamState(rx.State):
     category_id: str = ""  # string for select
     is_active: bool = True
 
-    # UI state
-    is_editing: bool = False
-    show_form: bool = False
-    error_message: str = ""
-
-    # Search/filter
-    search_query: str = ""
-
     @rx.var
     def category_options(self) -> list[str]:
         """Category labels for team form select."""
         return [f"{cat.id}: {cat.name}" for cat in self.categories]
 
     @rx.event
-    async def load_teams(self):
+    async def load_teams(self) -> None:
         """Load all teams from database."""
         with rx.session() as session:
             self.teams = session.exec(select(Team)).all()
             self.categories = session.exec(select(TournamentCategory)).all()
 
     @rx.event
-    async def filter_teams(self):
+    async def filter_teams(self) -> None:
         """Filter teams by search query."""
         if not self.search_query:
             await self.load_teams()
@@ -62,24 +61,21 @@ class TeamState(rx.State):
             ]
 
     @rx.event
-    def set_form_values(self, _: Any, team: Optional[Team] = None):
+    def set_form_values(self, _: Any, team: Optional[Team] = None) -> None:
         """Set form values for editing or creating."""
         if team:
             self.current_team = team
-            self.is_editing = True
+            self._set_form_open(editing=True)
             self.name = team.name
             self.dojo = team.dojo or ""
             self.category_id = str(team.category_id)
             self.is_active = team.is_active
         else:
             self.current_team = None
-            self.is_editing = False
+            self._set_form_open(editing=False)
             self.reset_form()
 
-        self.show_form = True
-        self.error_message = ""
-
-    def reset_form(self):
+    def reset_form(self) -> None:
         """Reset form fields."""
         self.name = ""
         self.dojo = ""
@@ -110,7 +106,7 @@ class TeamState(rx.State):
         return True
 
     @rx.event
-    async def save_team(self):
+    async def save_team(self) -> Any:
         """Save team (create or update)."""
         if not self.validate_form():
             return
@@ -160,7 +156,7 @@ class TeamState(rx.State):
         return rx.toast.success(success_message)
 
     @rx.event
-    async def delete_team(self, team_id: int):
+    async def delete_team(self, team_id: int) -> Any:
         """Delete team by ID."""
         with rx.session() as session:
             team = session.get(Team, team_id)
@@ -175,12 +171,11 @@ class TeamState(rx.State):
         return rx.toast.success(f"Team '{team_name}' deleted")
 
     @rx.event
-    def cancel_form(self):
-        """Cancel form and hide it."""
-        self.show_form = False
-        self.error_message = ""
+    def cancel_form(self) -> None:
+        """Cancel form and hide it using shared mixin logic."""
+        CrudStateMixin.cancel_form(self)
 
     @rx.event
-    def initialize_new_team_form(self):
+    def initialize_new_team_form(self) -> None:
         """Prepare clean form state when opening new team route."""
         self.set_form_values(None)

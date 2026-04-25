@@ -10,10 +10,17 @@ import reflex as rx
 from sqlmodel import select
 
 from kakumi_app.models.referee_model import Referee
+from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class RefereeState(rx.State):
+class RefereeState(CrudStateMixin, rx.State):
     """State for referee management."""
+
+    # Shared CRUD UI vars (mirrored for Reflex state registration)
+    is_editing: bool = CrudStateMixin.is_editing
+    show_form: bool = CrudStateMixin.show_form
+    error_message: str = CrudStateMixin.error_message
+    search_query: str = CrudStateMixin.search_query
 
     referees: List[Referee] = []
     current_referee: Optional[Referee] = None
@@ -29,22 +36,14 @@ class RefereeState(rx.State):
     email: str = ""
     phone: str = ""
 
-    # UI state
-    is_editing: bool = False
-    show_form: bool = False
-    error_message: str = ""
-
-    # Search/filter
-    search_query: str = ""
-
     @rx.event
-    async def load_referees(self):
+    async def load_referees(self) -> None:
         """Load all referees from database."""
         with rx.session() as session:
             self.referees = session.exec(select(Referee)).all()
 
     @rx.event
-    async def filter_referees(self):
+    async def filter_referees(self) -> None:
         """Filter referees by search query."""
         if not self.search_query:
             await self.load_referees()
@@ -63,11 +62,11 @@ class RefereeState(rx.State):
             ]
 
     @rx.event
-    def set_form_values(self, _: Any, referee: Optional[Referee] = None):
+    def set_form_values(self, _: Any, referee: Optional[Referee] = None) -> None:
         """Set form values for editing or creating."""
         if referee:
             self.current_referee = referee
-            self.is_editing = True
+            self._set_form_open(editing=True)
             self.name = referee.name
             self.license_number = referee.license_number
             self.license_level = referee.license_level
@@ -79,13 +78,10 @@ class RefereeState(rx.State):
             self.phone = referee.phone or ""
         else:
             self.current_referee = None
-            self.is_editing = False
+            self._set_form_open(editing=False)
             self.reset_form()
 
-        self.show_form = True
-        self.error_message = ""
-
-    def reset_form(self):
+    def reset_form(self) -> None:
         """Reset form fields."""
         self.name = ""
         self.license_number = ""
@@ -125,7 +121,7 @@ class RefereeState(rx.State):
         return True
 
     @rx.event
-    async def save_referee(self):
+    async def save_referee(self) -> Any:
         """Save referee (create or update)."""
         if not self.validate_form():
             return
@@ -177,7 +173,7 @@ class RefereeState(rx.State):
         return rx.toast.success(success_message)
 
     @rx.event
-    async def delete_referee(self, referee_id: int):
+    async def delete_referee(self, referee_id: int) -> Any:
         """Delete referee by ID."""
         with rx.session() as session:
             referee = session.get(Referee, referee_id)
@@ -192,7 +188,6 @@ class RefereeState(rx.State):
         return rx.toast.success(f"Referee '{referee_name}' deleted")
 
     @rx.event
-    def cancel_form(self):
-        """Cancel form and hide it."""
-        self.show_form = False
-        self.error_message = ""
+    def cancel_form(self) -> None:
+        """Cancel form and hide it using shared mixin logic."""
+        CrudStateMixin.cancel_form(self)
