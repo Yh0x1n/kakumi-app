@@ -4,8 +4,10 @@ Allows exporting tournament results in JSON/CSV format.
 """
 
 import reflex as rx
+
 from kakumi_app.states.export_state import ExportState
 from kakumi_app.components.sidebar import sidebar
+from kakumi_app.styles.tokens import BG_CODE_PREVIEW, BORDER_LIGHT, BORDER_SUBTLE
 
 
 def export_form() -> rx.Component:
@@ -21,15 +23,6 @@ def export_form() -> rx.Component:
             font_size="md",
             color="gray",
             margin_bottom="2em",
-        ),
-        rx.cond(
-            state.error_message,
-            rx.callout(
-                state.error_message,
-                icon="alert-circle",
-                color_scheme="red",
-                margin_bottom="1em",
-            ),
         ),
         rx.form(
             rx.vstack(
@@ -76,10 +69,10 @@ def export_form() -> rx.Component:
                             white_space="pre-wrap",
                             max_height="300px",
                             overflow_y="auto",
-                            border="1px solid #eee",
+                            border=f"1px solid {BORDER_LIGHT}",
                             padding="1em",
                             border_radius="4px",
-                            background_color="#f9f9f9",
+                            background_color=BG_CODE_PREVIEW,
                         ),
                     ),
                     rx.hstack(
@@ -97,7 +90,7 @@ def export_form() -> rx.Component:
                         margin_top="1em",
                     ),
                 ),
-                border="1px solid #ddd",
+                border=f"1px solid {BORDER_SUBTLE}",
                 padding="1em",
                 border_radius="8px",
                 margin_top="2em",

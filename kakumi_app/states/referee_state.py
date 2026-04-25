@@ -33,7 +33,6 @@ class RefereeState(rx.State):
     is_editing: bool = False
     show_form: bool = False
     error_message: str = ""
-    success_message: str = ""
 
     # Search/filter
     search_query: str = ""
@@ -85,7 +84,6 @@ class RefereeState(rx.State):
 
         self.show_form = True
         self.error_message = ""
-        self.success_message = ""
 
     def reset_form(self):
         """Reset form fields."""
@@ -132,6 +130,8 @@ class RefereeState(rx.State):
         if not self.validate_form():
             return
 
+        self.error_message = ""
+
         referee_data = {
             "name": self.name,
             "license_number": self.license_number,
@@ -149,52 +149,50 @@ class RefereeState(rx.State):
                 # Update existing
                 referee = session.get(Referee, self.current_referee.id)
                 if not referee:
-                    self.error_message = "Referee not found"
-                    return
+                    return rx.toast.error("Referee not found")
 
                 for key, value in referee_data.items():
                     setattr(referee, key, value)
 
                 session.add(referee)
                 session.commit()
-                self.success_message = f"Referee '{referee.name}' updated successfully"
+                success_message = f"Referee '{referee.name}' updated successfully"
             else:
                 # Check duplicate name
                 existing = session.exec(
                     select(Referee).where(Referee.name == self.name)
                 ).first()
                 if existing:
-                    self.error_message = (
+                    return rx.toast.error(
                         f"Referee with name '{self.name}' already exists"
                     )
-                    return
 
                 referee = Referee(**referee_data)
                 session.add(referee)
                 session.commit()
-                self.success_message = f"Referee '{referee.name}' created successfully"
-
-            session.commit()
+                success_message = f"Referee '{referee.name}' created successfully"
 
         self.show_form = False
         await self.load_referees()
+        return rx.toast.success(success_message)
 
     @rx.event
     async def delete_referee(self, referee_id: int):
         """Delete referee by ID."""
         with rx.session() as session:
             referee = session.get(Referee, referee_id)
-            if referee:
-                session.delete(referee)
-                session.commit()
-                self.success_message = f"Referee '{referee.name}' deleted"
-                await self.load_referees()
-            else:
-                self.error_message = "Referee not found"
+            if not referee:
+                return rx.toast.error("Referee not found")
+
+            referee_name = referee.name
+            session.delete(referee)
+            session.commit()
+
+        await self.load_referees()
+        return rx.toast.success(f"Referee '{referee_name}' deleted")
 
     @rx.event
     def cancel_form(self):
         """Cancel form and hide it."""
         self.show_form = False
         self.error_message = ""
-        self.success_message = ""

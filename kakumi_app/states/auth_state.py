@@ -28,6 +28,7 @@ class AuthState(rx.State):
     # Session timeout tracking
     SESSION_TIMEOUT_MINUTES = 30
     last_activity: str = datetime.utcnow().isoformat()
+    session_expired: bool = False
 
     # Login form fields
     username: str = ""
@@ -40,20 +41,34 @@ class AuthState(rx.State):
     # Initial admin creation flag
     admin_created: bool = False
 
+    def _clear_auth_session(self) -> None:
+        """Clear local auth/session data from state."""
+        self.access_token = ""
+        self.refresh_token = ""
+        self.current_user = None
+        self.is_authenticated = False
+        self.user_role = ""
+        self.login_error = ""
+
     def update_last_activity(self):
         """Update the last activity timestamp."""
         self.last_activity = datetime.utcnow().isoformat()
 
     @rx.event
-    async def check_session_timeout(self) -> bool:
-        """Returns True if session expired due to inactivity."""
+    async def check_session_timeout(self):
+        """Expire session on inactivity without returning values."""
         if not self.is_authenticated:
-            return False
+            return
         elapsed = datetime.utcnow() - datetime.fromisoformat(self.last_activity)
         if elapsed > timedelta(minutes=self.SESSION_TIMEOUT_MINUTES):
-            await self.logout()
-            return True
-        return False
+            self.session_expired = True
+            self._clear_auth_session()
+            return [
+                rx.toast.warning(
+                    "Session timed out due to inactivity. Please log in again."
+                ),
+                rx.redirect("/login"),
+            ]
 
     @rx.event
     async def login(self):
@@ -69,7 +84,7 @@ class AuthState(rx.State):
         if error:
             self.login_error = error
             self.is_logging_in = False
-            return
+            return rx.toast.error(error)
 
         # Store tokens
         self.access_token = access_token
@@ -87,6 +102,7 @@ class AuthState(rx.State):
         self.is_logging_in = False
 
         # Redirect will be handled by frontend (check is_authenticated)
+        return [rx.toast.success("Login successful"), rx.redirect("/")]
 
     @rx.event
     async def logout(self):
@@ -96,12 +112,9 @@ class AuthState(rx.State):
             AuthService.logout_user(self.access_token)
 
         # Clear local storage
-        self.access_token = ""
-        self.refresh_token = ""
-        self.current_user = None
-        self.is_authenticated = False
-        self.user_role = ""
-        self.login_error = ""
+        self._clear_auth_session()
+        self.session_expired = False
+        return [rx.toast.info("Logged out"), rx.redirect("/login")]
 
     def _load_user_from_token(self):
         """Load user information from stored access token."""
@@ -183,8 +196,18 @@ class AuthState(rx.State):
             print(f"Initial admin user '{admin_username}' created.")
             self.admin_created = True
 
-    def has_permission(self, required_role: str) -> bool:
+    def _has_permission(self, required_role: str) -> bool:
         """Check if current user has permission for required role."""
         if not self.is_authenticated:
             return False
         return AuthService.check_permission(self.user_role, required_role)
+
+    @rx.var
+    def is_admin(self) -> bool:
+        """Whether current user has admin-level permissions."""
+        return self._has_permission("ADMIN")
+
+    @rx.var
+    def is_operator(self) -> bool:
+        """Whether current user has operator-level permissions."""
+        return self._has_permission("OPERATOR")

@@ -34,7 +34,6 @@ class AthleteState(rx.State):
     is_editing: bool = False
     show_form: bool = False
     error_message: str = ""
-    success_message: str = ""
 
     # Search/filter
     search_query: str = ""
@@ -88,7 +87,6 @@ class AthleteState(rx.State):
 
         self.show_form = True
         self.error_message = ""
-        self.success_message = ""
 
     def reset_form(self):
         """Reset form fields."""
@@ -170,6 +168,8 @@ class AthleteState(rx.State):
         if not self.validate_form():
             return
 
+        self.error_message = ""
+
         weight_kg = float(self.weight_kg) if self.weight_kg else None
 
         athlete_data = {
@@ -192,52 +192,50 @@ class AthleteState(rx.State):
                 # Update existing
                 athlete = session.get(Athlete, self.current_athlete.id)
                 if not athlete:
-                    self.error_message = "Athlete not found"
-                    return
+                    return rx.toast.error("Athlete not found")
 
                 for key, value in athlete_data.items():
                     setattr(athlete, key, value)
 
                 session.add(athlete)
                 session.commit()
-                self.success_message = f"Athlete '{athlete.name}' updated successfully"
+                success_message = f"Athlete '{athlete.name}' updated successfully"
             else:
                 # Check duplicate name
                 existing = session.exec(
                     select(Athlete).where(Athlete.name == self.name)
                 ).first()
                 if existing:
-                    self.error_message = (
+                    return rx.toast.error(
                         f"Athlete with name '{self.name}' already exists"
                     )
-                    return
 
                 athlete = Athlete(**athlete_data)
                 session.add(athlete)
                 session.commit()
-                self.success_message = f"Athlete '{athlete.name}' created successfully"
-
-            session.commit()
+                success_message = f"Athlete '{athlete.name}' created successfully"
 
         self.show_form = False
         await self.load_athletes()
+        return rx.toast.success(success_message)
 
     @rx.event
     async def delete_athlete(self, athlete_id: int):
         """Delete athlete by ID."""
         with rx.session() as session:
             athlete = session.get(Athlete, athlete_id)
-            if athlete:
-                session.delete(athlete)
-                session.commit()
-                self.success_message = f"Athlete '{athlete.name}' deleted"
-                await self.load_athletes()
-            else:
-                self.error_message = "Athlete not found"
+            if not athlete:
+                return rx.toast.error("Athlete not found")
+
+            athlete_name = athlete.name
+            session.delete(athlete)
+            session.commit()
+
+        await self.load_athletes()
+        return rx.toast.success(f"Athlete '{athlete_name}' deleted")
 
     @rx.event
     def cancel_form(self):
         """Cancel form and hide it."""
         self.show_form = False
         self.error_message = ""
-        self.success_message = ""

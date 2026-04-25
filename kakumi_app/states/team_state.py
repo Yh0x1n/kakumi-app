@@ -29,7 +29,6 @@ class TeamState(rx.State):
     is_editing: bool = False
     show_form: bool = False
     error_message: str = ""
-    success_message: str = ""
 
     # Search/filter
     search_query: str = ""
@@ -79,7 +78,6 @@ class TeamState(rx.State):
 
         self.show_form = True
         self.error_message = ""
-        self.success_message = ""
 
     def reset_form(self):
         """Reset form fields."""
@@ -117,6 +115,8 @@ class TeamState(rx.State):
         if not self.validate_form():
             return
 
+        self.error_message = ""
+
         category_id = int(self.category_id)
 
         team_data = {
@@ -132,53 +132,53 @@ class TeamState(rx.State):
                 # Update existing
                 team = session.get(Team, self.current_team.id)
                 if not team:
-                    self.error_message = "Team not found"
-                    return
+                    return rx.toast.error("Team not found")
 
                 for key, value in team_data.items():
                     setattr(team, key, value)
 
                 session.add(team)
                 session.commit()
-                self.success_message = f"Team '{team.name}' updated successfully"
+                success_message = f"Team '{team.name}' updated successfully"
             else:
                 # Check duplicate name
                 existing = session.exec(
                     select(Team).where(Team.name == self.name)
                 ).first()
                 if existing:
-                    self.error_message = f"Team with name '{self.name}' already exists"
-                    return
+                    return rx.toast.error(
+                        f"Team with name '{self.name}' already exists"
+                    )
 
                 team = Team(**team_data)
                 session.add(team)
                 session.commit()
-                self.success_message = f"Team '{team.name}' created successfully"
-
-            session.commit()
+                success_message = f"Team '{team.name}' created successfully"
 
         self.show_form = False
         await self.load_teams()
+        return rx.toast.success(success_message)
 
     @rx.event
     async def delete_team(self, team_id: int):
         """Delete team by ID."""
         with rx.session() as session:
             team = session.get(Team, team_id)
-            if team:
-                session.delete(team)
-                session.commit()
-                self.success_message = f"Team '{team.name}' deleted"
-                await self.load_teams()
-            else:
-                self.error_message = "Team not found"
+            if not team:
+                return rx.toast.error("Team not found")
+
+            team_name = team.name
+            session.delete(team)
+            session.commit()
+
+        await self.load_teams()
+        return rx.toast.success(f"Team '{team_name}' deleted")
 
     @rx.event
     def cancel_form(self):
         """Cancel form and hide it."""
         self.show_form = False
         self.error_message = ""
-        self.success_message = ""
 
     @rx.event
     def initialize_new_team_form(self):

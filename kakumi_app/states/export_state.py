@@ -25,7 +25,6 @@ class ExportState(rx.State):
     export_content: str = ""
     export_filename: str = ""
     is_exporting: bool = False
-    error_message: str = ""
 
     @rx.var
     def tournament_options(self) -> list[str]:
@@ -45,15 +44,14 @@ class ExportState(rx.State):
         with rx.session() as session:
             self.tournaments = session.exec(select(Tournament)).all()
 
-    def export_tournament_results(self):
+    @rx.event
+    async def export_tournament_results(self):
         """Export results for selected tournament."""
         if not self.selected_tournament_id:
-            self.error_message = "Please select a tournament"
-            return
+            return rx.toast.error("Please select a tournament")
 
         tournament_id = int(self.selected_tournament_id)
         self.is_exporting = True
-        self.error_message = ""
 
         try:
             if self.export_format == "json":
@@ -65,19 +63,21 @@ class ExportState(rx.State):
 
             self.export_content = content
             self.export_filename = filename
+            return rx.toast.success("Export generated successfully")
         except Exception as e:
-            self.error_message = f"Export failed: {str(e)}"
+            return rx.toast.error(f"Export failed: {str(e)}")
         finally:
             self.is_exporting = False
 
-    def download_export(self):
+    @rx.event
+    async def download_export(self):
         """Trigger download of exported file."""
         # In Reflex, we can't directly trigger downloads from backend
         # This would require a frontend workaround
         pass
 
+    @rx.event
     def clear_export(self):
         """Clear export content."""
         self.export_content = ""
         self.export_filename = ""
-        self.error_message = ""

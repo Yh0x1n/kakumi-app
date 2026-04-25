@@ -12,6 +12,7 @@
 import reflex as rx
 
 from .components.sidebar import sidebar
+from .styles.tokens import HOVER_GRAY
 from .models.athlete_model import Athlete  # noqa [F401]
 from .models.referee_model import Referee  # noqa [F401]
 from .models.tournament_model import (  # noqa [F401]
@@ -73,7 +74,7 @@ def index() -> rx.Component:
                         border_radius="1em",
                         style={
                             "_hover": {
-                                "background-color": "#e0e0e0",
+                                "background-color": HOVER_GRAY,
                                 "transition": "0.5s ease",
                             },
                         },

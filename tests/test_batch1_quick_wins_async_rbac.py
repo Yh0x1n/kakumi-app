@@ -105,12 +105,13 @@ def test_b2_check_session_timeout_is_async_to_await_logout() -> None:
 
 
 @pytest.mark.anyio
-async def test_b2_check_session_timeout_returns_false_for_fresh_session() -> None:
+async def test_b2_check_session_timeout_returns_none_for_fresh_session() -> None:
     state = AuthState()
     state.is_authenticated = True
     state.last_activity = datetime.utcnow().isoformat()
-    expired = await AuthState.check_session_timeout.fn(state)
-    assert expired is False
+    result = await AuthState.check_session_timeout.fn(state)
+    assert result is None
+    assert state.session_expired is False
 
 
 def test_d_rbac_single_source_contract_and_behavior() -> None:

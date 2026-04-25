@@ -28,8 +28,8 @@ class ViewerState(rx.State):
     selected_category_type: Optional[str] = None  # "kata" or "kumite"
 
     # UI state
-    error_message: str = ""
     is_loading: bool = False
+    access_denied: bool = False
 
     @rx.event
     def set_viewer_code(self, code: str):
@@ -40,21 +40,23 @@ class ViewerState(rx.State):
     async def validate_and_load_tournament(self):
         """Validate the viewer code and load the associated tournament."""
         self.is_loading = True
-        self.error_message = ""
 
         if not self.viewer_code:
-            self.error_message = "Por favor ingrese un código de espectador."
             self.is_loading = False
-            return
+            return rx.toast.error("Por favor ingrese un código de espectador.")
 
         tournament = ViewerService.validate_viewer_code(self.viewer_code)
         if tournament:
             self.current_tournament = tournament
-            self.error_message = ""
+            self.access_denied = False
             await self.load_categories()
+            self.is_loading = False
+            return rx.toast.success("Acceso de espectador validado")
         else:
             self.current_tournament = None
-            self.error_message = "Código de espectador inválido."
+            self.access_denied = True
+            self.is_loading = False
+            return rx.toast.error("Código de espectador inválido.")
 
         self.is_loading = False
 
@@ -66,7 +68,7 @@ class ViewerState(rx.State):
         self.categories = []
         self.selected_category_id = None
         self.selected_category_type = None
-        self.error_message = ""
+        self.access_denied = False
 
     @rx.event
     async def load_categories(self):
@@ -110,11 +112,18 @@ class ViewerState(rx.State):
         return self.categories
 
     @rx.event
-    def validate_tournament_access(self, tournament_id: int) -> bool:
-        """Check if the current viewer code grants access to the given tournament."""
+    def validate_tournament_access(self, tournament_id: int):
+        """Set access-denied state if viewer cannot access tournament."""
+        self.access_denied = False
         if not self.is_viewer_authenticated:
-            return False
-        return self.current_tournament.id == tournament_id
+            self.access_denied = True
+            return rx.toast.error("Acceso no autorizado.")
+
+        if self.current_tournament.id != tournament_id:
+            self.access_denied = True
+            return rx.toast.error("Acceso no autorizado a este torneo.")
+
+        return rx.toast.success("Acceso autorizado")
 
     @rx.event
     async def load_tournament_by_id(self, tournament_id: int):
@@ -124,6 +133,9 @@ class ViewerState(rx.State):
         tournament = TournamentService.get_tournament_by_id(tournament_id)
         if tournament and tournament.viewer_code == self.viewer_code:
             self.current_tournament = tournament
+            self.access_denied = False
+            return rx.toast.success("Torneo cargado")
         else:
             self.current_tournament = None
-            self.error_message = "Acceso no autorizado a este torneo."
+            self.access_denied = True
+            return rx.toast.error("Acceso no autorizado a este torneo.")

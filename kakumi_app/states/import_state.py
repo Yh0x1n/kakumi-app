@@ -53,6 +53,7 @@ class ImportState(rx.State):
         else:
             self.error_message = "Failed to read file content."
 
+    @rx.event
     def import_athletes(self):
         """Import athletes from uploaded file."""
         if not self.file_content:
@@ -81,6 +82,7 @@ class ImportState(rx.State):
         self.is_importing = False
         self.show_results = True
 
+    @rx.event
     def reset_import(self):
         """Reset import state."""
         self.file_content = ""

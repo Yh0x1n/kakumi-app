@@ -33,15 +33,6 @@ def teams_table() -> rx.Component:
             margin_bottom="1em",
         ),
         rx.cond(
-            state.success_message,
-            rx.callout(
-                state.success_message,
-                icon="check-circle",
-                color_scheme="green",
-                margin_bottom="1em",
-            ),
-        ),
-        rx.cond(
             state.error_message,
             rx.callout(
                 state.error_message,
