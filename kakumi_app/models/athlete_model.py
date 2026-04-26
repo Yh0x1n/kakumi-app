@@ -8,6 +8,7 @@ import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
+from pydantic import validator
 import reflex as rx
 from sqlmodel import Field, Relationship
 
@@ -89,3 +90,15 @@ class Athlete(rx.Model, table=True):
         back_populates="winner",
         sa_relationship_kwargs={"foreign_keys": "[Match.winner_id]"},
     )
+
+    @validator("date_of_birth")
+    def date_of_birth_not_future(cls, v):
+        if v > datetime.date.today():
+            raise ValueError("date_of_birth cannot be in the future")
+        return v
+
+    @validator("weight_kg")
+    def weight_kg_valid_range(cls, v):
+        if v is not None and (v < 40.0 or v > 120.0):
+            raise ValueError("weight_kg must be between 40.0 and 120.0 kg")
+        return v

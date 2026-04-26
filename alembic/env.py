@@ -5,6 +5,7 @@ from sqlalchemy import pool
 
 import reflex as rx  # noqa: E402
 from alembic import context
+from kakumi_app import models as _models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -19,25 +20,6 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from kakumi_app.models.tournament_model import (
-    Tournament,
-    TournamentCategory,
-    Match,
-    MatchScore,
-    Penalty,
-    Tatami,
-)  # noqa: E402, F401
-from kakumi_app.models.athlete_model import Athlete  # noqa: E402, F401
-from kakumi_app.models.referee_model import Referee  # noqa: E402, F401
-from kakumi_app.models.user_model import User  # noqa: E402, F401
-from kakumi_app.models.login_attempt import LoginAttempt  # noqa: E402, F401
-from kakumi_app.models.token_blacklist import TokenBlacklist  # noqa: E402, F401
-from kakumi_app.models.audit_log import AuditLog  # noqa: E402, F401
-from kakumi_app.models.team_model import Team, TeamMember  # noqa: E402, F401
-from kakumi_app.models.kata_model import (  # noqa: E402, F401
-    KataJudgeScore,
-    KataRoundStanding,
-)
 
 target_metadata = rx.Model.metadata
 
