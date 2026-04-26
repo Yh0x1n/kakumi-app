@@ -4,19 +4,26 @@ Manages CRUD operations for referees.
 """
 
 import json
-from typing import List, Optional, Any
+from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
 
 from kakumi_app.models.referee_model import Referee
+from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class RefereeState(rx.State):
+class RefereeState(CrudStateMixin, rx.State):
     """State for referee management."""
 
-    referees: List[Referee] = []
-    current_referee: Optional[Referee] = None
+    # Shared CRUD UI vars (mirrored for Reflex state registration)
+    is_editing: bool = CrudStateMixin.is_editing
+    show_form: bool = CrudStateMixin.show_form
+    error_message: str = CrudStateMixin.error_message
+    search_query: str = CrudStateMixin.search_query
+
+    referees: list[dict[str, Any]] = []
+    current_referee: Optional[dict[str, Any]] = None
 
     # Form fields
     name: str = ""
@@ -29,31 +36,25 @@ class RefereeState(rx.State):
     email: str = ""
     phone: str = ""
 
-    # UI state
-    is_editing: bool = False
-    show_form: bool = False
-    error_message: str = ""
-    success_message: str = ""
-
-    # Search/filter
-    search_query: str = ""
-
-    def load_referees(self):
+    @rx.event
+    async def load_referees(self) -> None:
         """Load all referees from database."""
         with rx.session() as session:
-            self.referees = session.exec(select(Referee)).all()
+            referees = session.exec(select(Referee)).all()
+            self.referees = [referee.model_dump(mode="json") for referee in referees]
 
-    def filter_referees(self):
+    @rx.event
+    async def filter_referees(self) -> None:
         """Filter referees by search query."""
         if not self.search_query:
-            self.load_referees()
+            await self.load_referees()
             return
 
         query = self.search_query.lower()
         with rx.session() as session:
             all_referees = session.exec(select(Referee)).all()
             self.referees = [
-                r
+                r.model_dump(mode="json")
                 for r in all_referees
                 if query in r.name.lower()
                 or (r.email and query in r.email.lower())
@@ -61,30 +62,31 @@ class RefereeState(rx.State):
                 or query in r.license_number.lower()
             ]
 
-    def set_form_values(self, _: Any, referee: Optional[Referee] = None):
+    @rx.event
+    def set_form_values(
+        self,
+        _: Any,
+        referee: Optional[dict[str, Any]] = None,
+    ) -> None:
         """Set form values for editing or creating."""
         if referee:
             self.current_referee = referee
-            self.is_editing = True
-            self.name = referee.name
-            self.license_number = referee.license_number
-            self.license_level = referee.license_level
-            self.role = referee.role
-            self.tatami_certified = referee.tatami_certified or ""
-            self.is_available = referee.is_available
-            self.dojo = referee.dojo or ""
-            self.email = referee.email or ""
-            self.phone = referee.phone or ""
+            self._set_form_open(editing=True)
+            self.name = referee.get("name", "")
+            self.license_number = referee.get("license_number", "")
+            self.license_level = referee.get("license_level", "NATIONAL")
+            self.role = referee.get("role", "REFEREE")
+            self.tatami_certified = referee.get("tatami_certified") or ""
+            self.is_available = bool(referee.get("is_available", True))
+            self.dojo = referee.get("dojo") or ""
+            self.email = referee.get("email") or ""
+            self.phone = referee.get("phone") or ""
         else:
             self.current_referee = None
-            self.is_editing = False
+            self._set_form_open(editing=False)
             self.reset_form()
 
-        self.show_form = True
-        self.error_message = ""
-        self.success_message = ""
-
-    def reset_form(self):
+    def reset_form(self) -> None:
         """Reset form fields."""
         self.name = ""
         self.license_number = ""
@@ -123,10 +125,13 @@ class RefereeState(rx.State):
 
         return True
 
-    def save_referee(self):
+    @rx.event
+    async def save_referee(self) -> Any:
         """Save referee (create or update)."""
         if not self.validate_form():
             return
+
+        self.error_message = ""
 
         referee_data = {
             "name": self.name,
@@ -143,52 +148,52 @@ class RefereeState(rx.State):
         with rx.session() as session:
             if self.is_editing and self.current_referee:
                 # Update existing
-                referee = session.get(Referee, self.current_referee.id)
+                referee_id = self.current_referee.get("id")
+                referee = session.get(Referee, int(referee_id)) if referee_id else None
                 if not referee:
-                    self.error_message = "Referee not found"
-                    return
+                    return rx.toast.error("Referee not found")
 
                 for key, value in referee_data.items():
                     setattr(referee, key, value)
 
                 session.add(referee)
                 session.commit()
-                self.success_message = f"Referee '{referee.name}' updated successfully"
+                success_message = f"Referee '{referee.name}' updated successfully"
             else:
                 # Check duplicate name
                 existing = session.exec(
                     select(Referee).where(Referee.name == self.name)
                 ).first()
                 if existing:
-                    self.error_message = (
+                    return rx.toast.error(
                         f"Referee with name '{self.name}' already exists"
                     )
-                    return
 
                 referee = Referee(**referee_data)
                 session.add(referee)
                 session.commit()
-                self.success_message = f"Referee '{referee.name}' created successfully"
-
-            session.commit()
+                success_message = f"Referee '{referee.name}' created successfully"
 
         self.show_form = False
-        self.load_referees()
+        await self.load_referees()
+        return rx.toast.success(success_message)
 
-    def delete_referee(self, referee_id: int):
+    @rx.event
+    async def delete_referee(self, referee_id: int) -> Any:
         """Delete referee by ID."""
         with rx.session() as session:
             referee = session.get(Referee, referee_id)
-            if referee:
-                session.delete(referee)
-                session.commit()
-                self.success_message = f"Referee '{referee.name}' deleted"
-                self.load_referees()
-            else:
-                self.error_message = "Referee not found"
+            if not referee:
+                return rx.toast.error("Referee not found")
 
-    def cancel_form(self):
-        """Cancel form and hide it."""
-        self.show_form = False
-        self.error_message = ""
-        self.success_message = ""
+            referee_name = referee.name
+            session.delete(referee)
+            session.commit()
+
+        await self.load_referees()
+        return rx.toast.success(f"Referee '{referee_name}' deleted")
+
+    @rx.event
+    def cancel_form(self) -> None:
+        """Cancel form and hide it using shared mixin logic."""
+        CrudStateMixin.cancel_form(self)

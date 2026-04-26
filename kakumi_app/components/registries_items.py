@@ -1,5 +1,11 @@
 import reflex as rx
 
+from kakumi_app.styles.tokens import (
+    BRAND_RED_HOVER,
+    BRAND_RED_HOVER_LIGHT,
+    TEXT_WHITE,
+)
+
 
 def reg_item(text: str, icon: str, href: str) -> rx.Component:
     if isinstance(icon, str):
@@ -16,7 +22,7 @@ def reg_item(text: str, icon: str, href: str) -> rx.Component:
     return rx.link(
         rx.vstack(
             icon_component,
-            rx.text(text, font_size="20px", color="#ffffff", font_weight="bold"),
+            rx.text(text, font_size="20px", color=TEXT_WHITE, font_weight="bold"),
             width="100%",
             height="100%",
             align="center",
@@ -24,11 +30,11 @@ def reg_item(text: str, icon: str, href: str) -> rx.Component:
             padding="5rem",
             style={
                 "cursor": "pointer",
-                "bg": "#612727",
+                "bg": BRAND_RED_HOVER,
                 "border_radius": "0.5em",
                 "_hover": {
-                    "bg": "#7a3838",
-                    "color": "#ffffff",
+                    "bg": BRAND_RED_HOVER_LIGHT,
+                    "color": TEXT_WHITE,
                     "transition": "0.5s ease",
                 },
             },

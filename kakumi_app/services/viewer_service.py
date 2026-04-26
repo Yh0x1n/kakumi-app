@@ -8,7 +8,6 @@ import datetime
 
 import reflex as rx
 from sqlmodel import select
-from sqlalchemy.orm import joinedload
 
 from kakumi_app.models.tournament_model import Tournament
 
@@ -84,18 +83,11 @@ class ViewerService:
 
     @staticmethod
     def validate_viewer_code(code: str) -> Optional[Tournament]:
-        """Return the tournament associated with the viewer code, or None if invalid, expired, or locked."""
+        """Return tournament for a valid, unlocked, non-expired viewer code."""
         if ViewerService._is_code_locked(code):
             return None
         with rx.session() as session:
-            statement = (
-                select(Tournament)
-                .where(Tournament.viewer_code == code)
-                .options(
-                    joinedload(Tournament.kata_categories),
-                    joinedload(Tournament.kumite_categories),
-                )
-            )
+            statement = select(Tournament).where(Tournament.viewer_code == code)
             tournament = session.exec(statement).first()
             if tournament is None:
                 ViewerService._record_failed_attempt(code)

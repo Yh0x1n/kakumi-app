@@ -12,6 +12,7 @@
 import reflex as rx
 
 from .components.sidebar import sidebar
+from .styles.tokens import HOVER_GRAY
 from .models.athlete_model import Athlete  # noqa [F401]
 from .models.referee_model import Referee  # noqa [F401]
 from .models.tournament_model import (  # noqa [F401]
@@ -21,6 +22,16 @@ from .models.tournament_model import (  # noqa [F401]
 from .pages.exhibition import exhibition
 from .pages.registries import registries
 from .pages.tournament import tournament
+
+# Admin pages — imported for @rx.page side-effect route registration
+import kakumi_app.pages.admin.athletes_page  # noqa: F401
+import kakumi_app.pages.admin.export_page  # noqa: F401
+import kakumi_app.pages.admin.import_page  # noqa: F401
+import kakumi_app.pages.admin.referees_page  # noqa: F401
+import kakumi_app.pages.admin.teams_page  # noqa: F401
+
+# Auth pages
+import kakumi_app.pages.auth.login  # noqa: F401
 
 
 class State(rx.State):
@@ -63,7 +74,7 @@ def index() -> rx.Component:
                         border_radius="1em",
                         style={
                             "_hover": {
-                                "background-color": "#e0e0e0",
+                                "background-color": HOVER_GRAY,
                                 "transition": "0.5s ease",
                             },
                         },

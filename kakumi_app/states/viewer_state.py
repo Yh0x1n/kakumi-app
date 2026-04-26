@@ -3,11 +3,12 @@ Viewer State
 Manages viewer code validation and access to tournament data.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Any, Optional
 
 import reflex as rx
+from sqlmodel import select
 
-from kakumi_app.models.tournament_model import Tournament
+from kakumi_app.models.tournament_model import Tournament, TournamentCategory
 from kakumi_app.services.viewer_service import ViewerService
 
 
@@ -18,78 +19,92 @@ class ViewerState(rx.State):
     viewer_code: str = rx.LocalStorage()
 
     # Current tournament (if code valid)
-    current_tournament: Optional[Tournament] = None
+    current_tournament: Optional[dict[str, Any]] = None
 
     # Categories for the tournament (list of dicts)
-    categories: List[Dict[str, Any]] = []
+    categories: list[dict[str, Any]] = []
 
     # Selected category for bracket/live view
     selected_category_id: Optional[int] = None
     selected_category_type: Optional[str] = None  # "kata" or "kumite"
 
     # UI state
-    error_message: str = ""
     is_loading: bool = False
+    access_denied: bool = False
 
-    def set_viewer_code(self, code: str):
+    @rx.event
+    def set_viewer_code(self, code: str) -> None:
         """Set the viewer code from input."""
         self.viewer_code = code
 
-    def validate_and_load_tournament(self):
+    @rx.event
+    async def validate_and_load_tournament(self) -> Any:
         """Validate the viewer code and load the associated tournament."""
         self.is_loading = True
-        self.error_message = ""
 
         if not self.viewer_code:
-            self.error_message = "Por favor ingrese un código de espectador."
             self.is_loading = False
-            return
+            return rx.toast.error("Por favor ingrese un código de espectador.")
 
         tournament = ViewerService.validate_viewer_code(self.viewer_code)
         if tournament:
-            self.current_tournament = tournament
-            self.error_message = ""
-            self.load_categories()
+            tournament_payload = tournament.model_dump(mode="json")
+            tournament_payload["date"] = tournament_payload.get("start_date", "")
+            self.current_tournament = tournament_payload
+            self.access_denied = False
+            await self.load_categories()
+            self.is_loading = False
+            return rx.toast.success("Acceso de espectador validado")
         else:
             self.current_tournament = None
-            self.error_message = "Código de espectador inválido."
+            self.access_denied = True
+            self.is_loading = False
+            return rx.toast.error("Código de espectador inválido.")
 
         self.is_loading = False
 
-    def clear_viewer_session(self):
+    @rx.event
+    def clear_viewer_session(self) -> None:
         """Clear viewer session (logout)."""
         self.viewer_code = ""
         self.current_tournament = None
         self.categories = []
         self.selected_category_id = None
         self.selected_category_type = None
-        self.error_message = ""
+        self.access_denied = False
 
-    def load_categories(self):
+    @rx.event
+    async def load_categories(self) -> None:
         """Load categories from current tournament."""
         self.categories = []
         if not self.current_tournament:
             return
-        # Kata categories
-        for cat in self.current_tournament.kata_categories:
-            self.categories.append(
-                {
-                    "id": cat.id,
-                    "name": cat.name,
-                    "type": "kata",
-                }
-            )
-        # Kumite categories
-        for cat in self.current_tournament.kumite_categories:
-            self.categories.append(
-                {
-                    "id": cat.id,
-                    "name": cat.name,
-                    "type": "kumite",
-                }
-            )
+        tournament_id = self.current_tournament.get("id")
+        if not tournament_id:
+            return
 
-    def select_category(self, category_id: int, category_type: str):
+        with rx.session() as session:
+            categories = session.exec(
+                select(TournamentCategory).where(
+                    TournamentCategory.tournament_id == int(tournament_id)
+                )
+            ).all()
+
+        self.categories = [
+            {
+                "id": category.id,
+                "name": category.name,
+                "type": (
+                    "kata"
+                    if str(category.modality).startswith("KATA")
+                    else "kumite"
+                ),
+            }
+            for category in categories
+        ]
+
+    @rx.event
+    def select_category(self, category_id: int, category_type: str) -> None:
         """Select a category for viewing bracket and live match."""
         self.selected_category_id = category_id
         self.selected_category_type = category_type
@@ -99,19 +114,39 @@ class ViewerState(rx.State):
         """Check if viewer code is valid and tournament loaded."""
         return self.current_tournament is not None and self.viewer_code != ""
 
-    def validate_tournament_access(self, tournament_id: int) -> bool:
-        """Check if the current viewer code grants access to the given tournament."""
+    @rx.var
+    def filtered_categories(self) -> list[dict[str, Any]]:
+        """Computed categories for viewer listing."""
+        return self.categories
+
+    @rx.event
+    def validate_tournament_access(self, tournament_id: int) -> Any:
+        """Set access-denied state if viewer cannot access tournament."""
+        self.access_denied = False
         if not self.is_viewer_authenticated:
-            return False
-        return self.current_tournament.id == tournament_id
+            self.access_denied = True
+            return rx.toast.error("Acceso no autorizado.")
 
-    def load_tournament_by_id(self, tournament_id: int):
+        current_tournament_id = self.current_tournament.get("id")
+        if current_tournament_id != tournament_id:
+            self.access_denied = True
+            return rx.toast.error("Acceso no autorizado a este torneo.")
+
+        return rx.toast.success("Acceso autorizado")
+
+    @rx.event
+    async def load_tournament_by_id(self, tournament_id: int) -> Any:
         """Load tournament by ID (for route parameter)."""
-        from kakumi_app.services.tournament_service import TournamentService
-
-        tournament = TournamentService.get_tournament_by_id(tournament_id)
+        with rx.session() as session:
+            tournament = session.get(Tournament, tournament_id)
         if tournament and tournament.viewer_code == self.viewer_code:
-            self.current_tournament = tournament
+            tournament_payload = tournament.model_dump(mode="json")
+            tournament_payload["date"] = tournament_payload.get("start_date", "")
+            self.current_tournament = tournament_payload
+            self.access_denied = False
+            await self.load_categories()
+            return rx.toast.success("Torneo cargado")
         else:
             self.current_tournament = None
-            self.error_message = "Acceso no autorizado a este torneo."
+            self.access_denied = True
+            return rx.toast.error("Acceso no autorizado a este torneo.")

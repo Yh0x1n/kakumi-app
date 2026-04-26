@@ -29,17 +29,8 @@ def teams_table() -> rx.Component:
                 on_click=state.set_form_values,
                 color_scheme="green",
             ),
-            spacing="1em",
+            spacing="4",
             margin_bottom="1em",
-        ),
-        rx.cond(
-            state.success_message,
-            rx.callout(
-                state.success_message,
-                icon="check-circle",
-                color_scheme="green",
-                margin_bottom="1em",
-            ),
         ),
         rx.cond(
             state.error_message,
@@ -66,12 +57,12 @@ def teams_table() -> rx.Component:
                 rx.foreach(
                     state.teams,
                     lambda team: rx.table.row(
-                        rx.table.cell(team.id),
-                        rx.table.cell(team.name),
-                        rx.table.cell(team.dojo or "-"),
-                        rx.table.cell(team.category_id),  # Could show category name
-                        rx.table.cell(team.member_count),
-                        rx.table.cell("Sí" if team.is_active else "No"),
+                        rx.table.cell(team["id"]),
+                        rx.table.cell(team["name"]),
+                        rx.table.cell(rx.cond(team["dojo"], team["dojo"], "-")),
+                        rx.table.cell(team["category_id"]),
+                        rx.table.cell(team["member_count"]),
+                        rx.table.cell(rx.cond(team["is_active"], "Sí", "No")),
                         rx.table.cell(
                             rx.hstack(
                                 rx.button(
@@ -80,15 +71,15 @@ def teams_table() -> rx.Component:
                                         event, team
                                     ),
                                     color_scheme="blue",
-                                    size="sm",
+                                    size="2",
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=lambda: state.delete_team(team.id),
+                                    on_click=lambda: state.delete_team(team["id"]),
                                     color_scheme="red",
-                                    size="sm",
+                                    size="2",
                                 ),
-                                spacing="0.5em",
+                                spacing="2",
                             )
                         ),
                     ),
@@ -131,7 +122,7 @@ def team_form() -> rx.Component:
                         width="100%",
                     ),
                     rx.select(
-                        [f"{cat.id}: {cat.name}" for cat in state.categories],
+                        state.category_options,
                         value=state.category_id,
                         on_change=state.set_category_id,
                         width="100%",
@@ -153,10 +144,10 @@ def team_form() -> rx.Component:
                             on_click=state.cancel_form,
                             color_scheme="gray",
                         ),
-                        spacing="1em",
+                        spacing="4",
                         margin_top="1em",
                     ),
-                    spacing="1em",
+                    spacing="4",
                 ),
                 on_submit=state.save_team,
             ),
@@ -214,9 +205,7 @@ def teams() -> rx.Component:
     return teams_page()
 
 
-@rx.page(route="/admin/teams/new")
+@rx.page(route="/admin/teams/new", on_load=TeamState.initialize_new_team_form)
 def new_team() -> rx.Component:
     """Route for new team form."""
-    state = TeamState
-    state.set_form_values(None)
     return teams_page()

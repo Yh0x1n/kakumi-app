@@ -4,8 +4,10 @@ Allows exporting tournament results in JSON/CSV format.
 """
 
 import reflex as rx
+
 from kakumi_app.states.export_state import ExportState
 from kakumi_app.components.sidebar import sidebar
+from kakumi_app.styles.tokens import BG_CODE_PREVIEW, BORDER_LIGHT, BORDER_SUBTLE
 
 
 def export_form() -> rx.Component:
@@ -22,38 +24,21 @@ def export_form() -> rx.Component:
             color="gray",
             margin_bottom="2em",
         ),
-        rx.cond(
-            state.error_message,
-            rx.callout(
-                state.error_message,
-                icon="alert-circle",
-                color_scheme="red",
-                margin_bottom="1em",
-            ),
-        ),
         rx.form(
             rx.vstack(
                 rx.select(
-                    [f"{t.id}: {t.name}" for t in state.tournaments],
+                    state.tournament_options,
                     value=state.selected_tournament_id,
                     on_change=state.set_selected_tournament_id,
                     width="100%",
                     placeholder="Seleccionar torneo *",
                 ),
-                rx.hstack(
-                    rx.radio(
-                        "JSON",
-                        value="json",
-                        checked=state.export_format == "json",
-                        on_change=state.set_export_format,
-                    ),
-                    rx.radio(
-                        "CSV",
-                        value="csv",
-                        checked=state.export_format == "csv",
-                        on_change=state.set_export_format,
-                    ),
-                    spacing="2em",
+                rx.radio_group(
+                    ["json", "csv"],
+                    value=state.export_format,
+                    on_change=state.set_export_format,
+                    direction="row",
+                    spacing="4",
                     margin_y="1em",
                 ),
                 rx.button(
@@ -64,7 +49,7 @@ def export_form() -> rx.Component:
                     disabled=state.is_exporting,
                     width="100%",
                 ),
-                spacing="1em",
+                spacing="4",
             ),
             on_submit=state.export_tournament_results,
         ),
@@ -78,18 +63,16 @@ def export_form() -> rx.Component:
                     ),
                     rx.box(
                         rx.text(
-                            state.export_content[:500] + "..."
-                            if len(state.export_content) > 500
-                            else state.export_content,
+                            state.export_preview,
                             font_family="monospace",
                             font_size="sm",
                             white_space="pre-wrap",
                             max_height="300px",
                             overflow_y="auto",
-                            border="1px solid #eee",
+                            border=f"1px solid {BORDER_LIGHT}",
                             padding="1em",
                             border_radius="4px",
-                            background_color="#f9f9f9",
+                            background_color=BG_CODE_PREVIEW,
                         ),
                     ),
                     rx.hstack(
@@ -103,11 +86,11 @@ def export_form() -> rx.Component:
                             on_click=state.clear_export,
                             color_scheme="gray",
                         ),
-                        spacing="1em",
+                        spacing="4",
                         margin_top="1em",
                     ),
                 ),
-                border="1px solid #ddd",
+                border=f"1px solid {BORDER_SUBTLE}",
                 padding="1em",
                 border_radius="8px",
                 margin_top="2em",
@@ -127,11 +110,6 @@ def export_form() -> rx.Component:
 
 def export_page() -> rx.Component:
     """Main export page layout."""
-    state = ExportState
-
-    # Load tournaments on page load
-    state.load_tournaments()
-
     return rx.box(
         rx.vstack(
             rx.hstack(
@@ -151,7 +129,7 @@ def export_page() -> rx.Component:
     )
 
 
-@rx.page(route="/admin/export")
+@rx.page(route="/admin/export", on_load=ExportState.load_tournaments)
 def export_results() -> rx.Component:
     """Route for export results page."""
     return export_page()

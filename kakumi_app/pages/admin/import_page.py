@@ -47,7 +47,7 @@ def import_form() -> rx.Component:
         ),
         rx.button(
             "Seleccionar Archivo",
-            on_click=rx.upload(id="upload"),
+            on_click=state.handle_upload(rx.upload_files(upload_id="upload")),
             color_scheme="blue",
             margin_bottom="1em",
         ),
@@ -63,7 +63,7 @@ def import_form() -> rx.Component:
                     loading=state.is_importing,
                     disabled=state.is_importing,
                 ),
-                spacing="0.5em",
+                spacing="2",
                 margin_bottom="1em",
             ),
         ),
@@ -76,14 +76,14 @@ def import_form() -> rx.Component:
                         rx.badge(
                             f"Atletas importados: {state.success_count}",
                             color_scheme="green",
-                            size="lg",
+                            size="3",
                         ),
                         rx.badge(
                             f"Errores: {state.error_count}",
                             color_scheme="red",
-                            size="lg",
+                            size="3",
                         ),
-                        spacing="1em",
+                        spacing="4",
                         margin_bottom="1em",
                     ),
                     rx.cond(

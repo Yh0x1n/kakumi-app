@@ -7,7 +7,7 @@ Expone event handlers semánticos para la UI y verifica RBAC antes de cada trans
 Patrón: sigue AuthState como referencia.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import reflex as rx
 
@@ -34,7 +34,7 @@ class TournamentState(rx.State):
         validation_warnings: Lista de warnings de la última transición.
     """
 
-    current_tournament: Optional[Tournament] = None
+    current_tournament: Optional[dict[str, Any]] = None
     transition_error: str = ""
     is_transitioning: bool = False
     validation_warnings: list[str] = []
@@ -43,7 +43,8 @@ class TournamentState(rx.State):
     _current_user_id: int = 0
     _current_user_role: str = ""
 
-    def set_current_tournament(self, tournament_id: int) -> None:
+    @rx.event
+    async def set_current_tournament(self, tournament_id: int) -> None:
         """
         Cargar el torneo actual por ID desde la DB.
 
@@ -51,20 +52,12 @@ class TournamentState(rx.State):
             tournament_id: ID del torneo a cargar.
         """
         with rx.session() as session:
-            self.current_tournament = session.get(Tournament, tournament_id)
+            tournament = session.get(Tournament, tournament_id)
+            self.current_tournament = (
+                tournament.model_dump(mode="json") if tournament else None
+            )
         self.transition_error = ""
         self.validation_warnings = []
-
-    def _check_permission(self) -> bool:
-        """
-        Verificar que el usuario actual tiene permiso para gestionar estados.
-
-        Returns:
-            True si autorizado, False si no tiene permiso.
-        """
-        return AuthService.check_permission(
-            self._current_user_role, MANAGE_TOURNAMENT_STATUS_ROLE
-        )
 
     def _require_permission(self) -> bool:
         """
@@ -73,7 +66,9 @@ class TournamentState(rx.State):
         Returns:
             True si autorizado, False si no.
         """
-        if not self._check_permission():
+        if not AuthService.check_permission(
+            self._current_user_role, MANAGE_TOURNAMENT_STATUS_ROLE
+        ):
             self.transition_error = (
                 "No tiene permisos para cambiar el estado del torneo. "
                 f"Se requiere rol {MANAGE_TOURNAMENT_STATUS_ROLE} o superior."
@@ -91,9 +86,10 @@ class TournamentState(rx.State):
         if not self.current_tournament:
             self.transition_error = "No hay torneo seleccionado"
             return None
-        return self.current_tournament.id
+        tournament_id = self.current_tournament.get("id")
+        return int(tournament_id) if tournament_id else None
 
-    def _execute_transition(self, new_status: TournamentStatus) -> None:
+    async def _execute_transition(self, new_status: TournamentStatus) -> None:
         """
         Ejecutar una transición de estado con validación RBAC y feedback UI.
 
@@ -123,7 +119,7 @@ class TournamentState(rx.State):
 
         if result.success:
             # Recargar el torneo desde DB para reflejar el nuevo estado
-            self.set_current_tournament(tournament_id)
+            await self.set_current_tournament(tournament_id)
             # Capturar warnings si existen
             self.validation_warnings = [w.message for w in result.warnings]
             if self.validation_warnings:
@@ -138,49 +134,62 @@ class TournamentState(rx.State):
             self.transition_error = result.error_message or "Error desconocido"
             yield rx.toast.error(self.transition_error, duration=5000)
 
-    def open_registrations(self) -> None:
+    @rx.event
+    async def open_registrations(self) -> None:
         """
         PLANIFICADO → INSCRIPCION.
         Abre las inscripciones del torneo.
         """
-        yield from self._execute_transition(TournamentStatus.INSCRIPCION)
+        async for event in self._execute_transition(TournamentStatus.INSCRIPCION):
+            yield event
 
-    def close_registrations(self) -> None:
+    @rx.event
+    async def close_registrations(self) -> None:
         """
         INSCRIPCION → VERIFICACION.
         Cierra inscripciones e inicia verificación de atletas.
         """
-        yield from self._execute_transition(TournamentStatus.VERIFICACION)
+        async for event in self._execute_transition(TournamentStatus.VERIFICACION):
+            yield event
 
-    def start_competition(self) -> None:
+    @rx.event
+    async def start_competition(self) -> None:
         """
         VERIFICACION → EN_CURSO.
         Inicia la competencia activa del torneo.
         """
-        yield from self._execute_transition(TournamentStatus.EN_CURSO)
+        async for event in self._execute_transition(TournamentStatus.EN_CURSO):
+            yield event
 
-    def finish_competition(self) -> None:
+    @rx.event
+    async def finish_competition(self) -> None:
         """
         EN_CURSO → FINALIZADO.
         Finaliza la competencia del torneo.
         """
-        yield from self._execute_transition(TournamentStatus.FINALIZADO)
+        async for event in self._execute_transition(TournamentStatus.FINALIZADO):
+            yield event
 
-    def archive_tournament(self) -> None:
+    @rx.event
+    async def archive_tournament(self) -> None:
         """
         FINALIZADO → ARCHIVADO.
         Archiva los resultados del torneo (también ADMIN: PLANIFICADO → ARCHIVADO).
         """
-        yield from self._execute_transition(TournamentStatus.ARCHIVADO)
+        async for event in self._execute_transition(TournamentStatus.ARCHIVADO):
+            yield event
 
-    def reopen_registrations(self) -> None:
+    @rx.event
+    async def reopen_registrations(self) -> None:
         """
         INSCRIPCION → PLANIFICADO.
         Reabre las inscripciones (revierte cierre de inscripciones).
         """
-        yield from self._execute_transition(TournamentStatus.PLANIFICADO)
+        async for event in self._execute_transition(TournamentStatus.PLANIFICADO):
+            yield event
 
-    def cancel_tournament(self) -> None:
+    @rx.event
+    async def cancel_tournament(self) -> None:
         """
         PLANIFICADO → ARCHIVADO (cancelar torneo — requiere ADMIN).
         """
@@ -192,4 +201,5 @@ class TournamentState(rx.State):
             yield rx.toast.error(self.transition_error, duration=5000)
             return
 
-        yield from self._execute_transition(TournamentStatus.ARCHIVADO)
+        async for event in self._execute_transition(TournamentStatus.ARCHIVADO):
+            yield event

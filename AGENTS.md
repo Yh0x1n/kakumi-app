@@ -14,13 +14,15 @@ Kakumi App is a web application for managing Karate-Do tournaments (Kata and Kum
 ## Tech Stack Constraints (Strict)
 
 1. **Python-First Policy**: All development, including UI components and logic, MUST be written in Python. Do not create or modify `.js`, `.ts`, `.jsx`, `.tsx`, `.html`, or `.css` files. Sub-agents must exhaust all possibilities within `rx.Component` and `rx.State` before even considering custom frontend code.
-2. **UI Framework**: Use `reflex` components exclusively for building the frontend.
-3. **ORM**: Use `sqlmodel` for all database interactions.
-4. **Domain Logic**: All sports regulations and scoring logic (strictly adhering to WKF 2026 rules) must reside within Python methods in `rx.State` classes or dedicated Python helper modules.
+2. **Async Runtime**: Use native `asyncio` for production code. Do not integrate `anyio` directly into the app. For tests, use `pytest-anyio` if async fixtures are required.
+3. **UI Framework**: Use `reflex` components exclusively for building the frontend.
+4. **ORM**: Use `sqlmodel` for all database interactions.
+5. **Domain Logic**: All sports regulations and scoring logic (strictly adhering to WKF 2026 rules) must reside within Python methods in `rx.State` classes or dedicated Python helper modules.
 
 ## Development Commands
 
 ### Python Environment
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -33,6 +35,7 @@ reflex export
 ```
 
 ### Backend (kakumi_app directory)
+
 ```bash
 # Install Python dependencies
 pip install -r requirements.txt
@@ -52,7 +55,9 @@ python -c "from test_file import test_database_flow; test_database_flow()"
 ```
 
 ### Single Test Execution
+
 To run a single test function:
+
 ```bash
 # Direct execution
 python -c "from test_file import test_function_name; test_function_name()"
@@ -64,10 +69,11 @@ python -m pytest test_file.py::test_function_name -v
 ## Code Style Guidelines
 
 ### Python (Reflex Frontend & Backend)
+
 - **Formatting**: Follow PEP 8 standards. Use Black (max 88 characters)
 - **Imports**: Standard library first, then third-party, then local.
 - **Types**: Use type hints for all function parameters and return values to improve AI assistance.
-- **Naming**: 
+- **Naming**:
   - Classes (Models, States, Components): PascalCase
   - Functions/variables: snake_case
   - Constants: UPPER_CASE
@@ -77,6 +83,7 @@ python -m pytest test_file.py::test_function_name -v
 - **Line Length**: Maximum 88 characters (Black default)
 
 ### SQL/Model Definitions
+
 - **Naming**: snake_case for table names and columns
 - **Inheritance**: Database tables must inherit from rx.Model (which integrates SQLModel).
 - **Relationships**: Explicitly define foreign keys and relationships
@@ -86,12 +93,14 @@ python -m pytest test_file.py::test_function_name -v
 ## Architecture Patterns
 
 ### Reflex State Management
+
 - State classes inherit from `rx.State`
 - State variables defined as class attributes
 - Event handlers are methods that modify state
 - Use `@rx.var` for computed properties
 
 ### Data Flow
+
 1. Backend models (SQLModel) define database schema
 2. Reflex session manages database transactions
 3. State variables hold UI data
@@ -101,6 +110,7 @@ python -m pytest test_file.py::test_function_name -v
 ## Testing Practices
 
 ### Backend Testing
+
 - Use reflex's session context for database isolation
 - Tests should be transactional or use test databases
 - Follow pytest naming conventions (`test_*.py` or `test_*` functions)
@@ -110,6 +120,7 @@ python -m pytest test_file.py::test_function_name -v
 ## Database Migrations
 
 ### Alembic Workflow
+
 1. Modify models in `kakumi_app/models/`
 2. Generate migration: `alembic revision --autogenerate -m "description"`
 3. Review generated migration in `alembic/versions/`
@@ -117,6 +128,7 @@ python -m pytest test_file.py::test_function_name -v
 5. For data migrations, create empty revision and add custom SQL
 
 ### Best Practices
+
 - Keep migrations small and focused
 - Test migrations on copy of production data
 - Include both upgrade and downgrade paths
@@ -125,6 +137,7 @@ python -m pytest test_file.py::test_function_name -v
 ## File Organization (Expected)
 
 ### Root Level
+
 ```
 /
 ├── kakumi_app/          # Main application (100% Python)
@@ -164,6 +177,7 @@ python -m pytest test_file.py::test_function_name -v
 ## Future Improvements
 
 Based on current codebase analysis:
+
 1. Add formal testing configuration (pytest)
 2. Implement code formatters (Black)
 3. Add type checking (ruff)

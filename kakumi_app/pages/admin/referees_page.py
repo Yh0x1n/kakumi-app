@@ -4,8 +4,9 @@ CRUD operations for referees.
 """
 
 import reflex as rx
-from kakumi_app.states.referee_state import RefereeState
+
 from kakumi_app.components.sidebar import sidebar
+from kakumi_app.states.referee_state import RefereeState
 
 
 def referees_table() -> rx.Component:
@@ -29,17 +30,8 @@ def referees_table() -> rx.Component:
                 on_click=state.set_form_values,
                 color_scheme="green",
             ),
-            spacing="1em",
+            spacing="4",
             margin_bottom="1em",
-        ),
-        rx.cond(
-            state.success_message,
-            rx.callout(
-                state.success_message,
-                icon="check-circle",
-                color_scheme="green",
-                margin_bottom="1em",
-            ),
         ),
         rx.cond(
             state.error_message,
@@ -67,13 +59,13 @@ def referees_table() -> rx.Component:
                 rx.foreach(
                     state.referees,
                     lambda referee: rx.table.row(
-                        rx.table.cell(referee.id),
-                        rx.table.cell(referee.name),
-                        rx.table.cell(referee.license_number),
-                        rx.table.cell(referee.license_level),
-                        rx.table.cell(referee.role),
-                        rx.table.cell("Sí" if referee.is_available else "No"),
-                        rx.table.cell(referee.dojo or "-"),
+                        rx.table.cell(referee["id"]),
+                        rx.table.cell(referee["name"]),
+                        rx.table.cell(referee["license_number"]),
+                        rx.table.cell(referee["license_level"]),
+                        rx.table.cell(referee["role"]),
+                        rx.table.cell(rx.cond(referee["is_available"], "Sí", "No")),
+                        rx.table.cell(rx.cond(referee["dojo"], referee["dojo"], "-")),
                         rx.table.cell(
                             rx.hstack(
                                 rx.button(
@@ -82,15 +74,17 @@ def referees_table() -> rx.Component:
                                         event, referee
                                     ),
                                     color_scheme="blue",
-                                    size="sm",
+                                    size="2",
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=lambda: state.delete_referee(referee.id),
+                                    on_click=lambda: state.delete_referee(
+                                        referee["id"]
+                                    ),
                                     color_scheme="red",
-                                    size="sm",
+                                    size="2",
                                 ),
-                                spacing="0.5em",
+                                spacing="2",
                             )
                         ),
                     ),
@@ -186,10 +180,10 @@ def referee_form() -> rx.Component:
                             on_click=state.cancel_form,
                             color_scheme="gray",
                         ),
-                        spacing="1em",
+                        spacing="4",
                         margin_top="1em",
                     ),
-                    spacing="1em",
+                    spacing="4",
                 ),
                 on_submit=state.save_referee,
             ),
@@ -247,9 +241,10 @@ def referees() -> rx.Component:
     return referees_page()
 
 
-@rx.page(route="/admin/referees/new")
+@rx.page(
+    route="/admin/referees/new",
+    on_load=lambda: RefereeState.set_form_values(None),
+)
 def new_referee() -> rx.Component:
     """Route for new referee form."""
-    state = RefereeState
-    state.set_form_values(None)
     return referees_page()

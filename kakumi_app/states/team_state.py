@@ -3,21 +3,28 @@ Team State
 Manages CRUD operations for teams.
 """
 
-from typing import List, Optional, Any
+from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
 
 from kakumi_app.models.team_model import Team
 from kakumi_app.models.tournament_model import TournamentCategory
+from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class TeamState(rx.State):
+class TeamState(CrudStateMixin, rx.State):
     """State for team management."""
 
-    teams: List[Team] = []
-    current_team: Optional[Team] = None
-    categories: List[TournamentCategory] = []
+    # Shared CRUD UI vars (mirrored for Reflex state registration)
+    is_editing: bool = CrudStateMixin.is_editing
+    show_form: bool = CrudStateMixin.show_form
+    error_message: str = CrudStateMixin.error_message
+    search_query: str = CrudStateMixin.search_query
+
+    teams: list[dict[str, Any]] = []
+    current_team: Optional[dict[str, Any]] = None
+    categories: list[dict[str, Any]] = []
 
     # Form fields
     name: str = ""
@@ -25,55 +32,58 @@ class TeamState(rx.State):
     category_id: str = ""  # string for select
     is_active: bool = True
 
-    # UI state
-    is_editing: bool = False
-    show_form: bool = False
-    error_message: str = ""
-    success_message: str = ""
+    @rx.var
+    def category_options(self) -> list[str]:
+        """Category labels for team form select."""
+        return [f"{cat['id']}: {cat['name']}" for cat in self.categories]
 
-    # Search/filter
-    search_query: str = ""
-
-    def load_teams(self):
+    @rx.event
+    async def load_teams(self) -> None:
         """Load all teams from database."""
         with rx.session() as session:
-            self.teams = session.exec(select(Team)).all()
-            self.categories = session.exec(select(TournamentCategory)).all()
+            teams = session.exec(select(Team)).all()
+            categories = session.exec(select(TournamentCategory)).all()
+            self.teams = [team.model_dump(mode="json") for team in teams]
+            self.categories = [
+                category.model_dump(mode="json") for category in categories
+            ]
 
-    def filter_teams(self):
+    @rx.event
+    async def filter_teams(self) -> None:
         """Filter teams by search query."""
         if not self.search_query:
-            self.load_teams()
+            await self.load_teams()
             return
 
         query = self.search_query.lower()
         with rx.session() as session:
             all_teams = session.exec(select(Team)).all()
             self.teams = [
-                t
+                t.model_dump(mode="json")
                 for t in all_teams
                 if query in t.name.lower() or (t.dojo and query in t.dojo.lower())
             ]
 
-    def set_form_values(self, _: Any, team: Optional[Team] = None):
+    @rx.event
+    def set_form_values(
+        self,
+        _: Any,
+        team: Optional[dict[str, Any]] = None,
+    ) -> None:
         """Set form values for editing or creating."""
         if team:
             self.current_team = team
-            self.is_editing = True
-            self.name = team.name
-            self.dojo = team.dojo or ""
-            self.category_id = str(team.category_id)
-            self.is_active = team.is_active
+            self._set_form_open(editing=True)
+            self.name = team.get("name", "")
+            self.dojo = team.get("dojo") or ""
+            self.category_id = str(team.get("category_id", ""))
+            self.is_active = bool(team.get("is_active", True))
         else:
             self.current_team = None
-            self.is_editing = False
+            self._set_form_open(editing=False)
             self.reset_form()
 
-        self.show_form = True
-        self.error_message = ""
-        self.success_message = ""
-
-    def reset_form(self):
+    def reset_form(self) -> None:
         """Reset form fields."""
         self.name = ""
         self.dojo = ""
@@ -103,10 +113,13 @@ class TeamState(rx.State):
 
         return True
 
-    def save_team(self):
+    @rx.event
+    async def save_team(self) -> Any:
         """Save team (create or update)."""
         if not self.validate_form():
             return
+
+        self.error_message = ""
 
         category_id = int(self.category_id)
 
@@ -121,50 +134,57 @@ class TeamState(rx.State):
         with rx.session() as session:
             if self.is_editing and self.current_team:
                 # Update existing
-                team = session.get(Team, self.current_team.id)
+                team_id = self.current_team.get("id")
+                team = session.get(Team, int(team_id)) if team_id else None
                 if not team:
-                    self.error_message = "Team not found"
-                    return
+                    return rx.toast.error("Team not found")
 
                 for key, value in team_data.items():
                     setattr(team, key, value)
 
                 session.add(team)
                 session.commit()
-                self.success_message = f"Team '{team.name}' updated successfully"
+                success_message = f"Team '{team.name}' updated successfully"
             else:
                 # Check duplicate name
                 existing = session.exec(
                     select(Team).where(Team.name == self.name)
                 ).first()
                 if existing:
-                    self.error_message = f"Team with name '{self.name}' already exists"
-                    return
+                    return rx.toast.error(
+                        f"Team with name '{self.name}' already exists"
+                    )
 
                 team = Team(**team_data)
                 session.add(team)
                 session.commit()
-                self.success_message = f"Team '{team.name}' created successfully"
-
-            session.commit()
+                success_message = f"Team '{team.name}' created successfully"
 
         self.show_form = False
-        self.load_teams()
+        await self.load_teams()
+        return rx.toast.success(success_message)
 
-    def delete_team(self, team_id: int):
+    @rx.event
+    async def delete_team(self, team_id: int) -> Any:
         """Delete team by ID."""
         with rx.session() as session:
             team = session.get(Team, team_id)
-            if team:
-                session.delete(team)
-                session.commit()
-                self.success_message = f"Team '{team.name}' deleted"
-                self.load_teams()
-            else:
-                self.error_message = "Team not found"
+            if not team:
+                return rx.toast.error("Team not found")
 
-    def cancel_form(self):
-        """Cancel form and hide it."""
-        self.show_form = False
-        self.error_message = ""
-        self.success_message = ""
+            team_name = team.name
+            session.delete(team)
+            session.commit()
+
+        await self.load_teams()
+        return rx.toast.success(f"Team '{team_name}' deleted")
+
+    @rx.event
+    def cancel_form(self) -> None:
+        """Cancel form and hide it using shared mixin logic."""
+        CrudStateMixin.cancel_form(self)
+
+    @rx.event
+    def initialize_new_team_form(self) -> None:
+        """Prepare clean form state when opening new team route."""
+        self.set_form_values(None)

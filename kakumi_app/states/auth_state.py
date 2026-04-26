@@ -5,7 +5,7 @@ Manages login/logout, token storage, user info, and role-based permissions.
 
 import os
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Any, Optional
 
 import reflex as rx
 
@@ -21,13 +21,14 @@ class AuthState(rx.State):
     refresh_token: str = rx.LocalStorage()
 
     # Current user info (derived from token)
-    current_user: Optional[User] = None
+    current_user: Optional[dict[str, Any]] = None
     is_authenticated: bool = False
     user_role: str = ""
 
     # Session timeout tracking
     SESSION_TIMEOUT_MINUTES = 30
-    last_activity: datetime = datetime.utcnow()
+    last_activity: str = datetime.utcnow().isoformat()
+    session_expired: bool = False
 
     # Login form fields
     username: str = ""
@@ -40,34 +41,37 @@ class AuthState(rx.State):
     # Initial admin creation flag
     admin_created: bool = False
 
-    # Role hierarchy for RBAC
-    ROLE_HIERARCHY = {
-        "ADMIN": 3,
-        "OPERATOR": 2,
-        "VIEWER": 1,
-    }
+    def _clear_auth_session(self) -> None:
+        """Clear local auth/session data from state."""
+        self.access_token = ""
+        self.refresh_token = ""
+        self.current_user = None
+        self.is_authenticated = False
+        self.user_role = ""
+        self.login_error = ""
 
-    def update_last_activity(self):
+    def update_last_activity(self) -> None:
         """Update the last activity timestamp."""
-        self.last_activity = datetime.utcnow()
+        self.last_activity = datetime.utcnow().isoformat()
 
-    def check_session_timeout(self) -> bool:
-        """Returns True if session expired due to inactivity."""
+    @rx.event
+    async def check_session_timeout(self) -> Any:
+        """Expire session on inactivity without returning values."""
         if not self.is_authenticated:
-            return False
-        elapsed = datetime.utcnow() - self.last_activity
+            return
+        elapsed = datetime.utcnow() - datetime.fromisoformat(self.last_activity)
         if elapsed > timedelta(minutes=self.SESSION_TIMEOUT_MINUTES):
-            self.logout()
-            return True
-        return False
+            self.session_expired = True
+            self._clear_auth_session()
+            return [
+                rx.toast.warning(
+                    "Session timed out due to inactivity. Please log in again."
+                ),
+                rx.redirect("/login"),
+            ]
 
-    def require_role(self, required_role: str) -> bool:
-        """Check if current user has required role or higher. Returns True if authorized."""
-        user_level = self.ROLE_HIERARCHY.get(self.user_role, 0)
-        required_level = self.ROLE_HIERARCHY.get(required_role, 999)
-        return user_level >= required_level
-
-    def login(self):
+    @rx.event
+    async def login(self) -> Any:
         """Authenticate user with username/password."""
         self.is_logging_in = True
         self.login_error = ""
@@ -80,7 +84,7 @@ class AuthState(rx.State):
         if error:
             self.login_error = error
             self.is_logging_in = False
-            return
+            return rx.toast.error(error)
 
         # Store tokens
         self.access_token = access_token
@@ -98,22 +102,21 @@ class AuthState(rx.State):
         self.is_logging_in = False
 
         # Redirect will be handled by frontend (check is_authenticated)
+        return [rx.toast.success("Login successful"), rx.redirect("/")]
 
-    def logout(self):
+    @rx.event
+    async def logout(self) -> Any:
         """Log out current user."""
         # Invalidate token on server side (optional)
         if self.access_token:
             AuthService.logout_user(self.access_token)
 
         # Clear local storage
-        self.access_token = ""
-        self.refresh_token = ""
-        self.current_user = None
-        self.is_authenticated = False
-        self.user_role = ""
-        self.login_error = ""
+        self._clear_auth_session()
+        self.session_expired = False
+        return [rx.toast.info("Logged out"), rx.redirect("/login")]
 
-    def _load_user_from_token(self):
+    def _load_user_from_token(self) -> None:
         """Load user information from stored access token."""
         if not self.access_token:
             self.is_authenticated = False
@@ -124,7 +127,13 @@ class AuthState(rx.State):
         # Validate token and get user
         user = AuthService.get_current_user_from_token(self.access_token)
         if user:
-            self.current_user = user
+            self.current_user = {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role,
+                "is_active": user.is_active,
+            }
             self.is_authenticated = True
             self.user_role = user.role
             # Update last activity on successful token load
@@ -137,22 +146,29 @@ class AuthState(rx.State):
             self.current_user = None
             self.user_role = ""
 
-    def check_auth(self):
+    @rx.event
+    async def check_auth(self) -> Any:
         """Check authentication status (called on page load)."""
         self._load_user_from_token()
-        # If not authenticated, ensure we redirect to login
-        # This is handled by the frontend logic in each page
+        if self.is_authenticated:
+            return rx.redirect("/")
 
-    def set_username(self, value: str):
+    @rx.event
+    def set_username(self, value: str) -> None:
+        """Set login username field value."""
         self.username = value
 
-    def set_password(self, value: str):
+    @rx.event
+    def set_password(self, value: str) -> None:
+        """Set login password field value."""
         self.password = value
 
-    def create_initial_admin(self):
+    @rx.event
+    async def create_initial_admin(self) -> None:
         """
         Create initial admin user if no users exist.
-        Uses environment variables: ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL, ADMIN_FULL_NAME.
+        Uses env vars: ADMIN_USERNAME, ADMIN_PASSWORD,
+        ADMIN_EMAIL, ADMIN_FULL_NAME.
         """
         if self.admin_created:
             return
@@ -188,8 +204,18 @@ class AuthState(rx.State):
             print(f"Initial admin user '{admin_username}' created.")
             self.admin_created = True
 
-    def has_permission(self, required_role: str) -> bool:
+    def _has_permission(self, required_role: str) -> bool:
         """Check if current user has permission for required role."""
         if not self.is_authenticated:
             return False
         return AuthService.check_permission(self.user_role, required_role)
+
+    @rx.var
+    def is_admin(self) -> bool:
+        """Whether current user has admin-level permissions."""
+        return self._has_permission("ADMIN")
+
+    @rx.var
+    def is_operator(self) -> bool:
+        """Whether current user has operator-level permissions."""
+        return self._has_permission("OPERATOR")

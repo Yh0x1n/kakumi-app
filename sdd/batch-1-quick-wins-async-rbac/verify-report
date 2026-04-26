@@ -1,0 +1,152 @@
+## Verification Report
+
+**Change**: batch-1-quick-wins-async-rbac
+**Version**: N/A
+**Mode**: Strict TDD
+
+---
+
+### Completeness
+| Metric | Value |
+|--------|-------|
+| Tasks total | 24 |
+| Tasks complete | 24 |
+| Tasks incomplete | 0 |
+
+All tasks in the Engram `tasks` artifact are marked complete.
+
+---
+
+### Build & Tests Execution
+
+**Build**: ➖ Not configured
+
+**App startup smoke**: ✅ `python -m kakumi_app.kakumi_app` exited without startup error during verify.
+
+**Tests**: ✅ 341 passed / ❌ 0 failed / ⚠️ 1 skipped
+```text
+.venv/bin/pytest tests -v
+341 passed, 1 skipped, 6 warnings in 118.97s
+```
+
+**Coverage**: ➖ Not available
+
+---
+
+### TDD Compliance
+| Check | Result | Details |
+|-------|--------|---------|
+| TDD Evidence reported | ✅ | `apply-progress` contains TDD Cycle Evidence table |
+| All tasks have tests | ✅ | 3/3 perfection-slice task rows reference real tests or lint-only cleanup |
+| RED confirmed (tests exist) | ✅ | Referenced test files exist |
+| GREEN confirmed (tests pass) | ✅ | Related tests pass in full suite |
+| Triangulation adequate | ✅ | 2 behavior rows multi-case; 1 lint-only row single/non-branching |
+| Safety Net for modified files | ✅ | All perfection-slice rows report executed safety net |
+
+**TDD Compliance**: 6/6 checks passed
+
+---
+
+### Test Layer Distribution
+| Layer | Tests | Files | Tools |
+|-------|-------|-------|-------|
+| Unit | 18 | 2 | pytest |
+| Integration | 0 | 0 | httpx available, not used here |
+| E2E | 0 | 0 | not installed |
+| **Total** | **18** | **2** | |
+
+---
+
+### Changed File Coverage
+Coverage analysis skipped — no coverage tool detected.
+
+---
+
+### Assertion Quality
+**Assertion quality**: ✅ All assertions verify real behavior
+
+---
+
+### Quality Metrics
+**Linter**: ✅ No errors (`.venv/bin/ruff check kakumi_app/services/auth_service.py kakumi_app/states/athlete_state.py kakumi_app/states/export_state.py kakumi_app/auth/rbac.py tests/test_batch1_quick_wins_async_rbac.py`)
+
+**Type Checker**: ➖ Not available
+
+---
+
+### Spec Compliance Matrix
+
+| Requirement | Scenario | Test | Result |
+|-------------|----------|------|--------|
+| REQ-A1 Register admin pages | Scenario A1 routes reachable after imports | `tests/test_batch1_quick_wins_async_rbac.py > test_reg_admin_routes_registered_in_reflex_page_registry` | ✅ COMPLIANT |
+| REQ-A2 Move admin init to page load | Scenario A2 no import-time side effect; executes on load | `tests/test_batch1_quick_wins_async_rbac.py > test_login_page_on_load_calls_admin_init_only_when_invoked` | ✅ COMPLIANT |
+| REQ-A3 Centralize color tokens | Scenario A3 tokens extracted and consumed | `tests/test_batch1_quick_wins_async_rbac.py > test_a_tokens_are_hex_strings` | ⚠️ PARTIAL |
+| REQ-A4 `last_activity` stored as ISO string | Acceptance criterion | `tests/test_batch1_quick_wins_async_rbac.py > test_a_auth_last_activity_is_iso_string` | ✅ COMPLIANT |
+| REQ-A5 `ViewerState.filtered_categories` is computed var | Acceptance criterion | `tests/test_batch1_quick_wins_async_rbac.py > test_a_viewer_filtered_categories_behaves_as_computed_var` | ✅ COMPLIANT |
+| REQ-B1 Public handlers use `@rx.event` | Scenario B1 | `tests/test_batch1_quick_wins_async_rbac.py > test_b1_required_handlers_are_reflex_event_handlers` | ⚠️ PARTIAL |
+| REQ-B2 DB I/O handlers async | Scenario B1 loop not blocked | `tests/test_batch1_quick_wins_async_rbac.py > test_b2_db_handlers_are_async_event_functions` | ⚠️ PARTIAL |
+| REQ-B3 Await async service calls | Acceptance criterion | `tests/test_batch1_quick_wins_async_rbac.py > test_b2_check_session_timeout_returns_false_for_fresh_session[asyncio]` | ⚠️ PARTIAL |
+| REQ-B4 No sync/async mixing in handlers | Acceptance criterion | `tests/test_batch1_quick_wins_async_rbac.py > test_b2_filter_handlers_are_async_to_avoid_sync_async_mixing`; `tests/test_batch1_quick_wins_async_rbac.py > test_b2_check_session_timeout_is_async_to_await_logout` | ✅ COMPLIANT |
+| REQ-D1 Remove `AuthState.require_role()` | Scenario D1 single source | `tests/test_batch1_quick_wins_async_rbac.py > test_d_rbac_single_source_contract_and_behavior` | ✅ COMPLIANT |
+| REQ-D2 Remove `TournamentState._check_permission()` and route to service | Scenario D1 single source | `tests/test_batch1_quick_wins_async_rbac.py > test_d_rbac_single_source_contract_and_behavior` | ✅ COMPLIANT |
+| REQ-D3 Remove duplicate role hierarchy/helpers from state layer | Scenario D1 single source | `tests/test_batch1_quick_wins_async_rbac.py > test_d_rbac_single_source_contract_and_behavior`; `tests/test_batch1_quick_wins_async_rbac.py > test_d_legacy_rbac_role_helpers_are_removed`; `tests/test_rbac_integration.py > test_has_permission_admin_can_access_all` | ✅ COMPLIANT |
+| REQ-D4 Document `AuthService.check_permission()` role order | Acceptance criterion | `tests/test_batch1_quick_wins_async_rbac.py > test_d_rbac_single_source_contract_and_behavior` + static docstring evidence | ⚠️ PARTIAL |
+
+**Compliance summary**: 8/13 scenarios/criteria compliant, 5/13 partial, 0 failing, 0 untested blockers
+
+Partial entries are structurally implemented and statically evidenced, but runtime tests do not exhaustively cover every file/route listed by the spec.
+
+---
+
+### Correctness (Static — Structural Evidence)
+| Requirement | Status | Notes |
+|------------|--------|-------|
+| REQ-A1 | ✅ Implemented | `kakumi_app/kakumi_app.py` imports all five admin page modules for side-effect registration |
+| REQ-A2 | ✅ Implemented | `kakumi_app/pages/auth/login.py` uses `on_load=[AuthState.create_initial_admin, AuthState.check_auth]`; no module-level call remains |
+| REQ-A3 | ✅ Implemented | `kakumi_app/styles/tokens.py` exists; sidebar/athletes page consume tokens |
+| REQ-A4 | ✅ Implemented | `AuthState.last_activity` is `str` with ISO timestamp updates |
+| REQ-A5 | ✅ Implemented | `ViewerState.filtered_categories` is decorated with `@rx.var` |
+| REQ-B1 | ✅ Implemented | Target public handlers are decorated with `@rx.event` across target states |
+| REQ-B2 | ✅ Implemented | Target DB handlers are `async def` in athlete/auth/referee/team/viewer/tournament flows |
+| REQ-B3 | ✅ Implemented | Awaits present where async state handlers call other async handlers |
+| REQ-B4 | ✅ Implemented | No remaining sync/async mixing found in verified handlers |
+| REQ-D1 | ✅ Implemented | `AuthState.require_role` removed |
+| REQ-D2 | ✅ Implemented | No `TournamentState._check_permission`; helper delegates to `AuthService.check_permission` |
+| REQ-D3 | ✅ Implemented | Dead `ROLE_HIERARCHY` / `require_role` removed from `kakumi_app/auth/rbac.py`; service remains single truth |
+| REQ-D4 | ✅ Implemented | `AuthService.check_permission()` docstring explains hierarchy and single-source rule |
+
+---
+
+### Coherence (Design / Proposal)
+| Decision | Followed? | Notes |
+|----------|-----------|-------|
+| Register admin routes via imports | ✅ Yes | Implemented in `kakumi_app/kakumi_app.py` |
+| Move login admin initialization to page load | ✅ Yes | Implemented via `@rx.page(... on_load=...)` |
+| Centralize role checks in `AuthService.check_permission()` | ✅ Yes | State-layer duplicate helpers removed |
+| Convert target DB handlers to async | ✅ Yes | Implemented in target state handlers |
+| Formal design artifact available for comparison | ⚠️ No | No Engram `design` artifact found for this change; coherence checked against proposal/spec only |
+
+---
+
+### Issues Found
+
+**CRITICAL** (must fix before archive):
+None
+
+**WARNING** (should fix):
+- Runtime compliance coverage is not fully exhaustive for all spec items: route test asserts `/admin/athletes`, `/admin/referees`, `/admin/teams`, but not `/admin/import` or `/admin/export`.
+- Strict behavioral coverage for token extraction and decorator rollout is representative rather than file-exhaustive.
+- Full suite still emits pre-existing `InsecureKeyLengthWarning` warnings due to short development JWT secret in `AuthService`.
+- One unrelated legacy concurrency test remains skipped: `tests/test_penalty_concurrency.py::test_scenario_1_concurrent_apply_penalty_documented`.
+- No design artifact exists for this change, limiting design-vs-implementation comparison.
+
+**SUGGESTION** (nice to have):
+- Add one behavioral route-registry test covering `/admin/import` and `/admin/export` to make REQ-A1 fully runtime-proven.
+- Add coverage tooling to support changed-file coverage gating in future strict-TDD verify passes.
+
+---
+
+### Verdict
+PASS WITH WARNINGS
+
+Batch 1 is clean enough to archive: no blocking failures remain, strict-TDD gate passes, full suite is green, and remaining items are low-risk coverage/config warnings rather than release blockers.

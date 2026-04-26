@@ -3,7 +3,7 @@ Export State
 Manages export of tournament results.
 """
 
-from typing import List, Optional
+from typing import Any
 
 import reflex as rx
 from sqlmodel import select
@@ -15,7 +15,7 @@ from kakumi_app.services.export_service import ExportService
 class ExportState(rx.State):
     """State for export functionality."""
 
-    tournaments: List[Tournament] = []
+    tournaments: list[dict[str, Any]] = []
     selected_tournament_id: str = ""
 
     # Export options
@@ -25,22 +25,36 @@ class ExportState(rx.State):
     export_content: str = ""
     export_filename: str = ""
     is_exporting: bool = False
-    error_message: str = ""
 
-    def load_tournaments(self):
+    @rx.var
+    def tournament_options(self) -> list[str]:
+        """Tournament labels for select options."""
+        return [f"{t['id']}: {t['name']}" for t in self.tournaments]
+
+    @rx.var
+    def export_preview(self) -> str:
+        """Short export content preview for UI."""
+        if len(self.export_content) > 500:
+            return self.export_content[:500] + "..."
+        return self.export_content
+
+    @rx.event
+    def load_tournaments(self) -> None:
         """Load available tournaments."""
         with rx.session() as session:
-            self.tournaments = session.exec(select(Tournament)).all()
+            tournaments = session.exec(select(Tournament)).all()
+            self.tournaments = [
+                tournament.model_dump(mode="json") for tournament in tournaments
+            ]
 
-    def export_tournament_results(self):
+    @rx.event
+    async def export_tournament_results(self) -> Any:
         """Export results for selected tournament."""
         if not self.selected_tournament_id:
-            self.error_message = "Please select a tournament"
-            return
+            return rx.toast.error("Please select a tournament")
 
         tournament_id = int(self.selected_tournament_id)
         self.is_exporting = True
-        self.error_message = ""
 
         try:
             if self.export_format == "json":
@@ -52,19 +66,21 @@ class ExportState(rx.State):
 
             self.export_content = content
             self.export_filename = filename
+            return rx.toast.success("Export generated successfully")
         except Exception as e:
-            self.error_message = f"Export failed: {str(e)}"
+            return rx.toast.error(f"Export failed: {str(e)}")
         finally:
             self.is_exporting = False
 
-    def download_export(self):
+    @rx.event
+    async def download_export(self) -> None:
         """Trigger download of exported file."""
         # In Reflex, we can't directly trigger downloads from backend
         # This would require a frontend workaround
         pass
 
-    def clear_export(self):
+    @rx.event
+    def clear_export(self) -> None:
         """Clear export content."""
         self.export_content = ""
         self.export_filename = ""
-        self.error_message = ""

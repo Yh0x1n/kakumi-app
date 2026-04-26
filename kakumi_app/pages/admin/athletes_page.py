@@ -4,8 +4,10 @@ CRUD operations for athletes with import functionality.
 """
 
 import reflex as rx
-from kakumi_app.states.athlete_state import AthleteState
+
 from kakumi_app.components.sidebar import sidebar
+from kakumi_app.states.athlete_state import AthleteState
+from kakumi_app.styles.tokens import BORDER_SUBTLE
 
 
 def athletes_table() -> rx.Component:
@@ -29,17 +31,8 @@ def athletes_table() -> rx.Component:
                 on_click=state.set_form_values,
                 color_scheme="green",
             ),
-            spacing="1em",
+            spacing="4",
             margin_bottom="1em",
-        ),
-        rx.cond(
-            state.success_message,
-            rx.callout(
-                state.success_message,
-                icon="check-circle",
-                color_scheme="green",
-                margin_bottom="1em",
-            ),
         ),
         rx.cond(
             state.error_message,
@@ -68,16 +61,22 @@ def athletes_table() -> rx.Component:
                 rx.foreach(
                     state.athletes,
                     lambda athlete: rx.table.row(
-                        rx.table.cell(athlete.id),
-                        rx.table.cell(athlete.name),
-                        rx.table.cell(athlete.email or "-"),
-                        rx.table.cell(athlete.date_of_birth),
-                        rx.table.cell(athlete.gender),
+                        rx.table.cell(athlete["id"]),
+                        rx.table.cell(athlete["name"]),
                         rx.table.cell(
-                            f"{athlete.weight_kg} kg" if athlete.weight_kg else "-"
+                            rx.cond(athlete["email"], athlete["email"], "-")
                         ),
-                        rx.table.cell(athlete.dojo or "-"),
-                        rx.table.cell("Sí" if athlete.is_active else "No"),
+                        rx.table.cell(athlete["date_of_birth"]),
+                        rx.table.cell(athlete["gender"]),
+                        rx.table.cell(
+                            rx.cond(
+                                athlete["weight_kg"],
+                                rx.text(f"{athlete['weight_kg']} kg"),
+                                rx.text("-"),
+                            )
+                        ),
+                        rx.table.cell(rx.cond(athlete["dojo"], athlete["dojo"], "-")),
+                        rx.table.cell(rx.cond(athlete["is_active"], "Sí", "No")),
                         rx.table.cell(
                             rx.hstack(
                                 rx.button(
@@ -86,15 +85,17 @@ def athletes_table() -> rx.Component:
                                         event, athlete
                                     ),
                                     color_scheme="blue",
-                                    size="sm",
+                                    size="2",
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=lambda: state.delete_athlete(athlete.id),
+                                    on_click=lambda: state.delete_athlete(
+                                        athlete["id"]
+                                    ),
                                     color_scheme="red",
-                                    size="sm",
+                                    size="2",
                                 ),
-                                spacing="0.5em",
+                                spacing="2",
                             )
                         ),
                     ),
@@ -199,16 +200,16 @@ def athlete_form() -> rx.Component:
                             on_click=state.cancel_form,
                             color_scheme="gray",
                         ),
-                        spacing="1em",
+                        spacing="4",
                         margin_top="1em",
                     ),
-                    spacing="1em",
+                    spacing="4",
                 ),
                 on_submit=state.save_athlete,
             ),
         ),
         padding="2em",
-        border="1px solid #ddd",
+        border=f"1px solid {BORDER_SUBTLE}",
         border_radius="8px",
         margin_bottom="2em",
     )
@@ -260,9 +261,10 @@ def athletes() -> rx.Component:
     return athletes_page()
 
 
-@rx.page(route="/admin/athletes/new")
+@rx.page(
+    route="/admin/athletes/new",
+    on_load=lambda: AthleteState.set_form_values(None),
+)
 def new_athlete() -> rx.Component:
     """Route for new athlete form."""
-    state = AthleteState
-    state.set_form_values(None)  # Reset form for new athlete
     return athletes_page()

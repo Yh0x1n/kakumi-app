@@ -74,7 +74,10 @@ class AuthService:
         role: str = "OPERATOR",
         is_active: bool = True,
     ) -> Tuple[Optional[User], str]:
-        """Create a new user with password strength validation. Returns (user, error)."""
+        """Create user with password validation.
+
+        Returns a tuple: (user, error_message).
+        """
         # Validate password strength
         is_valid, msg = AuthService.validate_password_strength(password)
         if not is_valid:
@@ -251,7 +254,6 @@ class AuthService:
             if payload.get("type") != "refresh":
                 return None, None, "Not a refresh token"
             user_id = int(payload.get("sub"))
-            jti = payload.get("jti")
         except Exception as e:
             return None, None, "Invalid token: " + str(e)
         if AuthService.is_token_blacklisted(refresh_token):
@@ -310,7 +312,10 @@ class AuthService:
     def login_user(
         username: str, password: str
     ) -> Tuple[Optional[str], Optional[str], str]:
-        """Authenticate user and return tokens. Returns (access_token, refresh_token, error)."""
+        """Authenticate user and return tokens.
+
+        Returns: (access_token, refresh_token, error_message).
+        """
         # Get user by username
         user = AuthService.get_user_by_username(username)
         if not user:
@@ -382,7 +387,22 @@ class AuthService:
 
     @staticmethod
     def check_permission(user_role: str, required_role: str) -> bool:
-        """Check if user_role meets the required_role using hierarchy."""
+        """Check if user_role meets or exceeds required_role in RBAC hierarchy.
+
+        Role order (highest to lowest): ADMIN (3) > OPERATOR (2) > VIEWER (1).
+        Unknown roles default to 0 (no access). Unknown required_role defaults to
+        999 (deny all).
+
+        This is the SINGLE source of truth for role checks in Kakumi.
+        All States must delegate to this method — do NOT duplicate ROLE_HIERARCHY.
+
+        Args:
+            user_role: Current user's role string.
+            required_role: Minimum role string required for action.
+
+        Returns:
+            True if user_role level >= required_role level.
+        """
         user_level = ROLE_HIERARCHY.get(user_role, 0)
         required_level = ROLE_HIERARCHY.get(required_role, 999)
         return user_level >= required_level

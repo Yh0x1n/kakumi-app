@@ -6,6 +6,7 @@ Login page for viewer code entry and dashboard for live results.
 import reflex as rx
 
 from kakumi_app.states.viewer_state import ViewerState
+from kakumi_app.styles.tokens import BG_CARD_ALT, BG_PAGE
 
 # NOTE: Bracket components not yet implemented
 # from kakumi_app.components.bracket_view import bracket_view
@@ -44,14 +45,6 @@ def viewer_login_page() -> rx.Component:
                                     margin_bottom="1em",
                                     max_length=8,
                                 ),
-                                rx.cond(
-                                    state.error_message,
-                                    rx.text(
-                                        state.error_message,
-                                        color="red",
-                                        margin_bottom="1em",
-                                    ),
-                                ),
                                 rx.button(
                                     "Acceder",
                                     on_click=state.validate_and_load_tournament,
@@ -63,7 +56,10 @@ def viewer_login_page() -> rx.Component:
                             on_submit=lambda e: state.validate_and_load_tournament(),
                         ),
                         rx.text(
-                            "El código le permitirá ver los resultados en vivo del torneo.",
+                            (
+                                "El código le permitirá ver los resultados "
+                                "en vivo del torneo."
+                            ),
                             font_size="0.9em",
                             color="gray",
                             margin_top="1em",
@@ -80,7 +76,7 @@ def viewer_login_page() -> rx.Component:
             spacing="5",
             justify_content="center",
             min_height="100vh",
-            background_color="#f5f5f5",
+            background_color=BG_PAGE,
         ),
         width="100%",
         min_height="100vh",
@@ -100,7 +96,7 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
         rx.vstack(
             rx.hstack(
                 rx.heading(
-                    f"Torneo: {state.current_tournament.name}",
+                    f"Torneo: {state.current_tournament['name']}",
                     font_size="2em",
                     font_weight="bold",
                     color="black",
@@ -116,13 +112,13 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 width="100%",
             ),
             rx.box(
-                rx.vstack(
-                    rx.heading("Información del Torneo", size="4"),
-                    rx.text(f"Fecha: {state.current_tournament.date}"),
-                    rx.text(f"Estado: {state.current_tournament.status}"),
-                    rx.text(f"Código de espectador: {state.viewer_code}"),
-                    padding="1em",
-                    background_color="#f0f0f0",
+                    rx.vstack(
+                        rx.heading("Información del Torneo", size="4"),
+                        rx.text(f"Fecha: {state.current_tournament['date']}"),
+                        rx.text(f"Estado: {state.current_tournament['status']}"),
+                        rx.text(f"Código de espectador: {state.viewer_code}"),
+                        padding="1em",
+                        background_color=BG_CARD_ALT,
                     border_radius="0.5em",
                     margin_bottom="1em",
                 ),
@@ -133,7 +129,7 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 rx.vstack(
                     rx.heading("Categorías", size="4"),
                     rx.cond(
-                        state.categories.length == 0,
+                        len(state.categories) == 0,
                         rx.text("No hay categorías disponibles."),
                         rx.foreach(
                             state.categories,
@@ -159,7 +155,10 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 rx.vstack(
                     rx.heading("Bracket en Vivo", size="4"),
                     rx.text(
-                        "La visualización de brackets estará disponible cuando se implementen los modelos de partidos.",
+                        (
+                            "La visualización de brackets estará disponible "
+                            "cuando se implementen los modelos de partidos."
+                        ),
                         color="gray",
                     ),
                     padding="1em",
@@ -171,7 +170,7 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 padding="0 1em",
             ),
             spacing="4",
-            background_color="#f5f5f5",
+            background_color=BG_PAGE,
             min_height="100vh",
         ),
         width="100%",

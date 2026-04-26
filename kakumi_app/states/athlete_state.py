@@ -4,19 +4,26 @@ Manages CRUD operations for athletes.
 """
 
 import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class AthleteState(rx.State):
+class AthleteState(CrudStateMixin, rx.State):
     """State for athlete management."""
 
-    athletes: List[Athlete] = []
-    current_athlete: Optional[Athlete] = None
+    # Shared CRUD UI vars (mirrored for Reflex state registration)
+    is_editing: bool = CrudStateMixin.is_editing
+    show_form: bool = CrudStateMixin.show_form
+    error_message: str = CrudStateMixin.error_message
+    search_query: str = CrudStateMixin.search_query
+
+    athletes: list[dict[str, Any]] = []
+    current_athlete: Optional[dict[str, Any]] = None
 
     # Form fields
     name: str = ""
@@ -30,64 +37,58 @@ class AthleteState(rx.State):
     license_number: str = ""
     is_active: bool = True
 
-    # UI state
-    is_editing: bool = False
-    show_form: bool = False
-    error_message: str = ""
-    success_message: str = ""
-
-    # Search/filter
-    search_query: str = ""
-
-    def load_athletes(self):
+    @rx.event
+    async def load_athletes(self) -> None:
         """Load all athletes from database."""
         with rx.session() as session:
-            self.athletes = session.exec(select(Athlete)).all()
+            athletes = session.exec(select(Athlete)).all()
+            self.athletes = [athlete.model_dump(mode="json") for athlete in athletes]
 
-    def filter_athletes(self):
+    @rx.event
+    async def filter_athletes(self) -> None:
         """Filter athletes by search query."""
         if not self.search_query:
-            self.load_athletes()
+            await self.load_athletes()
             return
 
         query = self.search_query.lower()
         with rx.session() as session:
             all_athletes = session.exec(select(Athlete)).all()
             self.athletes = [
-                a
+                a.model_dump(mode="json")
                 for a in all_athletes
                 if query in a.name.lower()
                 or (a.email and query in a.email.lower())
                 or (a.dojo and query in a.dojo.lower())
             ]
 
-    def set_form_values(self, _: Any, athlete: Optional[Athlete] = None):
+    @rx.event
+    def set_form_values(
+        self,
+        _: Any,
+        athlete: Optional[dict[str, Any]] = None,
+    ) -> None:
         """Set form values for editing or creating."""
         if athlete:
             self.current_athlete = athlete
-            self.is_editing = True
-            self.name = athlete.name
-            self.email = athlete.email or ""
-            self.date_of_birth = (
-                athlete.date_of_birth.isoformat() if athlete.date_of_birth else ""
-            )
-            self.gender = athlete.gender
-            self.weight_kg = str(athlete.weight_kg) if athlete.weight_kg else ""
-            self.belt_rank = athlete.belt_rank or ""
-            self.dojo = athlete.dojo or ""
-            self.nationality = athlete.nationality or ""
-            self.license_number = athlete.license_number or ""
-            self.is_active = athlete.is_active
+            self._set_form_open(editing=True)
+            self.name = athlete.get("name", "")
+            self.email = athlete.get("email") or ""
+            self.date_of_birth = athlete.get("date_of_birth") or ""
+            self.gender = athlete.get("gender", "MALE")
+            weight_kg = athlete.get("weight_kg")
+            self.weight_kg = str(weight_kg) if weight_kg else ""
+            self.belt_rank = athlete.get("belt_rank") or ""
+            self.dojo = athlete.get("dojo") or ""
+            self.nationality = athlete.get("nationality") or ""
+            self.license_number = athlete.get("license_number") or ""
+            self.is_active = bool(athlete.get("is_active", True))
         else:
             self.current_athlete = None
-            self.is_editing = False
+            self._set_form_open(editing=False)
             self.reset_form()
 
-        self.show_form = True
-        self.error_message = ""
-        self.success_message = ""
-
-    def reset_form(self):
+    def reset_form(self) -> None:
         """Reset form fields."""
         self.name = ""
         self.email = ""
@@ -102,10 +103,27 @@ class AthleteState(rx.State):
 
     def validate_form(self) -> bool:
         """Validate form fields."""
+        validators = (
+            self._validate_name,
+            self._validate_date_of_birth,
+            self._validate_gender,
+            self._validate_weight,
+            self._validate_belt_rank,
+        )
+        for validate in validators:
+            if not validate():
+                return False
+        return True
+
+    def _validate_name(self) -> bool:
+        """Validate athlete name constraints."""
         if not self.name or len(self.name) < 2 or len(self.name) > 255:
             self.error_message = "Name must be 2-255 characters"
             return False
+        return True
 
+    def _validate_date_of_birth(self) -> bool:
+        """Validate date input and prevent future birth dates."""
         if not self.date_of_birth:
             self.error_message = "Date of birth is required"
             return False
@@ -118,11 +136,17 @@ class AthleteState(rx.State):
         except ValueError:
             self.error_message = "Invalid date format (YYYY-MM-DD)"
             return False
+        return True
 
+    def _validate_gender(self) -> bool:
+        """Validate gender value against supported enum values."""
         if self.gender not in ["MALE", "FEMALE"]:
             self.error_message = "Gender must be MALE or FEMALE"
             return False
+        return True
 
+    def _validate_weight(self) -> bool:
+        """Validate optional weight field range and numeric format."""
         if self.weight_kg:
             try:
                 weight = float(self.weight_kg)
@@ -132,20 +156,24 @@ class AthleteState(rx.State):
             except ValueError:
                 self.error_message = "Weight must be a number"
                 return False
-
-        if self.belt_rank:
-            if not (
-                self.belt_rank.startswith("Kyu ") or self.belt_rank.startswith("Dan ")
-            ):
-                self.error_message = "Belt rank must be 'Kyu 1-8' or 'Dan 1-10'"
-                return False
-
         return True
 
-    def save_athlete(self):
+    def _validate_belt_rank(self) -> bool:
+        """Validate optional belt rank prefix for Kyu or Dan entries."""
+        if self.belt_rank and not (
+            self.belt_rank.startswith("Kyu ") or self.belt_rank.startswith("Dan ")
+        ):
+            self.error_message = "Belt rank must be 'Kyu 1-8' or 'Dan 1-10'"
+            return False
+        return True
+
+    @rx.event
+    async def save_athlete(self) -> Any:
         """Save athlete (create or update)."""
         if not self.validate_form():
             return
+
+        self.error_message = ""
 
         weight_kg = float(self.weight_kg) if self.weight_kg else None
 
@@ -167,52 +195,52 @@ class AthleteState(rx.State):
         with rx.session() as session:
             if self.is_editing and self.current_athlete:
                 # Update existing
-                athlete = session.get(Athlete, self.current_athlete.id)
+                athlete_id = self.current_athlete.get("id")
+                athlete = session.get(Athlete, int(athlete_id)) if athlete_id else None
                 if not athlete:
-                    self.error_message = "Athlete not found"
-                    return
+                    return rx.toast.error("Athlete not found")
 
                 for key, value in athlete_data.items():
                     setattr(athlete, key, value)
 
                 session.add(athlete)
                 session.commit()
-                self.success_message = f"Athlete '{athlete.name}' updated successfully"
+                success_message = f"Athlete '{athlete.name}' updated successfully"
             else:
                 # Check duplicate name
                 existing = session.exec(
                     select(Athlete).where(Athlete.name == self.name)
                 ).first()
                 if existing:
-                    self.error_message = (
+                    return rx.toast.error(
                         f"Athlete with name '{self.name}' already exists"
                     )
-                    return
 
                 athlete = Athlete(**athlete_data)
                 session.add(athlete)
                 session.commit()
-                self.success_message = f"Athlete '{athlete.name}' created successfully"
-
-            session.commit()
+                success_message = f"Athlete '{athlete.name}' created successfully"
 
         self.show_form = False
-        self.load_athletes()
+        await self.load_athletes()
+        return rx.toast.success(success_message)
 
-    def delete_athlete(self, athlete_id: int):
+    @rx.event
+    async def delete_athlete(self, athlete_id: int) -> Any:
         """Delete athlete by ID."""
         with rx.session() as session:
             athlete = session.get(Athlete, athlete_id)
-            if athlete:
-                session.delete(athlete)
-                session.commit()
-                self.success_message = f"Athlete '{athlete.name}' deleted"
-                self.load_athletes()
-            else:
-                self.error_message = "Athlete not found"
+            if not athlete:
+                return rx.toast.error("Athlete not found")
 
-    def cancel_form(self):
-        """Cancel form and hide it."""
-        self.show_form = False
-        self.error_message = ""
-        self.success_message = ""
+            athlete_name = athlete.name
+            session.delete(athlete)
+            session.commit()
+
+        await self.load_athletes()
+        return rx.toast.success(f"Athlete '{athlete_name}' deleted")
+
+    @rx.event
+    def cancel_form(self) -> None:
+        """Cancel form and hide it using shared mixin logic."""
+        CrudStateMixin.cancel_form(self)
