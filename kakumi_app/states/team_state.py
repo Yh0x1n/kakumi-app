@@ -3,7 +3,7 @@ Team State
 Manages CRUD operations for teams.
 """
 
-from typing import List, Optional, Any
+from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
@@ -22,9 +22,9 @@ class TeamState(CrudStateMixin, rx.State):
     error_message: str = CrudStateMixin.error_message
     search_query: str = CrudStateMixin.search_query
 
-    teams: List[Team] = []
-    current_team: Optional[Team] = None
-    categories: List[TournamentCategory] = []
+    teams: list[dict[str, Any]] = []
+    current_team: Optional[dict[str, Any]] = None
+    categories: list[dict[str, Any]] = []
 
     # Form fields
     name: str = ""
@@ -35,14 +35,18 @@ class TeamState(CrudStateMixin, rx.State):
     @rx.var
     def category_options(self) -> list[str]:
         """Category labels for team form select."""
-        return [f"{cat.id}: {cat.name}" for cat in self.categories]
+        return [f"{cat['id']}: {cat['name']}" for cat in self.categories]
 
     @rx.event
     async def load_teams(self) -> None:
         """Load all teams from database."""
         with rx.session() as session:
-            self.teams = session.exec(select(Team)).all()
-            self.categories = session.exec(select(TournamentCategory)).all()
+            teams = session.exec(select(Team)).all()
+            categories = session.exec(select(TournamentCategory)).all()
+            self.teams = [team.model_dump(mode="json") for team in teams]
+            self.categories = [
+                category.model_dump(mode="json") for category in categories
+            ]
 
     @rx.event
     async def filter_teams(self) -> None:
@@ -55,21 +59,25 @@ class TeamState(CrudStateMixin, rx.State):
         with rx.session() as session:
             all_teams = session.exec(select(Team)).all()
             self.teams = [
-                t
+                t.model_dump(mode="json")
                 for t in all_teams
                 if query in t.name.lower() or (t.dojo and query in t.dojo.lower())
             ]
 
     @rx.event
-    def set_form_values(self, _: Any, team: Optional[Team] = None) -> None:
+    def set_form_values(
+        self,
+        _: Any,
+        team: Optional[dict[str, Any]] = None,
+    ) -> None:
         """Set form values for editing or creating."""
         if team:
             self.current_team = team
             self._set_form_open(editing=True)
-            self.name = team.name
-            self.dojo = team.dojo or ""
-            self.category_id = str(team.category_id)
-            self.is_active = team.is_active
+            self.name = team.get("name", "")
+            self.dojo = team.get("dojo") or ""
+            self.category_id = str(team.get("category_id", ""))
+            self.is_active = bool(team.get("is_active", True))
         else:
             self.current_team = None
             self._set_form_open(editing=False)
@@ -126,7 +134,8 @@ class TeamState(CrudStateMixin, rx.State):
         with rx.session() as session:
             if self.is_editing and self.current_team:
                 # Update existing
-                team = session.get(Team, self.current_team.id)
+                team_id = self.current_team.get("id")
+                team = session.get(Team, int(team_id)) if team_id else None
                 if not team:
                     return rx.toast.error("Team not found")
 

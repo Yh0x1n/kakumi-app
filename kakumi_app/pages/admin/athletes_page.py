@@ -61,20 +61,22 @@ def athletes_table() -> rx.Component:
                 rx.foreach(
                     state.athletes,
                     lambda athlete: rx.table.row(
-                        rx.table.cell(athlete.id),
-                        rx.table.cell(athlete.name),
-                        rx.table.cell(rx.cond(athlete.email, athlete.email, "-")),
-                        rx.table.cell(athlete.date_of_birth),
-                        rx.table.cell(athlete.gender),
+                        rx.table.cell(athlete["id"]),
+                        rx.table.cell(athlete["name"]),
+                        rx.table.cell(
+                            rx.cond(athlete["email"], athlete["email"], "-")
+                        ),
+                        rx.table.cell(athlete["date_of_birth"]),
+                        rx.table.cell(athlete["gender"]),
                         rx.table.cell(
                             rx.cond(
-                                athlete.weight_kg,
-                                rx.text(f"{athlete.weight_kg} kg"),
+                                athlete["weight_kg"],
+                                rx.text(f"{athlete['weight_kg']} kg"),
                                 rx.text("-"),
                             )
                         ),
-                        rx.table.cell(rx.cond(athlete.dojo, athlete.dojo, "-")),
-                        rx.table.cell(rx.cond(athlete.is_active, "Sí", "No")),
+                        rx.table.cell(rx.cond(athlete["dojo"], athlete["dojo"], "-")),
+                        rx.table.cell(rx.cond(athlete["is_active"], "Sí", "No")),
                         rx.table.cell(
                             rx.hstack(
                                 rx.button(
@@ -87,7 +89,9 @@ def athletes_table() -> rx.Component:
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=lambda: state.delete_athlete(athlete.id),
+                                    on_click=lambda: state.delete_athlete(
+                                        athlete["id"]
+                                    ),
                                     color_scheme="red",
                                     size="2",
                                 ),
@@ -257,9 +261,10 @@ def athletes() -> rx.Component:
     return athletes_page()
 
 
-@rx.page(route="/admin/athletes/new")
+@rx.page(
+    route="/admin/athletes/new",
+    on_load=lambda: AthleteState.set_form_values(None),
+)
 def new_athlete() -> rx.Component:
     """Route for new athlete form."""
-    state = AthleteState
-    state.set_form_values(None)  # Reset form for new athlete
     return athletes_page()

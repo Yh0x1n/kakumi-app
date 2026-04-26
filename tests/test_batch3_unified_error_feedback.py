@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-
 import pytest
 import reflex as rx
 from reflex.event import EventSpec
@@ -19,6 +18,7 @@ from kakumi_app.states.export_state import ExportState
 from kakumi_app.states.import_state import ImportState
 from kakumi_app.states.referee_state import RefereeState
 from kakumi_app.states.team_state import TeamState
+from kakumi_app.states.tournament_state import TournamentState
 from kakumi_app.states.viewer_state import ViewerState
 
 
@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _as_event_list(result: object) -> list[EventSpec]:
+    """Normalize handler result into list of EventSpec instances."""
     if result is None:
         return []
     if isinstance(result, EventSpec):
@@ -36,6 +37,7 @@ def _as_event_list(result: object) -> list[EventSpec]:
 
 
 def _event_args_map(event: EventSpec) -> dict[str, object]:
+    """Build argument map from Reflex event arg tuples."""
     args_map: dict[str, object] = {}
     for key_var, value in event.args:
         key = getattr(key_var, "_js_expr", "")
@@ -45,6 +47,7 @@ def _event_args_map(event: EventSpec) -> dict[str, object]:
 
 
 def _is_toast_event(event: EventSpec, toast_kind: str | None = None) -> bool:
+    """Check whether event is toast, optionally by kind."""
     args_map = _event_args_map(event)
     function_arg = args_map.get("function")
     function_expr = getattr(function_arg, "_js_expr", "")
@@ -56,6 +59,7 @@ def _is_toast_event(event: EventSpec, toast_kind: str | None = None) -> bool:
 
 
 def _is_redirect_event(event: EventSpec, path: str | None = None) -> bool:
+    """Check whether event is redirect, optionally by route path."""
     args_map = _event_args_map(event)
     if "path" not in args_map:
         return False
@@ -66,6 +70,7 @@ def _is_redirect_event(event: EventSpec, path: str | None = None) -> bool:
 
 
 def _assert_toast_event(result: object, toast_kind: str | None = None) -> None:
+    """Assert at least one toast event exists in handler output."""
     events = _as_event_list(result)
     assert events
     assert any(_is_toast_event(event, toast_kind=toast_kind) for event in events)
@@ -140,7 +145,7 @@ def test_viewer_access_denied_returns_toast_feedback() -> None:
 def test_viewer_access_allowed_returns_success_toast_feedback() -> None:
     state = ViewerState()
     state.viewer_code = "VALID-CODE"
-    state.current_tournament = SimpleNamespace(id=77)
+    state.current_tournament = {"id": 77, "name": "Copa Test"}
 
     result = ViewerState.validate_tournament_access.fn(state, 77)
 
@@ -148,6 +153,17 @@ def test_viewer_access_allowed_returns_success_toast_feedback() -> None:
     assert events
     assert any(_is_toast_event(event, toast_kind="success") for event in events)
     assert state.access_denied is False
+
+
+def test_viewer_access_denied_when_tournament_id_mismatch() -> None:
+    state = ViewerState()
+    state.viewer_code = "VALID-CODE"
+    state.current_tournament = {"id": 77, "name": "Copa Test"}
+
+    result = ViewerState.validate_tournament_access.fn(state, 88)
+
+    _assert_toast_event(result)
+    assert state.access_denied is True
 
 
 @pytest.mark.anyio
@@ -204,6 +220,43 @@ async def test_auth_login_success_returns_success_toast_then_redirect(
     assert state.password == ""
     assert state.login_error == ""
     assert state.is_logging_in is False
+
+
+@pytest.mark.anyio
+async def test_auth_login_success_sets_serializable_current_user_dict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = AuthState()
+    state.username = "admin"
+    state.password = "StrongPass123!"
+
+    monkeypatch.setattr(
+        "kakumi_app.states.auth_state.AuthService.login_user",
+        lambda username, password: ("access-token", "refresh-token", ""),
+    )
+
+    fake_user = SimpleNamespace(
+        id=99,
+        username="admin",
+        email="admin@test.dev",
+        role="ADMIN",
+        is_active=True,
+    )
+    monkeypatch.setattr(
+        "kakumi_app.states.auth_state.AuthService.get_current_user_from_token",
+        lambda token: fake_user,
+    )
+
+    await AuthState.login.fn(state)
+
+    assert isinstance(state.current_user, dict)
+    assert state.current_user == {
+        "id": 99,
+        "username": "admin",
+        "email": "admin@test.dev",
+        "role": "ADMIN",
+        "is_active": True,
+    }
 
 
 @pytest.mark.anyio
@@ -366,6 +419,41 @@ async def test_export_with_selected_tournament_returns_success_toast_and_payload
     assert state.export_content == '{"id": 12}'
     assert state.export_filename == "tournament_12_results.json"
     assert state.is_exporting is False
+
+
+def test_export_load_tournaments_sets_serializable_dicts(sample_tournament) -> None:
+    state = ExportState()
+
+    ExportState.load_tournaments.fn(state)
+
+    assert state.tournaments
+    assert isinstance(state.tournaments[0], dict)
+    assert state.tournaments[0]["id"] == sample_tournament.id
+
+
+@pytest.mark.anyio
+async def test_tournament_state_set_current_tournament_uses_dict_snapshot(
+    sample_tournament,
+) -> None:
+    state = TournamentState()
+
+    await TournamentState.set_current_tournament.fn(state, sample_tournament.id)
+
+    assert isinstance(state.current_tournament, dict)
+    assert state.current_tournament["id"] == sample_tournament.id
+
+
+@pytest.mark.anyio
+async def test_viewer_load_categories_queries_by_tournament_id(sample_category) -> None:
+    state = ViewerState()
+    state.current_tournament = {"id": sample_category.tournament_id}
+
+    await ViewerState.load_categories.fn(state)
+
+    assert state.categories
+    assert isinstance(state.categories[0], dict)
+    assert state.categories[0]["id"] == sample_category.id
+    assert state.categories[0]["type"] == "kata"
 
 
 def test_import_state_error_messages_persist_inline_until_reset(

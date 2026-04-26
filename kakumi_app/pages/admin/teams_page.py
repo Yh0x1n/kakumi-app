@@ -57,12 +57,12 @@ def teams_table() -> rx.Component:
                 rx.foreach(
                     state.teams,
                     lambda team: rx.table.row(
-                        rx.table.cell(team.id),
-                        rx.table.cell(team.name),
-                        rx.table.cell(rx.cond(team.dojo, team.dojo, "-")),
-                        rx.table.cell(team.category_id),  # Could show category name
-                        rx.table.cell(team.member_count),
-                        rx.table.cell(rx.cond(team.is_active, "Sí", "No")),
+                        rx.table.cell(team["id"]),
+                        rx.table.cell(team["name"]),
+                        rx.table.cell(rx.cond(team["dojo"], team["dojo"], "-")),
+                        rx.table.cell(team["category_id"]),
+                        rx.table.cell(team["member_count"]),
+                        rx.table.cell(rx.cond(team["is_active"], "Sí", "No")),
                         rx.table.cell(
                             rx.hstack(
                                 rx.button(
@@ -75,7 +75,7 @@ def teams_table() -> rx.Component:
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=lambda: state.delete_team(team.id),
+                                    on_click=lambda: state.delete_team(team["id"]),
                                     color_scheme="red",
                                     size="2",
                                 ),

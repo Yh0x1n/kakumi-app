@@ -8,6 +8,7 @@ from datetime import date
 import pytest
 import reflex as rx
 from reflex.event import EventHandler
+from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
@@ -71,24 +72,24 @@ def test_set_form_open_sets_show_form_edit_mode_and_clears_error(
 
 def test_athlete_set_form_values_edit_populates_fields_and_flags() -> None:
     """Athlete edit path must preserve existing population behavior."""
-    athlete = Athlete(
-        id=17,
-        name="Atleta Edit",
-        date_of_birth=date(2002, 7, 1),
-        gender="FEMALE",
-        email="athlete@test.dev",
-        weight_kg=62.5,
-        belt_rank="Dan 2",
-        dojo="Dojo Sur",
-        nationality="ARG",
-        license_number="A-001",
-        is_active=False,
-    )
+    athlete = {
+        "id": 17,
+        "name": "Atleta Edit",
+        "date_of_birth": "2002-07-01",
+        "gender": "FEMALE",
+        "email": "athlete@test.dev",
+        "weight_kg": 62.5,
+        "belt_rank": "Dan 2",
+        "dojo": "Dojo Sur",
+        "nationality": "ARG",
+        "license_number": "A-001",
+        "is_active": False,
+    }
     state = AthleteState()
 
     AthleteState.set_form_values.fn(state, None, athlete)
 
-    assert state.current_athlete.id == athlete.id
+    assert state.current_athlete["id"] == athlete["id"]
     assert state.is_editing is True
     assert state.show_form is True
     assert state.error_message == ""
@@ -106,7 +107,7 @@ def test_athlete_set_form_values_edit_populates_fields_and_flags() -> None:
 def test_athlete_set_form_values_create_resets_fields() -> None:
     """Athlete create path must reset form and open non-edit mode."""
     state = AthleteState()
-    state.current_athlete = Athlete(id=8, name="Old", date_of_birth=date(2000, 1, 1))
+    state.current_athlete = {"id": 8, "name": "Old"}
     state.name = "Dirty"
     state.date_of_birth = "2020-01-01"
     state.gender = "FEMALE"
@@ -127,23 +128,23 @@ def test_athlete_set_form_values_create_resets_fields() -> None:
 
 def test_referee_set_form_values_edit_populates_fields_and_flags() -> None:
     """Referee edit path keeps field mapping stable."""
-    referee = Referee(
-        id=21,
-        name="Ref Edit",
-        license_number="REF-009",
-        license_level="INTERNATIONAL",
-        role="JUDGE",
-        tatami_certified='["A", "B"]',
-        is_available=False,
-        dojo="Federación",
-        email="ref@test.dev",
-        phone="12345",
-    )
+    referee = {
+        "id": 21,
+        "name": "Ref Edit",
+        "license_number": "REF-009",
+        "license_level": "INTERNATIONAL",
+        "role": "JUDGE",
+        "tatami_certified": '["A", "B"]',
+        "is_available": False,
+        "dojo": "Federación",
+        "email": "ref@test.dev",
+        "phone": "12345",
+    }
     state = RefereeState()
 
     RefereeState.set_form_values.fn(state, None, referee)
 
-    assert state.current_referee.id == referee.id
+    assert state.current_referee["id"] == referee["id"]
     assert state.is_editing is True
     assert state.show_form is True
     assert state.error_message == ""
@@ -161,7 +162,7 @@ def test_referee_set_form_values_edit_populates_fields_and_flags() -> None:
 def test_referee_set_form_values_create_resets_fields() -> None:
     """Referee create path resets form values and opens non-edit mode."""
     state = RefereeState()
-    state.current_referee = Referee(id=33, name="Ref")
+    state.current_referee = {"id": 33, "name": "Ref"}
     state.name = "Dirty"
     state.license_number = "DIRTY"
     state.license_level = "INTERNATIONAL"
@@ -181,19 +182,19 @@ def test_referee_set_form_values_create_resets_fields() -> None:
 
 def test_team_set_form_values_edit_populates_fields_and_flags() -> None:
     """Team edit path keeps category and flags behavior stable."""
-    team = Team(
-        id=40,
-        name="Team Edit",
-        category_id=12,
-        dojo="Dojo Oeste",
-        member_count=0,
-        is_active=False,
-    )
+    team = {
+        "id": 40,
+        "name": "Team Edit",
+        "category_id": 12,
+        "dojo": "Dojo Oeste",
+        "member_count": 0,
+        "is_active": False,
+    }
     state = TeamState()
 
     TeamState.set_form_values.fn(state, None, team)
 
-    assert state.current_team.id == team.id
+    assert state.current_team["id"] == team["id"]
     assert state.is_editing is True
     assert state.show_form is True
     assert state.error_message == ""
@@ -206,7 +207,7 @@ def test_team_set_form_values_edit_populates_fields_and_flags() -> None:
 def test_team_set_form_values_create_resets_fields() -> None:
     """Team create path resets state and opens form in create mode."""
     state = TeamState()
-    state.current_team = Team(id=41, name="Old", category_id=2)
+    state.current_team = {"id": 41, "name": "Old", "category_id": 2}
     state.name = "Dirty"
     state.category_id = "999"
     state.dojo = "Dirty Dojo"
@@ -253,8 +254,9 @@ async def test_filter_athletes_applies_case_insensitive_name_email_dojo_match(
     await AthleteState.filter_athletes.fn(state)
 
     assert len(state.athletes) == 1
-    assert state.athletes[0].name == "Luna Karate"
-    assert state.athletes[0].id != sample_athlete.id
+    assert isinstance(state.athletes[0], dict)
+    assert state.athletes[0]["name"] == "Luna Karate"
+    assert state.athletes[0]["id"] != sample_athlete.id
 
 
 @pytest.mark.anyio
@@ -278,7 +280,8 @@ async def test_filter_athletes_without_query_reloads_all_rows(
 
     await AthleteState.filter_athletes.fn(state)
 
-    athlete_ids = {athlete.id for athlete in state.athletes}
+    assert all(isinstance(athlete, dict) for athlete in state.athletes)
+    athlete_ids = {athlete["id"] for athlete in state.athletes}
     assert sample_athlete.id in athlete_ids
     assert second.id in athlete_ids
 
@@ -317,8 +320,9 @@ async def test_filter_referees_matches_license_email_and_dojo(
     await RefereeState.filter_referees.fn(state)
 
     assert len(state.referees) == 1
-    assert state.referees[0].license_number == "FILTRO-777"
-    assert state.referees[0].id != sample_referee.id
+    assert isinstance(state.referees[0], dict)
+    assert state.referees[0]["license_number"] == "FILTRO-777"
+    assert state.referees[0]["id"] != sample_referee.id
 
 
 @pytest.mark.anyio
@@ -344,7 +348,8 @@ async def test_filter_referees_without_query_reloads_all_rows(
 
     await RefereeState.filter_referees.fn(state)
 
-    referee_ids = {referee.id for referee in state.referees}
+    assert all(isinstance(referee, dict) for referee in state.referees)
+    referee_ids = {referee["id"] for referee in state.referees}
     assert sample_referee.id in referee_ids
     assert second.id in referee_ids
 
@@ -377,8 +382,9 @@ async def test_filter_teams_matches_name_and_dojo(sample_team: Team) -> None:
     await TeamState.filter_teams.fn(state)
 
     assert len(state.teams) == 1
-    assert state.teams[0].name == "Norte Squad"
-    assert state.teams[0].id != sample_team.id
+    assert isinstance(state.teams[0], dict)
+    assert state.teams[0]["name"] == "Norte Squad"
+    assert state.teams[0]["id"] != sample_team.id
 
 
 @pytest.mark.anyio
@@ -401,7 +407,8 @@ async def test_filter_teams_without_query_reloads_all_rows(sample_team: Team) ->
 
     await TeamState.filter_teams.fn(state)
 
-    team_ids = {team.id for team in state.teams}
+    assert all(isinstance(team, dict) for team in state.teams)
+    team_ids = {team["id"] for team in state.teams}
     assert sample_team.id in team_ids
     assert second.id in team_ids
 
@@ -409,7 +416,7 @@ async def test_filter_teams_without_query_reloads_all_rows(sample_team: Team) ->
 def test_initialize_new_team_form_calls_shared_create_flow() -> None:
     """Boundary: keep initialize_new_team_form delegating to set_form_values."""
     state = TeamState()
-    state.current_team = Team(id=9, name="Old Team", category_id=1)
+    state.current_team = {"id": 9, "name": "Old Team", "category_id": 1}
     state.name = "Dirty"
     state.category_id = "22"
     state.error_message = "stale"
@@ -423,6 +430,156 @@ def test_initialize_new_team_form_calls_shared_create_flow() -> None:
     assert state.show_form is True
     assert state.is_editing is False
     assert state.error_message == ""
+
+
+@pytest.mark.anyio
+async def test_save_athlete_update_rehydrates_by_current_athlete_id(
+    sample_athlete: Athlete,
+) -> None:
+    """Update path must rehydrate from current_athlete['id'] and mutate row."""
+    state = AthleteState()
+    state.is_editing = True
+    state.current_athlete = {"id": str(sample_athlete.id), "name": "snapshot-stale"}
+    state.name = "Carlos Actualizado"
+    state.email = "carlos.updated@test.dev"
+    state.date_of_birth = "1998-05-15"
+    state.gender = "MALE"
+    state.weight_kg = "73"
+    state.belt_rank = "Dan 3"
+    state.dojo = "Dojo Norte"
+    state.nationality = "ARG"
+    state.license_number = "LIC-001-UPD"
+    state.is_active = True
+
+    await AthleteState.save_athlete.fn(state)
+
+    with rx.session() as session:
+        updated = session.get(Athlete, sample_athlete.id)
+        assert updated is not None
+        assert updated.name == "Carlos Actualizado"
+        assert updated.email == "carlos.updated@test.dev"
+        assert updated.belt_rank == "Dan 3"
+        assert updated.license_number == "LIC-001-UPD"
+        assert session.exec(select(Athlete)).all()
+        assert len(session.exec(select(Athlete)).all()) == 1
+
+    assert state.show_form is False
+    assert state.athletes
+    assert all(isinstance(athlete, dict) for athlete in state.athletes)
+    assert state.athletes[0]["id"] == sample_athlete.id
+    assert state.athletes[0]["name"] == "Carlos Actualizado"
+
+
+@pytest.mark.anyio
+async def test_save_referee_update_rehydrates_by_current_referee_id(
+    sample_referee: Referee,
+) -> None:
+    """Update path must rehydrate from current_referee['id'] and mutate row."""
+    state = RefereeState()
+    state.is_editing = True
+    state.current_referee = {"id": str(sample_referee.id), "name": "snapshot-stale"}
+    state.name = "Referee Actualizado"
+    state.license_number = "REF-001"
+    state.license_level = "INTERNATIONAL"
+    state.role = "JUDGE"
+    state.tatami_certified = '["A"]'
+    state.is_available = False
+    state.dojo = "Dojo Centro"
+    state.email = "ref.updated@test.dev"
+    state.phone = "555-0101"
+
+    await RefereeState.save_referee.fn(state)
+
+    with rx.session() as session:
+        updated = session.get(Referee, sample_referee.id)
+        assert updated is not None
+        assert updated.name == "Referee Actualizado"
+        assert updated.role == "JUDGE"
+        assert updated.email == "ref.updated@test.dev"
+        assert updated.is_available is False
+        assert len(session.exec(select(Referee)).all()) == 1
+
+    assert state.show_form is False
+    assert state.referees
+    assert all(isinstance(referee, dict) for referee in state.referees)
+    assert state.referees[0]["id"] == sample_referee.id
+    assert state.referees[0]["name"] == "Referee Actualizado"
+
+
+@pytest.mark.anyio
+async def test_save_team_update_rehydrates_by_current_team_id(
+    sample_team: Team,
+) -> None:
+    """Update path must rehydrate from current_team['id'] and mutate row."""
+    state = TeamState()
+    state.is_editing = True
+    state.current_team = {"id": str(sample_team.id), "name": "snapshot-stale"}
+    state.name = "Equipo Actualizado"
+    state.category_id = str(sample_team.category_id)
+    state.dojo = "Dojo Actualizado"
+    state.is_active = False
+
+    await TeamState.save_team.fn(state)
+
+    with rx.session() as session:
+        updated = session.get(Team, sample_team.id)
+        assert updated is not None
+        assert updated.name == "Equipo Actualizado"
+        assert updated.dojo == "Dojo Actualizado"
+        assert updated.is_active is False
+        assert updated.category_id == sample_team.category_id
+        assert len(session.exec(select(Team)).all()) == 1
+
+    assert state.show_form is False
+    assert state.teams
+    assert all(isinstance(team, dict) for team in state.teams)
+    assert state.teams[0]["id"] == sample_team.id
+    assert state.teams[0]["name"] == "Equipo Actualizado"
+
+
+def test_batch5_scope_contract_keeps_target_table_columns_stable() -> None:
+    """Static contract: batch scope must not mutate target DB schema."""
+    assert {column.name for column in Athlete.__table__.columns} == {
+        "id",
+        "name",
+        "date_of_birth",
+        "gender",
+        "email",
+        "weight_kg",
+        "belt_rank",
+        "dojo",
+        "nationality",
+        "license_number",
+        "is_active",
+        "is_disqualified",
+        "kata_category_id",
+        "kumite_category_id",
+        "created_at",
+        "updated_at",
+    }
+    assert {column.name for column in Referee.__table__.columns} == {
+        "id",
+        "name",
+        "license_number",
+        "license_level",
+        "role",
+        "is_available",
+        "tatami_certified",
+        "dojo",
+        "email",
+        "phone",
+        "created_at",
+        "updated_at",
+    }
+    assert {column.name for column in Team.__table__.columns} == {
+        "id",
+        "name",
+        "category_id",
+        "member_count",
+        "is_active",
+        "dojo",
+        "created_at",
+    }
 
 
 @pytest.mark.parametrize(

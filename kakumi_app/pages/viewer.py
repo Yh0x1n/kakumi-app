@@ -96,7 +96,7 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
         rx.vstack(
             rx.hstack(
                 rx.heading(
-                    f"Torneo: {state.current_tournament.name}",
+                    f"Torneo: {state.current_tournament['name']}",
                     font_size="2em",
                     font_weight="bold",
                     color="black",
@@ -112,13 +112,13 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 width="100%",
             ),
             rx.box(
-                rx.vstack(
-                    rx.heading("Información del Torneo", size="4"),
-                    rx.text(f"Fecha: {state.current_tournament.date}"),
-                    rx.text(f"Estado: {state.current_tournament.status}"),
-                    rx.text(f"Código de espectador: {state.viewer_code}"),
-                    padding="1em",
-                    background_color=BG_CARD_ALT,
+                    rx.vstack(
+                        rx.heading("Información del Torneo", size="4"),
+                        rx.text(f"Fecha: {state.current_tournament['date']}"),
+                        rx.text(f"Estado: {state.current_tournament['status']}"),
+                        rx.text(f"Código de espectador: {state.viewer_code}"),
+                        padding="1em",
+                        background_color=BG_CARD_ALT,
                     border_radius="0.5em",
                     margin_bottom="1em",
                 ),
@@ -129,7 +129,7 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 rx.vstack(
                     rx.heading("Categorías", size="4"),
                     rx.cond(
-                        state.categories.length == 0,
+                        len(state.categories) == 0,
                         rx.text("No hay categorías disponibles."),
                         rx.foreach(
                             state.categories,

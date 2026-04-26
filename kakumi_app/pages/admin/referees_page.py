@@ -59,13 +59,13 @@ def referees_table() -> rx.Component:
                 rx.foreach(
                     state.referees,
                     lambda referee: rx.table.row(
-                        rx.table.cell(referee.id),
-                        rx.table.cell(referee.name),
-                        rx.table.cell(referee.license_number),
-                        rx.table.cell(referee.license_level),
-                        rx.table.cell(referee.role),
-                        rx.table.cell(rx.cond(referee.is_available, "Sí", "No")),
-                        rx.table.cell(rx.cond(referee.dojo, referee.dojo, "-")),
+                        rx.table.cell(referee["id"]),
+                        rx.table.cell(referee["name"]),
+                        rx.table.cell(referee["license_number"]),
+                        rx.table.cell(referee["license_level"]),
+                        rx.table.cell(referee["role"]),
+                        rx.table.cell(rx.cond(referee["is_available"], "Sí", "No")),
+                        rx.table.cell(rx.cond(referee["dojo"], referee["dojo"], "-")),
                         rx.table.cell(
                             rx.hstack(
                                 rx.button(
@@ -78,7 +78,9 @@ def referees_table() -> rx.Component:
                                 ),
                                 rx.button(
                                     "Eliminar",
-                                    on_click=lambda: state.delete_referee(referee.id),
+                                    on_click=lambda: state.delete_referee(
+                                        referee["id"]
+                                    ),
                                     color_scheme="red",
                                     size="2",
                                 ),
@@ -239,9 +241,10 @@ def referees() -> rx.Component:
     return referees_page()
 
 
-@rx.page(route="/admin/referees/new")
+@rx.page(
+    route="/admin/referees/new",
+    on_load=lambda: RefereeState.set_form_values(None),
+)
 def new_referee() -> rx.Component:
     """Route for new referee form."""
-    state = RefereeState
-    state.set_form_values(None)
     return referees_page()

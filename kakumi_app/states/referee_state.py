@@ -4,7 +4,7 @@ Manages CRUD operations for referees.
 """
 
 import json
-from typing import List, Optional, Any
+from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
@@ -22,8 +22,8 @@ class RefereeState(CrudStateMixin, rx.State):
     error_message: str = CrudStateMixin.error_message
     search_query: str = CrudStateMixin.search_query
 
-    referees: List[Referee] = []
-    current_referee: Optional[Referee] = None
+    referees: list[dict[str, Any]] = []
+    current_referee: Optional[dict[str, Any]] = None
 
     # Form fields
     name: str = ""
@@ -40,7 +40,8 @@ class RefereeState(CrudStateMixin, rx.State):
     async def load_referees(self) -> None:
         """Load all referees from database."""
         with rx.session() as session:
-            self.referees = session.exec(select(Referee)).all()
+            referees = session.exec(select(Referee)).all()
+            self.referees = [referee.model_dump(mode="json") for referee in referees]
 
     @rx.event
     async def filter_referees(self) -> None:
@@ -53,7 +54,7 @@ class RefereeState(CrudStateMixin, rx.State):
         with rx.session() as session:
             all_referees = session.exec(select(Referee)).all()
             self.referees = [
-                r
+                r.model_dump(mode="json")
                 for r in all_referees
                 if query in r.name.lower()
                 or (r.email and query in r.email.lower())
@@ -62,20 +63,24 @@ class RefereeState(CrudStateMixin, rx.State):
             ]
 
     @rx.event
-    def set_form_values(self, _: Any, referee: Optional[Referee] = None) -> None:
+    def set_form_values(
+        self,
+        _: Any,
+        referee: Optional[dict[str, Any]] = None,
+    ) -> None:
         """Set form values for editing or creating."""
         if referee:
             self.current_referee = referee
             self._set_form_open(editing=True)
-            self.name = referee.name
-            self.license_number = referee.license_number
-            self.license_level = referee.license_level
-            self.role = referee.role
-            self.tatami_certified = referee.tatami_certified or ""
-            self.is_available = referee.is_available
-            self.dojo = referee.dojo or ""
-            self.email = referee.email or ""
-            self.phone = referee.phone or ""
+            self.name = referee.get("name", "")
+            self.license_number = referee.get("license_number", "")
+            self.license_level = referee.get("license_level", "NATIONAL")
+            self.role = referee.get("role", "REFEREE")
+            self.tatami_certified = referee.get("tatami_certified") or ""
+            self.is_available = bool(referee.get("is_available", True))
+            self.dojo = referee.get("dojo") or ""
+            self.email = referee.get("email") or ""
+            self.phone = referee.get("phone") or ""
         else:
             self.current_referee = None
             self._set_form_open(editing=False)
@@ -143,7 +148,8 @@ class RefereeState(CrudStateMixin, rx.State):
         with rx.session() as session:
             if self.is_editing and self.current_referee:
                 # Update existing
-                referee = session.get(Referee, self.current_referee.id)
+                referee_id = self.current_referee.get("id")
+                referee = session.get(Referee, int(referee_id)) if referee_id else None
                 if not referee:
                     return rx.toast.error("Referee not found")
 

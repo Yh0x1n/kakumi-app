@@ -7,7 +7,7 @@ Expone event handlers semánticos para la UI y verifica RBAC antes de cada trans
 Patrón: sigue AuthState como referencia.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import reflex as rx
 
@@ -34,7 +34,7 @@ class TournamentState(rx.State):
         validation_warnings: Lista de warnings de la última transición.
     """
 
-    current_tournament: Optional[Tournament] = None
+    current_tournament: Optional[dict[str, Any]] = None
     transition_error: str = ""
     is_transitioning: bool = False
     validation_warnings: list[str] = []
@@ -52,7 +52,10 @@ class TournamentState(rx.State):
             tournament_id: ID del torneo a cargar.
         """
         with rx.session() as session:
-            self.current_tournament = session.get(Tournament, tournament_id)
+            tournament = session.get(Tournament, tournament_id)
+            self.current_tournament = (
+                tournament.model_dump(mode="json") if tournament else None
+            )
         self.transition_error = ""
         self.validation_warnings = []
 
@@ -83,7 +86,8 @@ class TournamentState(rx.State):
         if not self.current_tournament:
             self.transition_error = "No hay torneo seleccionado"
             return None
-        return self.current_tournament.id
+        tournament_id = self.current_tournament.get("id")
+        return int(tournament_id) if tournament_id else None
 
     async def _execute_transition(self, new_status: TournamentStatus) -> None:
         """

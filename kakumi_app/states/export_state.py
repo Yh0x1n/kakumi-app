@@ -3,7 +3,7 @@ Export State
 Manages export of tournament results.
 """
 
-from typing import List
+from typing import Any
 
 import reflex as rx
 from sqlmodel import select
@@ -15,7 +15,7 @@ from kakumi_app.services.export_service import ExportService
 class ExportState(rx.State):
     """State for export functionality."""
 
-    tournaments: List[Tournament] = []
+    tournaments: list[dict[str, Any]] = []
     selected_tournament_id: str = ""
 
     # Export options
@@ -29,7 +29,7 @@ class ExportState(rx.State):
     @rx.var
     def tournament_options(self) -> list[str]:
         """Tournament labels for select options."""
-        return [f"{t.id}: {t.name}" for t in self.tournaments]
+        return [f"{t['id']}: {t['name']}" for t in self.tournaments]
 
     @rx.var
     def export_preview(self) -> str:
@@ -39,13 +39,16 @@ class ExportState(rx.State):
         return self.export_content
 
     @rx.event
-    def load_tournaments(self):
+    def load_tournaments(self) -> None:
         """Load available tournaments."""
         with rx.session() as session:
-            self.tournaments = session.exec(select(Tournament)).all()
+            tournaments = session.exec(select(Tournament)).all()
+            self.tournaments = [
+                tournament.model_dump(mode="json") for tournament in tournaments
+            ]
 
     @rx.event
-    async def export_tournament_results(self):
+    async def export_tournament_results(self) -> Any:
         """Export results for selected tournament."""
         if not self.selected_tournament_id:
             return rx.toast.error("Please select a tournament")
@@ -70,14 +73,14 @@ class ExportState(rx.State):
             self.is_exporting = False
 
     @rx.event
-    async def download_export(self):
+    async def download_export(self) -> None:
         """Trigger download of exported file."""
         # In Reflex, we can't directly trigger downloads from backend
         # This would require a frontend workaround
         pass
 
     @rx.event
-    def clear_export(self):
+    def clear_export(self) -> None:
         """Clear export content."""
         self.export_content = ""
         self.export_filename = ""

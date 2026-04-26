@@ -4,7 +4,7 @@ Manages CRUD operations for athletes.
 """
 
 import datetime
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
@@ -22,8 +22,8 @@ class AthleteState(CrudStateMixin, rx.State):
     error_message: str = CrudStateMixin.error_message
     search_query: str = CrudStateMixin.search_query
 
-    athletes: List[Athlete] = []
-    current_athlete: Optional[Athlete] = None
+    athletes: list[dict[str, Any]] = []
+    current_athlete: Optional[dict[str, Any]] = None
 
     # Form fields
     name: str = ""
@@ -41,7 +41,8 @@ class AthleteState(CrudStateMixin, rx.State):
     async def load_athletes(self) -> None:
         """Load all athletes from database."""
         with rx.session() as session:
-            self.athletes = session.exec(select(Athlete)).all()
+            athletes = session.exec(select(Athlete)).all()
+            self.athletes = [athlete.model_dump(mode="json") for athlete in athletes]
 
     @rx.event
     async def filter_athletes(self) -> None:
@@ -54,7 +55,7 @@ class AthleteState(CrudStateMixin, rx.State):
         with rx.session() as session:
             all_athletes = session.exec(select(Athlete)).all()
             self.athletes = [
-                a
+                a.model_dump(mode="json")
                 for a in all_athletes
                 if query in a.name.lower()
                 or (a.email and query in a.email.lower())
@@ -62,23 +63,26 @@ class AthleteState(CrudStateMixin, rx.State):
             ]
 
     @rx.event
-    def set_form_values(self, _: Any, athlete: Optional[Athlete] = None) -> None:
+    def set_form_values(
+        self,
+        _: Any,
+        athlete: Optional[dict[str, Any]] = None,
+    ) -> None:
         """Set form values for editing or creating."""
         if athlete:
             self.current_athlete = athlete
             self._set_form_open(editing=True)
-            self.name = athlete.name
-            self.email = athlete.email or ""
-            self.date_of_birth = (
-                athlete.date_of_birth.isoformat() if athlete.date_of_birth else ""
-            )
-            self.gender = athlete.gender
-            self.weight_kg = str(athlete.weight_kg) if athlete.weight_kg else ""
-            self.belt_rank = athlete.belt_rank or ""
-            self.dojo = athlete.dojo or ""
-            self.nationality = athlete.nationality or ""
-            self.license_number = athlete.license_number or ""
-            self.is_active = athlete.is_active
+            self.name = athlete.get("name", "")
+            self.email = athlete.get("email") or ""
+            self.date_of_birth = athlete.get("date_of_birth") or ""
+            self.gender = athlete.get("gender", "MALE")
+            weight_kg = athlete.get("weight_kg")
+            self.weight_kg = str(weight_kg) if weight_kg else ""
+            self.belt_rank = athlete.get("belt_rank") or ""
+            self.dojo = athlete.get("dojo") or ""
+            self.nationality = athlete.get("nationality") or ""
+            self.license_number = athlete.get("license_number") or ""
+            self.is_active = bool(athlete.get("is_active", True))
         else:
             self.current_athlete = None
             self._set_form_open(editing=False)
@@ -191,7 +195,8 @@ class AthleteState(CrudStateMixin, rx.State):
         with rx.session() as session:
             if self.is_editing and self.current_athlete:
                 # Update existing
-                athlete = session.get(Athlete, self.current_athlete.id)
+                athlete_id = self.current_athlete.get("id")
+                athlete = session.get(Athlete, int(athlete_id)) if athlete_id else None
                 if not athlete:
                     return rx.toast.error("Athlete not found")
 
