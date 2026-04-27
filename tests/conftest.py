@@ -7,6 +7,7 @@ Usa DB SQLite aislada por test para evitar contaminación entre tests.
 
 import datetime
 import os
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Generator
@@ -145,11 +146,6 @@ def index_names_for_tables() -> Callable[
     return _factory
 
 
-# DB de test separada de la producción
-TEST_DB_PATH = os.path.join(os.path.dirname(__file__), "test_kakumi.db")
-TEST_DB_URL = f"sqlite:///{TEST_DB_PATH}"
-
-
 @pytest.fixture(scope="function", autouse=True)
 def db_session(monkeypatch: pytest.MonkeyPatch) -> Generator[Session, None, None]:
     """
@@ -160,12 +156,12 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Generator[Session, None, None
     - Parchea rx.session() para que use la DB de test
     - Elimina la DB después de cada test
     """
-    # Eliminar DB de test previa si existe
-    if os.path.exists(TEST_DB_PATH):
-        os.remove(TEST_DB_PATH)
+    fd, test_db_path = tempfile.mkstemp(suffix=".db", prefix="kakumi-test-")
+    os.close(fd)
+    os.unlink(test_db_path)
 
     # Crear engine de test
-    test_engine = create_engine(TEST_DB_URL, echo=False)
+    test_engine = create_engine(f"sqlite:///{test_db_path}", echo=False)
 
     # Crear todas las tablas en la DB de test
     # rx.Model hereda de SQLModel, así que SQLModel.metadata tiene todos los modelos
@@ -184,8 +180,10 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Generator[Session, None, None
 
     # Cleanup: destruir engine y eliminar DB de test
     test_engine.dispose()
-    if os.path.exists(TEST_DB_PATH):
-        os.remove(TEST_DB_PATH)
+    for suffix in ("", "-wal", "-shm"):
+        candidate = f"{test_db_path}{suffix}"
+        if os.path.exists(candidate):
+            os.remove(candidate)
 
 
 @pytest.fixture(scope="function")

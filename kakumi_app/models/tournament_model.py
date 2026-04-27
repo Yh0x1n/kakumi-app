@@ -72,6 +72,13 @@ class MatchStatus(str, Enum):
     DISQUALIFIED = "DISQUALIFIED"
 
 
+class BracketSide(str, Enum):
+    """Lado del bracket para doble eliminación."""
+
+    WINNERS = "WINNERS"
+    LOSERS = "LOSERS"
+
+
 class Participant(str, Enum):
     """Participante en un encuentro (Aka=Rojo, Ao=Azul)."""
 
@@ -282,6 +289,11 @@ class Match(rx.Model, table=True):
     )  # ELIMINATION, BRONZE, FINAL, ROUND_ROBIN
 
     # Foreign Keys
+    tournament_id: Optional[int] = Field(
+        default=None,
+        foreign_key="tournaments.id",
+        index=True,
+    )
     category_id: int = Field(foreign_key="tournament_categories.id", index=True)
 
     # Participantes (uno requerido: bye)
@@ -318,6 +330,7 @@ class Match(rx.Model, table=True):
 
     # Notas
     notes: Optional[str] = Field(default=None)
+    bracket_side: Optional[str] = Field(default=None, max_length=50)
 
     # Relaciones
     category: "TournamentCategory" = Relationship(

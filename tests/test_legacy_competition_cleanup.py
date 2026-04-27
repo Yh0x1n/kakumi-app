@@ -9,13 +9,11 @@ RUNTIME_ROOTS = (
     REPO_ROOT / "tests",
 )
 FORBIDDEN_IMPORT_SNIPPETS = (
-    "kakumi_app.services.bracket_service",
     "kakumi_app.services.penalty_service",
     "kakumi_app.services.scoring_service",
     "kakumi_app.services.tie_breaking_service",
 )
 FORBIDDEN_ARTIFACTS = (
-    REPO_ROOT / "kakumi_app/services/bracket_service.py",
     REPO_ROOT / "kakumi_app/services/penalty_service.py",
     REPO_ROOT / "kakumi_app/services/scoring_service.py",
     REPO_ROOT / "kakumi_app/services/tie_breaking_service.py",

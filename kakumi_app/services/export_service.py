@@ -14,12 +14,7 @@ from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
-from kakumi_app.models.tournament_model import Tournament, TournamentCategory
-
-
-# NOTE: Match and Penalty models are not yet implemented
-# from kakumi_app.models.match_model import Match
-# from kakumi_app.models.penalty_model import Penalty
+from kakumi_app.models.tournament_model import Match, Tournament, TournamentCategory
 
 
 class ExportService:
@@ -87,8 +82,9 @@ class ExportService:
                 )
             ).all()
 
-            # NOTE: Match and Penalty models are not yet implemented
-            # matches = session.exec(select(Match)...)
+            _matches = session.exec(
+                select(Match).where(Match.tournament_id == tournament_id)
+            ).all()
             # penalties = session.exec(select(Penalty)...)
 
             # categories_data = []
@@ -107,7 +103,7 @@ class ExportService:
                 "categories": [],  # Empty until Match/Penalty implemented
                 "statistics": {
                     "total_categories": len(categories),
-                    "total_matches": 0,
+                    "total_matches": len(_matches),
                     "export_date": datetime.datetime.now().isoformat(),
                 },
             }

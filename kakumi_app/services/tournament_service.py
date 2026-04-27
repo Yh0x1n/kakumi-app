@@ -64,7 +64,7 @@ MIN_ATHLETES_PER_CATEGORY = 4
 
 
 @dataclass
-class ValidationError:
+class ValidationError(Exception):
     """
     Error de validación de pre-condición.
 
@@ -77,6 +77,10 @@ class ValidationError:
     category_name: Optional[str] = None
     current_value: Any = None
     required_value: Any = None
+
+    def __str__(self) -> str:
+        """Return the human-readable validation message."""
+        return self.message
 
 
 @dataclass
