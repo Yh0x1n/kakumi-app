@@ -60,7 +60,6 @@ def category_page() -> rx.Component:
                                 state.category,
                                 _category_header(state.category),
                             ),
-                            rx.text("Próxima versión"),
                             rx.foreach(
                                 matches,
                                 lambda match: match_card(

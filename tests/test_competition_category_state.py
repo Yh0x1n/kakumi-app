@@ -170,6 +170,42 @@ async def test_load_category_missing_tatami_or_referee_uses_safe_none_labels(
 
 
 @pytest.mark.anyio
+async def test_load_category_exposes_pending_match_live_route_for_start_cta(
+    sample_tournament,
+    sample_category,
+) -> None:
+    _create_category_match_bundle(sample_category.id, sample_tournament.id)
+    state = CompetitionCategoryState()
+    _set_route_param(state, "category_id", str(sample_category.id))
+
+    await CompetitionCategoryState.load_category.fn(state)
+
+    pending_match = next(
+        match for match in state.matches if match["status"] == "PENDING"
+    )
+    assert pending_match["live_match_href"] == (
+        f"/competition/kumite/match/{pending_match['id']}"
+    )
+
+
+@pytest.mark.anyio
+async def test_load_category_non_pending_match_hides_live_route_handoff(
+    sample_tournament,
+    sample_category,
+) -> None:
+    _create_category_match_bundle(sample_category.id, sample_tournament.id)
+    state = CompetitionCategoryState()
+    _set_route_param(state, "category_id", str(sample_category.id))
+
+    await CompetitionCategoryState.load_category.fn(state)
+
+    in_progress_match = next(
+        match for match in state.matches if match["status"] == "IN_PROGRESS"
+    )
+    assert in_progress_match["live_match_href"] is None
+
+
+@pytest.mark.anyio
 async def test_load_category_db_failure_sets_generic_safe_error(
     monkeypatch: pytest.MonkeyPatch,
     sample_category,

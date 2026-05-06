@@ -41,7 +41,15 @@ def match_card(match: MatchCardData, show_future_action: bool = False) -> rx.Com
             ),
             rx.cond(
                 show_future_action,
-                rx.button("Próxima versión", disabled=True, width="100%"),
+                rx.cond(
+                    match["live_match_href"],
+                    rx.button(
+                        "Iniciar combate",
+                        width="100%",
+                        on_click=rx.redirect(match["live_match_href"]),
+                    ),
+                    rx.button("Próxima versión", disabled=True, width="100%"),
+                ),
             ),
             spacing="3",
             width="100%",

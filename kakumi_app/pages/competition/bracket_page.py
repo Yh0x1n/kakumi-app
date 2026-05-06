@@ -24,7 +24,7 @@ def _category_section(category: BracketCategoryData) -> rx.Component:
                 rx.spacer(),
                 rx.link(
                     rx.button("Abrir categoría"),
-                    href=f"/competition/{category['id']}",
+                    href=f"/competition/category/{category['id']}",
                 ),
                 width="100%",
                 align="center",

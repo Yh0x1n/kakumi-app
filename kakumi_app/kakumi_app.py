@@ -20,11 +20,12 @@ from .models.tournament_model import (  # noqa [F401]
     Tournament,
 )
 from .pages.exhibition import exhibition
-from .pages.competition import bracket_page, category_page
+from .pages.competition import bracket_page, category_page, live_match_page
 from .pages.registries import registries
 from .pages.tournament import tournament
 from .states.bracket_state import BracketState
 from .states.competition_category_state import CompetitionCategoryState
+from .states.kumite_match_state import KumiteMatchState
 
 # Admin pages — imported for @rx.page side-effect route registration
 import kakumi_app.pages.admin.athletes_page  # noqa: F401
@@ -107,7 +108,13 @@ app.add_page(
 )
 app.add_page(
     category_page,
-    route="/competition/[id]",
+    route="/competition/category/[id]",
     title="Kakumi | Competencia",
     on_load=CompetitionCategoryState.load_category,
+)
+app.add_page(
+    live_match_page,
+    route="/competition/kumite/match/[id]",
+    title="Kakumi | Kumite en vivo",
+    on_load=KumiteMatchState.load_match,
 )

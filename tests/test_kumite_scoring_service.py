@@ -165,8 +165,8 @@ def test_8_point_lead_ends_match(sample_match, sample_user):
         assert refreshed.status == MatchStatus.COMPLETED.value
 
 
-def test_senshu_set_on_first_score(sample_match, sample_user):
-    """Primer puntaje sin respuesta activa SENSHU."""
+def test_first_score_does_not_auto_assign_senshu(sample_match, sample_user):
+    """Primer puntaje no debe asignar SENSHU automáticamente."""
     from kakumi_app.services.kumite_scoring_service import KumiteScoringService
 
     match = _set_match_in_progress(sample_match.id)
@@ -179,7 +179,7 @@ def test_senshu_set_on_first_score(sample_match, sample_user):
 
     with rx.session() as session:
         refreshed = session.get(Match, match.id)
-        assert refreshed.aka_senshu is True
+        assert refreshed.aka_senshu is False
         assert refreshed.ao_senshu is False
 
 
@@ -223,6 +223,21 @@ def test_revoke_senshu_clears_flag(sample_match, sample_user):
 
     with rx.session() as session:
         refreshed = session.get(Match, match.id)
+        assert refreshed.aka_senshu is False
+
+
+def test_apply_manual_senshu_sets_side_and_clears_opponent(sample_match):
+    """apply_manual_senshu asigna SENSHU al lado elegido."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+
+    result = KumiteScoringService.apply_manual_senshu(match.id, Participant.AO)
+    assert result.success is True
+
+    with rx.session() as session:
+        refreshed = session.get(Match, match.id)
+        assert refreshed.ao_senshu is True
         assert refreshed.aka_senshu is False
 
 

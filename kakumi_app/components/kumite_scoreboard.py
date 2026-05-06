@@ -9,7 +9,6 @@ from kakumi_app.states.kumite_match_state import KumiteMatchState
 def _participant_panel(participant: str, color: str, title: str) -> rx.Component:
     """Render one side (AKA/AO) panel bound to KumiteMatchState."""
     is_aka = participant == Participant.AKA.value
-    is_disabled = KumiteMatchState.is_exhibition_mode
     name = rx.cond(is_aka, KumiteMatchState.aka_name, KumiteMatchState.ao_name)
     score = rx.cond(is_aka, KumiteMatchState.aka_score, KumiteMatchState.ao_score)
     slots = rx.cond(
@@ -36,6 +35,19 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
             spacing="2",
             align="center",
         ),
+        rx.hstack(
+            rx.button(
+                "Otorgar SENSHU",
+                variant="outline",
+                on_click=KumiteMatchState.apply_manual_senshu(participant=participant),
+            ),
+            rx.button(
+                "Revocar SENSHU",
+                variant="outline",
+                on_click=KumiteMatchState.revoke_manual_senshu(participant=participant),
+            ),
+            spacing="2",
+        ),
         rx.heading(score, as_="div", size="9"),
         rx.hstack(
             rx.button(
@@ -45,7 +57,6 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                     score_type=ScoreType.YUKO.value,
                     applied_by_id=1,
                 ),
-                is_disabled=is_disabled,
             ),
             rx.button(
                 "WAZA-ARI",
@@ -54,7 +65,6 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                     score_type=ScoreType.WAZA_ARI.value,
                     applied_by_id=1,
                 ),
-                is_disabled=is_disabled,
             ),
             rx.button(
                 "IPPON",
@@ -63,7 +73,6 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                     score_type=ScoreType.IPPON.value,
                     applied_by_id=1,
                 ),
-                is_disabled=is_disabled,
             ),
         ),
         rx.hstack(
@@ -79,7 +88,6 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
             bg="white",
             color="black",
             on_click=KumiteMatchState.apply_penalty_cumulative(participant),
-            is_disabled=is_disabled,
         ),
         bg=color,
         width="50vh",
@@ -110,7 +118,6 @@ def kumite_scoreboard() -> rx.Component:
                     rx.button(
                         "Undo",
                         on_click=KumiteMatchState.undo_last_action,
-                        is_disabled=KumiteMatchState.is_exhibition_mode,
                     ),
                     align="center",
                 ),

@@ -1,9 +1,13 @@
 """Behavioral page factory tests for competition UI Slice 1."""
 
+import importlib
+import sys
+
 import reflex as rx
 
-from kakumi_app.pages.competition import bracket_page, category_page
+from kakumi_app.pages.competition import bracket_page, category_page, live_match_page
 from kakumi_app.pages.competition.category_page import _empty_category_state
+from kakumi_app.states.kumite_match_state import KumiteMatchState
 
 
 def _flatten_render_strings(node: object) -> list[str]:
@@ -41,15 +45,32 @@ def test_bracket_page_returns_component_with_loading_error_empty_and_data_branch
     assert "/competition/" in rendered
 
 
-def test_category_page_returns_component_with_safe_placeholder_future_actions() -> None:
+def test_category_page_returns_component_with_start_match_actions() -> None:
     component = category_page()
     rendered = _rendered_string(component)
 
     assert isinstance(component, rx.Component)
     assert "Cargando categoría" in rendered
     assert "No hay encuentros generados aún" in rendered
-    assert "Próxima versión" in rendered
+    assert "Iniciar combate" in rendered
     assert "/scoring/" not in rendered
+
+
+def test_live_match_page_returns_scoreboard_with_real_match_route_contract() -> None:
+    component = live_match_page()
+    rendered = _rendered_string(component)
+
+    assert isinstance(component, rx.Component)
+    assert "Combate en vivo" in rendered
+    assert "Exhibition" in rendered
+    assert "Establecer 1 min" in rendered
+    assert "Establecer 3 min" in rendered
+    assert "+10" in rendered
+    assert "+1" in rendered
+    assert "-1" in rendered
+    assert "-10" in rendered
+    assert "Otorgar SENSHU" in rendered
+    assert "Revocar SENSHU" in rendered
 
 
 def test_empty_category_state_shows_name_and_competition_system_context() -> None:
@@ -68,3 +89,20 @@ def test_empty_category_state_shows_name_and_competition_system_context() -> Non
     assert "Kumite Senior" in rendered
     assert "ROUND_ROBIN" in rendered
     assert "No hay encuentros generados aún" in rendered
+
+
+def test_exhibition_kumite_route_wires_on_load_exhibition_mode() -> None:
+    page_module = importlib.import_module("reflex.page")
+    original_count = len(page_module.DECORATED_PAGES.get("kakumi_app", []))
+
+    sys.modules.pop("kakumi_app.pages.exhibition", None)
+    importlib.import_module("kakumi_app.pages.exhibition")
+
+    new_pages = page_module.DECORATED_PAGES.get("kakumi_app", [])[original_count:]
+    route_configs = [
+        config
+        for _, config in new_pages
+        if config.get("route") == "/exhibition/kumite_system"
+    ]
+    assert route_configs
+    assert route_configs[-1].get("on_load") == KumiteMatchState.enable_exhibition_mode

@@ -7,14 +7,18 @@ Módulo de página de exhibición
 # Importaciones
 import reflex as rx
 
+from ..components.kumite_scoreboard import kumite_scoreboard
 from ..components.sidebar import sidebar
-from ..components.timer import timer
+from ..states.kumite_match_state import KumiteMatchState
 
 
 # Subpágina del temporizador (Aquí irá todo el sistema de kumite)
-@rx.page(route="/exhibition/kumite_system")
+@rx.page(
+    route="/exhibition/kumite_system",
+    on_load=KumiteMatchState.enable_exhibition_mode,
+)
 def kumite_system() -> rx.Component:
-    return rx.box(rx.vstack(timer()))
+    return rx.box(rx.vstack(kumite_scoreboard()))
 
 
 # Menú de exhibición

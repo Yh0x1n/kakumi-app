@@ -858,7 +858,7 @@ class TiebreakerResult:
 
 @dataclass
 class SenshuResult:
-    """Resultado de revocación manual de SENSHU."""
+    """Resultado de operación manual de SENSHU."""
 
     success: bool
     message: str
@@ -906,8 +906,6 @@ class KumiteScoringService:
                 return MatchResult(False, False, None, "Match no está en progreso")
 
             pre_match_snapshot = _serialize_match_snapshot(match)
-
-            KumiteScoringService._set_senshu_if_first(match, participant_value)
 
             points = KumiteScoringService.POINT_VALUES[score_type_value]
             if participant_value == Participant.AKA.value:
@@ -1076,6 +1074,36 @@ class KumiteScoringService:
             )
 
     @staticmethod
+    def apply_manual_senshu(match_id: int, participant: Participant) -> SenshuResult:
+        """Otorga manualmente SENSHU al participante indicado."""
+        participant_value = (
+            participant.value if isinstance(participant, Participant) else participant
+        )
+
+        with rx.session() as session:
+            match = session.get(Match, match_id)
+            if not match:
+                return SenshuResult(success=False, message="Match no encontrado")
+            if match.status != MatchStatus.IN_PROGRESS.value:
+                return SenshuResult(
+                    success=False,
+                    message="Match no está en progreso",
+                )
+
+            if participant_value == Participant.AKA.value:
+                match.aka_senshu = True
+                match.ao_senshu = False
+            elif participant_value == Participant.AO.value:
+                match.ao_senshu = True
+                match.aka_senshu = False
+            else:
+                return SenshuResult(success=False, message="Participante inválido")
+
+            session.add(match)
+            session.commit()
+            return SenshuResult(success=True, message="SENSHU otorgado")
+
+    @staticmethod
     def revoke_senshu(match_id: int, participant: Participant) -> SenshuResult:
         """Revoca manualmente SENSHU del participante indicado."""
         participant_value = (
@@ -1188,17 +1216,6 @@ class KumiteScoringService:
             if not match:
                 return TiebreakerResult(None, "MATCH_NOT_FOUND", True)
             return KumiteScoringService._get_tiebreaker_winner(match)
-
-    @staticmethod
-    def _set_senshu_if_first(match: Match, participant: str) -> None:
-        """Asigna SENSHU solo en primer puntaje sin respuesta."""
-        if match.aka_score == 0 and match.ao_score == 0:
-            if participant == Participant.AKA.value:
-                match.aka_senshu = True
-                match.ao_senshu = False
-            elif participant == Participant.AO.value:
-                match.ao_senshu = True
-                match.aka_senshu = False
 
     @staticmethod
     def _get_next_penalty_level(chui_count: int) -> PenaltyType:

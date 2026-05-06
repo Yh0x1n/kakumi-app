@@ -19,6 +19,7 @@ class MatchCardData(TypedDict):
     ao_label: str
     tatami_label: str | None
     referee_label: str | None
+    live_match_href: str | None
 
 
 class BracketRoundData(TypedDict):
@@ -84,6 +85,7 @@ def _to_display_match(match: Mapping[str, Any]) -> MatchCardData:
         else _resolve_participant_label(match.get("ao_name"), round_number),
         "tatami_label": match.get("tatami_label", match.get("tatami_name")),
         "referee_label": match.get("referee_label", match.get("referee_name")),
+        "live_match_href": match.get("live_match_href"),
     }
 
 
@@ -153,6 +155,12 @@ def build_match_cards(
                 "ao_name": ao_name,
                 "tatami_name": tatami_names.get(tatami_id),
                 "referee_name": referee_names.get(referee_id),
+                "live_match_href": (
+                    f"/competition/kumite/match/{int(getattr(match, 'id', 0) or 0)}"
+                    if str(getattr(match, "status", "PENDING") or "PENDING")
+                    == "PENDING"
+                    else None
+                ),
             }
         )
 

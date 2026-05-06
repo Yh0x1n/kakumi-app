@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 import reflex as rx
+from reflex.istate.data import PageData
 from sqlmodel import select
 
 from kakumi_app.models.tournament_model import (
@@ -18,6 +19,7 @@ from kakumi_app.models.tournament_model import (
     Penalty,
     PenaltyType,
     ScoreType,
+    TournamentCategory,
 )
 from kakumi_app.services.kumite_scoring_service import KumiteScoringService
 from kakumi_app.services.exceptions import (
@@ -25,6 +27,15 @@ from kakumi_app.services.exceptions import (
     PenaltyRemovalNotAllowedError,
 )
 from kakumi_app.states.kumite_match_state import KumiteMatchState
+
+
+def _set_match_route_param(state: KumiteMatchState, match_id: int | str) -> None:
+    """Inject route params into state router for tests."""
+    object.__setattr__(
+        state.router,
+        "_page",
+        PageData(params={"match_id": str(match_id)}),
+    )
 
 
 def _collect_public_state_vars(state: KumiteMatchState) -> dict[str, object]:
@@ -274,7 +285,7 @@ async def test_sync_from_match_updates_scoreboard_vars(
     assert state.ao_score == 0
     assert state.aka_name == "Carlos Martinez"
     assert state.ao_name == "Ana Rodriguez"
-    assert state.aka_senshu is True
+    assert state.aka_senshu is False
     assert state.ao_senshu is False
     assert state.aka_penalty_slots == {
         "C1": True,
@@ -379,6 +390,31 @@ async def test_exhibition_mode_penalty_is_noop_with_warning(
 
 @pytest.mark.asyncio
 @pytest.mark.anyio
+async def test_exhibition_mode_penalty_mutates_local_slots_without_db_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    mock_apply_penalty = Mock()
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.kumite_scoring_service.apply_penalty",
+        mock_apply_penalty,
+    )
+
+    events = [
+        event
+        async for event in state.apply_penalty_cumulative(participant="AKA")
+    ]
+
+    assert events == []
+    assert state.aka_penalty_slots["C1"] is True
+    assert state.aka_penalty_slots["C2"] is False
+    mock_apply_penalty.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_undo_last_action_syncs_state_after_service_undo(
     sample_match,
     sample_user,
@@ -458,3 +494,437 @@ async def test_undo_last_action_blocks_shikkaku_path(
             select(Penalty).where(Penalty.match_id == sample_match.id)
         ).all()
     assert any(p.penalty_type == PenaltyType.SHIKKAKU.value for p in penalties)
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_load_match_from_route_initializes_real_match_timer_and_identity(
+    sample_match,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+
+    await KumiteMatchState.load_match.fn(state)
+
+    assert state.match_id == sample_match.id
+    assert state.has_active_match is True
+    assert state.is_exhibition_mode is False
+    assert state.timer_seconds == 180
+    assert state.timer_formatted == "03:00"
+    assert state.timer_running is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_load_match_from_route_uses_category_duration_seconds(
+    sample_match,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        category = session.get(TournamentCategory, match.category_id)
+        assert category is not None
+        category.match_duration_seconds = 120
+        session.add(category)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+
+    await KumiteMatchState.load_match.fn(state)
+
+    assert state.timer_seconds == 120
+    assert state.timer_formatted == "02:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+@pytest.mark.parametrize("params", [{}, {"match_id": ""}, {"match_id": "oops"}])
+async def test_load_match_invalid_or_missing_route_stays_real_route_safe_state(
+    params: dict[str, str],
+) -> None:
+    state = KumiteMatchState()
+    object.__setattr__(state.router, "_page", PageData(params=params))
+
+    await KumiteMatchState.load_match.fn(state)
+
+    assert state.match_id == 0
+    assert state.has_active_match is False
+    assert state.is_exhibition_mode is False
+    assert state.error_message == "ID de encuentro inválido"
+    assert state.timer_running is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_load_match_not_found_stays_real_route_safe_state() -> None:
+    state = KumiteMatchState()
+    _set_match_route_param(state, 999999)
+
+    await KumiteMatchState.load_match.fn(state)
+
+    assert state.match_id == 0
+    assert state.has_active_match is False
+    assert state.is_exhibition_mode is False
+    assert state.error_message == "Encuentro no encontrado"
+    assert state.timer_running is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_timer_start_tick_stop_reset_end_flow_for_real_match(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+
+    state.timer_seconds = 2
+    events = [event async for event in state.start_timer()]
+    assert len(events) == 1
+    assert state.timer_running is True
+
+    first_tick_events = [event async for event in state.tick_timer()]
+    assert first_tick_events == []
+    assert state.timer_seconds == 1
+    assert state.timer_running is True
+
+    await KumiteMatchState.stop_timer.fn(state)
+    assert state.timer_running is False
+
+    reset_events = [event async for event in state.reset_timer()]
+    assert reset_events == []
+    assert state.timer_seconds == 180
+    assert state.timer_formatted == "03:00"
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success", toast_success
+    )
+    state.timer_seconds = 1
+    restart_events = [event async for event in state.start_timer()]
+    assert len(restart_events) == 1
+    end_events = [event async for event in state.tick_timer()]
+    assert end_events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_exhibition_mode_can_start_timer_without_active_match() -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    events = [event async for event in state.start_timer()]
+
+    assert len(events) == 1
+    assert state.is_exhibition_mode is True
+    assert state.has_active_match is False
+    assert state.timer_running is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_run_timer_loop_decrements_and_stops_with_toast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_seconds = 1
+    state.timer_running = True
+    state._timer_loop_active = True
+
+    async def _fast_sleep(_: float) -> None:
+        return None
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr("asyncio.sleep", _fast_sleep)
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+
+    assert events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+    assert state._timer_loop_active is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_real_match_guard_blocks_timer_reset_without_active_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    state.match_id = 0
+    state.timer_seconds = 47
+
+    toast_warning = Mock(return_value="toast-no-match")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.warning", toast_warning
+    )
+
+    events = [event async for event in state.reset_timer()]
+
+    assert events == ["toast-no-match"]
+    assert state.timer_seconds == 47
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_exhibition_mode_reset_timer_uses_exhibition_base_without_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_base_seconds = 75
+    state.timer_seconds = 12
+
+    toast_warning = Mock(return_value="toast-no-match")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.warning", toast_warning
+    )
+
+    events = [event async for event in state.reset_timer()]
+
+    assert events == []
+    assert state.timer_seconds == 75
+    toast_warning.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_set_timer_updates_timer_base_and_seconds_in_exhibition_mode() -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_seconds = 12
+
+    events = [event async for event in state.set_timer(60)]
+
+    assert events == []
+    assert state.timer_base_seconds == 60
+    assert state.timer_seconds == 60
+    assert state.timer_running is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_add_or_substract_timer_changes_seconds_with_floor_zero() -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_seconds = 5
+
+    plus_events = [event async for event in state.add_or_substract_timer(10)]
+    assert plus_events == []
+    assert state.timer_seconds == 15
+
+    minus_events = [event async for event in state.add_or_substract_timer(-20)]
+    assert minus_events == []
+    assert state.timer_seconds == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_apply_score_in_exhibition_mode_does_not_auto_assign_senshu() -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    events = [
+        event
+        async for event in state.apply_score(
+            participant=Participant.AKA.value,
+            score_type=ScoreType.YUKO.value,
+        )
+    ]
+
+    assert events == []
+    assert state.aka_score == 1
+    assert state.ao_score == 0
+    assert state.aka_senshu is False
+    assert state.ao_senshu is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_manual_senshu_apply_and_revoke_exhibition_mode() -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    apply_events = [
+        event
+        async for event in state.apply_manual_senshu(participant=Participant.AKA.value)
+    ]
+    assert apply_events == []
+    assert state.aka_senshu is True
+    assert state.ao_senshu is False
+
+    revoke_events = [
+        event
+        async for event in state.revoke_manual_senshu(participant=Participant.AKA.value)
+    ]
+    assert revoke_events == []
+    assert state.aka_senshu is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_exhibition_undo_restores_manual_senshu_snapshot() -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    apply_events = [
+        event
+        async for event in state.apply_manual_senshu(participant=Participant.AKA.value)
+    ]
+    assert apply_events == []
+    assert state.aka_senshu is True
+
+    undo_events = [event async for event in state.undo_last_action()]
+    assert undo_events == []
+    assert state.aka_senshu is False
+    assert state.ao_senshu is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_manual_senshu_apply_real_mode_calls_service_and_syncs(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+
+    def _apply(match_id: int, participant: str):
+        assert match_id == sample_match.id
+        assert participant == Participant.AKA.value
+        with rx.session() as session:
+            match_row = session.get(Match, match_id)
+            assert match_row is not None
+            match_row.aka_senshu = True
+            match_row.ao_senshu = False
+            session.add(match_row)
+            session.commit()
+        return SimpleNamespace(success=True, message="SENSHU otorgado")
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.KumiteScoringService.apply_manual_senshu",
+        _apply,
+    )
+
+    events = [
+        event
+        async for event in state.apply_manual_senshu(participant=Participant.AKA.value)
+    ]
+
+    assert events == []
+    assert state.aka_senshu is True
+    assert state.ao_senshu is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_manual_senshu_revoke_real_mode_calls_service_and_syncs(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_senshu = True
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+
+    def _revoke(match_id: int, participant: str):
+        assert match_id == sample_match.id
+        assert participant == Participant.AKA.value
+        with rx.session() as session:
+            match_row = session.get(Match, match_id)
+            assert match_row is not None
+            match_row.aka_senshu = False
+            session.add(match_row)
+            session.commit()
+        return SimpleNamespace(success=True, message="SENSHU revocado")
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.KumiteScoringService.revoke_senshu",
+        _revoke,
+    )
+
+    events = [
+        event
+        async for event in state.revoke_manual_senshu(participant=Participant.AKA.value)
+    ]
+
+    assert events == []
+    assert state.aka_senshu is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_manual_senshu_real_mode_service_error_yields_toast(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.KumiteScoringService.apply_manual_senshu",
+        lambda match_id, participant: SimpleNamespace(
+            success=False,
+            message="No permitido",
+        ),
+    )
+    toast_error = Mock(return_value="toast-senshu-error")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.error",
+        toast_error,
+    )
+
+    events = [
+        event
+        async for event in state.apply_manual_senshu(participant=Participant.AKA.value)
+    ]
+
+    assert events == ["toast-senshu-error"]
+    assert state.error_message == "No permitido"
+    toast_error.assert_called_once_with("No permitido")

@@ -1,7 +1,7 @@
 """add_kumite_action_log
 
 Revision ID: d11e9b7f4a2c
-Revises: 9f9a87e71c72
+Revises: fe678c4071ac
 Create Date: 2026-05-06 17:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d11e9b7f4a2c"
-down_revision: Union[str, Sequence[str], None] = "9f9a87e71c72"
+down_revision: Union[str, Sequence[str], None] = "fe678c4071ac"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
