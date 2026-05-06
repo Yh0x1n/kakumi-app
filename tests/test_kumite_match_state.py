@@ -7,8 +7,19 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+import reflex as rx
+from sqlmodel import select
 
-from kakumi_app.models.tournament_model import PenaltyType
+from kakumi_app.models.tournament_model import (
+    Match,
+    MatchActionLog,
+    MatchStatus,
+    Participant,
+    Penalty,
+    PenaltyType,
+    ScoreType,
+)
+from kakumi_app.services.kumite_scoring_service import KumiteScoringService
 from kakumi_app.services.exceptions import (
     AthleteSchedulingConflictError,
     PenaltyRemovalNotAllowedError,
@@ -215,3 +226,235 @@ def test_state_vars_are_json_serializable() -> None:
             json.dumps(value)
         except TypeError as error:  # pragma: no cover - explicit failure detail
             pytest.fail(f"State var '{key}' is not JSON serializable: {error}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_sync_from_match_updates_scoreboard_vars(
+    sample_match,
+    sample_user,
+) -> None:
+    """State sync loads names, scores, senshu and penalty slots from DB truth."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    KumiteScoringService.apply_score(
+        match_id=sample_match.id,
+        participant=Participant.AKA,
+        score_type=ScoreType.YUKO,
+        applied_by_id=sample_user.id,
+    )
+    KumiteScoringService.apply_penalty(
+        match_id=sample_match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.CHUI,
+        reason="C1",
+        applied_by_id=sample_user.id,
+    )
+    KumiteScoringService.apply_penalty(
+        match_id=sample_match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.HANSOKU_CHUI,
+        reason="C2",
+        applied_by_id=sample_user.id,
+    )
+
+    state = KumiteMatchState()
+    with rx.session() as session:
+        state._sync_from_match(session=session, match_id=sample_match.id)
+
+    assert state.has_active_match is True
+    assert state.is_exhibition_mode is False
+    assert state.match_id == sample_match.id
+    assert state.aka_score == 1
+    assert state.ao_score == 0
+    assert state.aka_name == "Carlos Martinez"
+    assert state.ao_name == "Ana Rodriguez"
+    assert state.aka_senshu is True
+    assert state.ao_senshu is False
+    assert state.aka_penalty_slots == {
+        "C1": True,
+        "C2": True,
+        "C3": True,
+        "HC": True,
+        "H": False,
+    }
+    assert state.ao_penalty_slots == {
+        "C1": False,
+        "C2": False,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("chui_count", "expected_slots"),
+    [
+        (
+            2,
+            {
+                "C1": True,
+                "C2": True,
+                "C3": False,
+                "HC": False,
+                "H": False,
+            },
+        ),
+        (
+            3,
+            {
+                "C1": True,
+                "C2": True,
+                "C3": True,
+                "HC": False,
+                "H": False,
+            },
+        ),
+    ],
+)
+async def test_sync_from_match_treats_chui_count_as_c1_c2_c3_equivalent(
+    sample_match,
+    sample_user,
+    chui_count: int,
+    expected_slots: dict[str, bool],
+) -> None:
+    """Legacy CHUI rows map to progressive C1/C2/C3 scoreboard slots."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    for i in range(chui_count):
+        KumiteScoringService.apply_penalty(
+            match_id=sample_match.id,
+            participant=Participant.AKA,
+            penalty_type=PenaltyType.CHUI,
+            reason=f"CHUI #{i + 1}",
+            applied_by_id=sample_user.id,
+        )
+
+    state = KumiteMatchState()
+    with rx.session() as session:
+        state._sync_from_match(session=session, match_id=sample_match.id)
+
+    assert state.aka_penalty_slots == expected_slots
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_exhibition_mode_penalty_is_noop_with_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No active match must not hit service and must warn operator."""
+    state = KumiteMatchState()
+    state.match_id = 0
+
+    mock_apply_penalty = Mock()
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.kumite_scoring_service.apply_penalty",
+        mock_apply_penalty,
+    )
+    toast_warning = Mock(return_value="toast-no-match")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.warning", toast_warning
+    )
+
+    events = [
+        event async for event in state.apply_penalty_cumulative(participant="AKA")
+    ]
+
+    assert events == ["toast-no-match"]
+    toast_warning.assert_called_once_with("No active match")
+    mock_apply_penalty.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_undo_last_action_syncs_state_after_service_undo(
+    sample_match,
+    sample_user,
+) -> None:
+    """Undo event consumes service path and refreshes synced vars."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    with rx.session() as session:
+        state._sync_from_match(session=session, match_id=sample_match.id)
+
+    events = [
+        event
+        async for event in state.apply_score(
+            participant=Participant.AKA.value,
+            score_type=ScoreType.YUKO.value,
+            applied_by_id=sample_user.id,
+        )
+    ]
+    assert events == []
+    assert state.aka_score == 1
+
+    undo_events = [event async for event in state.undo_last_action()]
+    assert undo_events == []
+    assert state.aka_score == 0
+
+    with rx.session() as session:
+        logs = session.exec(
+            select(MatchActionLog).where(MatchActionLog.match_id == sample_match.id)
+        ).all()
+        assert logs == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_undo_last_action_blocks_shikkaku_path(
+    sample_match,
+    sample_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scoreboard undo must explicitly reject SHIKKAKU actions."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    KumiteScoringService.apply_penalty(
+        match_id=sample_match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.SHIKKAKU,
+        reason="DQ",
+        applied_by_id=sample_user.id,
+    )
+
+    state = KumiteMatchState()
+    with rx.session() as session:
+        state._sync_from_match(session=session, match_id=sample_match.id)
+
+    toast_error = Mock(return_value="toast-shikkaku")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.error", toast_error
+    )
+
+    events = [event async for event in state.undo_last_action()]
+
+    assert events == ["toast-shikkaku"]
+    toast_error.assert_called_once()
+    with rx.session() as session:
+        penalties = session.exec(
+            select(Penalty).where(Penalty.match_id == sample_match.id)
+        ).all()
+    assert any(p.penalty_type == PenaltyType.SHIKKAKU.value for p in penalties)

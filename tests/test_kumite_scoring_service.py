@@ -6,6 +6,7 @@ from sqlmodel import select
 from kakumi_app.models.tournament_model import (
     CompetitionSystem,
     Match,
+    MatchActionLog,
     MatchScore,
     MatchStatus,
     Participant,
@@ -44,6 +45,16 @@ def _set_match_competition_system(match_id: int, competition_system: str) -> Non
         category.competition_system = competition_system
         session.add(category)
         session.commit()
+
+
+def _count_action_logs(match_id: int) -> int:
+    """Cuenta filas de log de acciones para un match."""
+    with rx.session() as session:
+        return len(
+            session.exec(
+                select(MatchActionLog).where(MatchActionLog.match_id == match_id)
+            ).all()
+        )
 
 
 def test_yuko_adds_1_point(sample_match, sample_user):
@@ -530,6 +541,70 @@ def test_match_score_record_created_on_apply(sample_match, sample_user):
         assert len(scores) == 1
         assert scores[0].applied_by_id == sample_user.id
         assert scores[0].score_type == ScoreType.YUKO.value
+
+
+def test_undo_last_score_action_restores_points_and_deletes_audit(
+    sample_match, sample_user
+):
+    """Undo de score restaura score/counters y borra filas creadas por acción."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    apply_result = KumiteScoringService.apply_score(
+        match_id=match.id,
+        participant=Participant.AKA,
+        score_type=ScoreType.YUKO,
+        applied_by_id=sample_user.id,
+    )
+    assert apply_result.success is True
+    assert _count_action_logs(match.id) == 1
+
+    undo_result = KumiteScoringService.undo_last_action(match.id)
+    assert undo_result.success is True
+
+    with rx.session() as session:
+        refreshed = session.get(Match, match.id)
+        assert refreshed.aka_score == 0
+        assert refreshed.aka_yuko_count == 0
+        scores = session.exec(
+            select(MatchScore).where(MatchScore.match_id == match.id)
+        ).all()
+        assert scores == []
+
+    assert _count_action_logs(match.id) == 0
+
+
+def test_undo_hansoku_rolls_back_terminal_status_and_bonus_yuko(
+    sample_match, sample_user
+):
+    """Undo de HANSOKU revierte match finalizado, ganador y YUKO por sanción."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    apply_result = KumiteScoringService.apply_penalty(
+        match_id=match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.HANSOKU,
+        reason="Falta grave",
+        applied_by_id=sample_user.id,
+    )
+    assert apply_result.success is True
+    assert apply_result.match_ended is True
+
+    undo_result = KumiteScoringService.undo_last_action(match.id)
+    assert undo_result.success is True
+
+    with rx.session() as session:
+        refreshed = session.get(Match, match.id)
+        assert refreshed.status == MatchStatus.IN_PROGRESS.value
+        assert refreshed.winner_id is None
+        assert refreshed.end_time is None
+        assert refreshed.ao_score == 0
+
+        scores = session.exec(
+            select(MatchScore).where(MatchScore.match_id == match.id)
+        ).all()
+        assert scores == []
 
 
 def test_apply_penalty_invalid_when_match_not_in_progress(sample_match, sample_user):
