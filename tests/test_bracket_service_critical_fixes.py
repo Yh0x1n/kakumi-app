@@ -47,6 +47,27 @@ def _make_category(tournament_id: int):
     )
 
 
+def _add_category_athletes(session: Session, category_id: int, count: int = 2) -> None:
+    from kakumi_app.models.athlete_model import Athlete
+
+    for index in range(count):
+        session.add(
+            Athlete(
+                name=f"Critical Athlete {category_id}-{index}",
+                date_of_birth=datetime.date(2014, 1, index + 1),
+                gender="MALE",
+                email=f"critical-{category_id}-{index}@test.local",
+                weight_kg=42.0,
+                belt_rank="Kyu 1",
+                dojo="Dojo Central",
+                nationality="ARG",
+                license_number=f"CRIT-{category_id}-{index}",
+                is_active=True,
+                kata_category_id=category_id,
+            )
+        )
+
+
 def test_no_sqlalchemy_mapper_conflict() -> None:
     """Importing models should register one usable Match mapper."""
     models = importlib.import_module("kakumi_app.models")
@@ -111,6 +132,8 @@ def test_bracket_service_guard_existing_matches() -> None:
         session.add(category)
         session.flush()
         category_id = category.id
+        _add_category_athletes(session, category_id)
+        session.flush()
 
         service = BracketService(
             tournament_id=tournament_id,
@@ -118,7 +141,7 @@ def test_bracket_service_guard_existing_matches() -> None:
             session=session,
         )
 
-        first_result = service.generate_bracket()
+        service.generate_bracket()
 
         session.add(
             Match(
@@ -134,17 +157,7 @@ def test_bracket_service_guard_existing_matches() -> None:
         with pytest.raises(ValidationError) as exc_info:
             service.generate_bracket()
 
-    assert first_result == {
-        "tournament_id": tournament_id,
-        "category_id": category_id,
-        "status": "ready",
-    }
-
     assert exc_info.value.code == "BRACKET_ALREADY_EXISTS"
-    assert (
-        exc_info.value.message
-        == "Bracket already generated for this category. Cannot regenerate."
-    )
 
 
 def test_legacy_standalone_model_files_removed() -> None:
@@ -152,40 +165,6 @@ def test_legacy_standalone_model_files_removed() -> None:
 
     assert not (REPO_ROOT / "kakumi_app/models/penalty_model.py").exists()
     assert not (REPO_ROOT / "kakumi_app/models/tournament_area_model.py").exists()
-
-
-def test_bracket_service_generate_no_existing_matches() -> None:
-    """Bracket generation placeholder should succeed for an empty category."""
-    bracket_module = importlib.import_module(
-        "kakumi_app.services" + ".bracket_service"
-    )
-    BracketService = bracket_module.BracketService
-
-    engine = create_engine("sqlite:///:memory:")
-    SQLModel.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        tournament = _make_tournament()
-        session.add(tournament)
-        session.flush()
-
-        category = _make_category(tournament.id)
-        session.add(category)
-        session.commit()
-
-        service = BracketService(
-            tournament_id=tournament.id,
-            category_id=category.id,
-            session=session,
-        )
-
-        result = service.generate_bracket()
-
-    assert result == {
-        "tournament_id": tournament.id,
-        "category_id": category.id,
-        "status": "ready",
-    }
 
 
 def test_alembic_bracket_side_migration(

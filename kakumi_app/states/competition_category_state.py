@@ -1,0 +1,127 @@
+"""State for operator category competition visibility."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import reflex as rx
+from sqlmodel import select
+
+from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.referee_model import Referee
+from kakumi_app.models.team_model import Team
+from kakumi_app.models.tournament_model import Match, Tatami, TournamentCategory
+from kakumi_app.utils import CompetitionCategoryData, MatchCardData, build_match_cards
+
+
+logger = logging.getLogger(__name__)
+
+
+class CompetitionCategoryState(rx.State):
+    """Load category and match list data for operator views."""
+
+    category: CompetitionCategoryData | dict[str, Any] = {}
+    matches: list[MatchCardData] = []
+    is_loading: bool = False
+    error_message: str = ""
+
+    def _route_params(self) -> dict[str, Any]:
+        """Safely resolve route params from the router state."""
+        try:
+            return dict(self.router.page.params)
+        except Exception:
+            page = getattr(self.router, "_page", None)
+            return dict(getattr(page, "params", {}) or {})
+
+    def _parse_category_id(self) -> int:
+        """Parse the category id route param or raise ValueError."""
+        params = self._route_params()
+        raw_category_id = params.get("category_id", params.get("id"))
+        if raw_category_id in (None, ""):
+            raise ValueError("ID de categoría inválido")
+        return int(raw_category_id)
+
+    @staticmethod
+    def _name_lookup(session: Any, model: Any, ids: set[int]) -> dict[int, str]:
+        """Fetch an id-to-name mapping for a given model."""
+        if not ids:
+            return {}
+
+        rows = session.exec(
+            select(model.id, model.name).where(model.id.in_(sorted(ids)))
+        ).all()
+        return {row[0]: row[1] for row in rows}
+
+    @rx.event
+    async def load_category(self) -> None:
+        """Load operator-facing category match data for the current route."""
+        self.is_loading = True
+        self.error_message = ""
+        self.category = {}
+        self.matches = []
+
+        try:
+            category_id = self._parse_category_id()
+
+            with rx.session() as session:
+                category = session.get(TournamentCategory, category_id)
+                if category is None:
+                    self.error_message = "Categoría no encontrada"
+                    return
+
+                matches = session.exec(
+                    select(Match)
+                    .where(Match.category_id == category_id)
+                    .order_by(Match.round, Match.position, Match.id)
+                ).all()
+
+                athlete_ids = {
+                    participant_id
+                    for match in matches
+                    for participant_id in (match.aka_id, match.ao_id)
+                    if participant_id is not None
+                }
+                team_ids = {
+                    participant_id
+                    for match in matches
+                    for participant_id in (match.aka_team_id, match.ao_team_id)
+                    if participant_id is not None
+                }
+                tatami_ids = {
+                    match.tatami_id
+                    for match in matches
+                    if match.tatami_id is not None
+                }
+                referee_ids = {
+                    match.referee_id
+                    for match in matches
+                    if match.referee_id is not None
+                }
+
+                athlete_names = self._name_lookup(session, Athlete, athlete_ids)
+                team_names = self._name_lookup(session, Team, team_ids)
+                tatami_names = self._name_lookup(session, Tatami, tatami_ids)
+                referee_names = self._name_lookup(session, Referee, referee_ids)
+
+            self.category = {
+                "id": category.id,
+                "name": category.name,
+                "modality": category.modality,
+                "competition_system": category.competition_system,
+                "status": category.status,
+            }
+            self.matches = build_match_cards(
+                matches,
+                athlete_names=athlete_names,
+                team_names=team_names,
+                tatami_names=tatami_names,
+                referee_names=referee_names,
+            )
+        except ValueError:
+            self.error_message = "ID de categoría inválido"
+        except Exception:
+            logger.exception("Error cargando categoría de competencia")
+            self.error_message = "Error cargando datos"
+        finally:
+            self.is_loading = False
