@@ -415,6 +415,40 @@ async def test_exhibition_mode_penalty_mutates_local_slots_without_db_call(
 
 @pytest.mark.asyncio
 @pytest.mark.anyio
+async def test_exhibition_mode_hansoku_emits_winner_toast_and_ends_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_running = True
+    state.aka_penalty_slots = {
+        "C1": True,
+        "C2": True,
+        "C3": True,
+        "HC": True,
+        "H": False,
+    }
+
+    toast_success = Mock(return_value="toast-exh-hansoku")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.apply_penalty_cumulative("AKA")]
+
+    assert events == ["toast-exh-hansoku"]
+    assert state.aka_penalty_slots["H"] is True
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.hantei_required is False
+    assert state.match_end_reason == "HANSOKU"
+    assert state.match_winner_participant == "AO"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_undo_last_action_syncs_state_after_service_undo(
     sample_match,
     sample_user,
@@ -581,7 +615,6 @@ async def test_load_match_not_found_stays_real_route_safe_state() -> None:
 @pytest.mark.anyio
 async def test_timer_start_tick_stop_reset_end_flow_for_real_match(
     sample_match,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with rx.session() as session:
         match = session.get(Match, sample_match.id)
@@ -612,17 +645,15 @@ async def test_timer_start_tick_stop_reset_end_flow_for_real_match(
     assert state.timer_seconds == 180
     assert state.timer_formatted == "03:00"
 
-    toast_success = Mock(return_value="toast-end")
-    monkeypatch.setattr(
-        "kakumi_app.states.kumite_match_state.rx.toast.success", toast_success
-    )
     state.timer_seconds = 1
     restart_events = [event async for event in state.start_timer()]
     assert len(restart_events) == 1
     end_events = [event async for event in state.tick_timer()]
-    assert end_events == ["toast-end"]
+    assert end_events == []
     assert state.timer_seconds == 0
     assert state.timer_running is False
+    assert state.match_end_modal_open is True
+    assert state.match_end_reason == "HANTEI_REQUIRED"
 
 
 @pytest.mark.asyncio
@@ -662,10 +693,13 @@ async def test_run_timer_loop_decrements_and_stops_with_toast(
 
     events = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
 
-    assert events == ["toast-end"]
+    assert events == []
     assert state.timer_seconds == 0
     assert state.timer_running is False
     assert state._timer_loop_active is False
+    assert state.match_end_modal_open is True
+    assert state.match_end_reason == "HANTEI_REQUIRED"
+    toast_success.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -928,3 +962,625 @@ async def test_manual_senshu_real_mode_service_error_yields_toast(
     assert events == ["toast-senshu-error"]
     assert state.error_message == "No permitido"
     toast_error.assert_called_once_with("No permitido")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_timer_loop_time_expired_points_emits_winner_toast_no_modal(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timer en cero con ganador automático emite toast y no abre modal."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 3
+        match.ao_score = 1
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.timer_seconds = 1
+    state.timer_running = True
+    state._timer_loop_active = True
+
+    async def _fast_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", _fast_sleep)
+
+    toast_success = Mock(return_value="toast-finished")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+
+    assert events == ["toast-finished"]
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "TIME_OVER_POINTS"
+    assert state.hantei_required is False
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_timer_loop_time_expired_hantei_required_blocks_scoring(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empate sin SENSHU en tiempo exige HANTEI y bloquea score."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 2
+        match.ao_score = 2
+        match.aka_senshu = False
+        match.ao_senshu = False
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.timer_seconds = 1
+    state.timer_running = True
+    state._timer_loop_active = True
+
+    async def _fast_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", _fast_sleep)
+
+    _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+
+    assert state.hantei_required is True
+    assert state.match_end_reason == "HANTEI_REQUIRED"
+
+    toast_error = Mock(return_value="toast-hantei-block")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.error",
+        toast_error,
+    )
+
+    score_events = [
+        event
+        async for event in state.apply_score(
+            participant=Participant.AKA.value,
+            score_type=ScoreType.YUKO.value,
+        )
+    ]
+
+    assert score_events == ["toast-hantei-block"]
+    toast_error.assert_called_once_with("Resolver HANTEI antes de puntuar")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_apply_hantei_decision_updates_state_and_unblocks_scoring(
+    sample_match,
+    sample_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decisión HANTEI cierra modal y combate queda definitivamente cerrado."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 1
+        match.ao_score = 1
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.hantei_required = True
+    state.match_end_modal_open = True
+    state.match_end_reason = "HANTEI_REQUIRED"
+
+    toast_success = Mock(return_value="toast-finished")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [
+        event
+        async for event in state.apply_hantei_decision(
+            winner_participant=Participant.AKA.value,
+        )
+    ]
+    assert events == ["toast-finished"]
+    assert state.hantei_required is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "HANTEI_DECISION"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+    toast_error = Mock(return_value="toast-completed")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.error",
+        toast_error,
+    )
+
+    score_events = [
+        event
+        async for event in state.apply_score(
+            participant=Participant.AKA.value,
+            score_type=ScoreType.YUKO.value,
+            applied_by_id=sample_user.id,
+        )
+    ]
+
+    assert score_events == ["toast-completed"]
+    toast_error.assert_called_once_with("Match no está en progreso")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_apply_score_superiority_emits_winner_toast_and_stops_timer(
+    sample_match,
+    sample_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Superiority por score en apply_score emite toast y no modal."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 6
+        match.ao_score = 0
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-finished")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [
+        event
+        async for event in state.apply_score(
+            participant=Participant.AKA.value,
+            score_type=ScoreType.WAZA_ARI.value,
+            applied_by_id=sample_user.id,
+        )
+    ]
+
+    assert events == ["toast-finished"]
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "SUPERIORITY"
+    assert state.timer_running is False
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tick_timer_real_match_end_emits_winner_toast_no_modal(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cuando vence tiempo real automático emite toast exacto y no modal."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 2
+        match.ao_score = 0
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.timer_seconds = 1
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.tick_timer()]
+
+    assert events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "TIME_OVER_POINTS"
+    assert state.aka_score_color == "gold"
+    assert state.ao_score_color == "gray"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tick_timer_real_match_time_over_senshu_emits_toast_no_modal(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Time-over por SENSHU no abre dialog; emite toast exacto."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 2
+        match.ao_score = 2
+        match.aka_senshu = True
+        match.ao_senshu = False
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.timer_seconds = 1
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.tick_timer()]
+
+    assert events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "TIME_OVER_SENSHU"
+    assert state.aka_score_color == "gold"
+    assert state.ao_score_color == "gray"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tick_timer_real_match_time_over_senshu_ao_winner_sets_score_colors(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AO winner at timeout renders AO gold and AKA gray contract."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_score = 1
+        match.ao_score = 1
+        match.aka_senshu = False
+        match.ao_senshu = True
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    state.timer_seconds = 1
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.tick_timer()]
+
+    assert events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "TIME_OVER_SENSHU"
+    assert state.aka_score_color == "gray"
+    assert state.ao_score_color == "gold"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tick_timer_exhibition_time_over_points_emits_winner_toast_no_modal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exhibition timeout by points emite toast exacto y no modal."""
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.aka_score = 3
+    state.ao_score = 1
+    state.timer_seconds = 1
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.tick_timer()]
+
+    assert events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "TIME_OVER_POINTS"
+    assert state.hantei_required is False
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tick_timer_exhibition_time_over_senshu_emits_toast_no_modal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exhibition time-over por SENSHU no abre dialog; emite toast exacto."""
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.aka_score = 1
+    state.ao_score = 1
+    state.aka_senshu = False
+    state.ao_senshu = True
+    state.timer_seconds = 1
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-end")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.tick_timer()]
+
+    assert events == ["toast-end"]
+    assert state.timer_seconds == 0
+    assert state.timer_running is False
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "TIME_OVER_SENSHU"
+    assert state.hantei_required is False
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tick_timer_exhibition_draw_requires_hantei_and_allows_decision() -> None:
+    """Exhibition tie timeout requires HANTEI and operator can resolve winner."""
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.aka_score = 2
+    state.ao_score = 2
+    state.timer_seconds = 1
+    state.timer_running = True
+
+    timer_events = [event async for event in state.tick_timer()]
+
+    assert timer_events == []
+    assert state.match_end_modal_open is True
+    assert state.match_end_reason == "HANTEI_REQUIRED"
+    assert state.hantei_required is True
+
+    toast_success = Mock(return_value="toast-finished")
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    decision_events = [
+        event
+        async for event in state.apply_hantei_decision(
+            winner_participant=Participant.AO.value,
+        )
+    ]
+
+    assert decision_events == ["toast-finished"]
+    assert state.match_end_reason == "HANTEI_DECISION"
+    assert state.match_end_modal_open is False
+    assert state.hantei_required is False
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")
+    monkeypatch.undo()
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_apply_score_exhibition_superiority_emits_winner_toast_and_stops_timer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exhibition superiority emite toast exacto y no abre modal."""
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.aka_score = 6
+    state.ao_score = 0
+    state.timer_running = True
+
+    toast_success = Mock(return_value="toast-finished")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [
+        event
+        async for event in state.apply_score(
+            participant=Participant.AKA.value,
+            score_type=ScoreType.WAZA_ARI.value,
+        )
+    ]
+
+    assert events == ["toast-finished"]
+    assert state.aka_score == 8
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "SUPERIORITY"
+    assert state.timer_running is False
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AKA")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_reset_points_exhibition_mode_clears_score_senshu_and_penalties() -> None:
+    """Reset puntos en exhibition limpia score/senshu/penalidades."""
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.aka_score = 4
+    state.ao_score = 2
+    state.aka_senshu = True
+    state.ao_senshu = False
+    state.aka_penalty_slots = {
+        "C1": True,
+        "C2": True,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+    state.ao_penalty_slots = {
+        "C1": True,
+        "C2": False,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+
+    await KumiteMatchState.reset_points.fn(state)
+
+    assert state.aka_score == 0
+    assert state.ao_score == 0
+    assert state.aka_senshu is False
+    assert state.ao_senshu is False
+    assert state.aka_penalty_slots == {
+        "C1": False,
+        "C2": False,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+    assert state.ao_penalty_slots == {
+        "C1": False,
+        "C2": False,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_open_disqualification_dialog_sets_target_and_opens() -> None:
+    """Abrir descalificación guarda lado objetivo y abre modal."""
+    state = KumiteMatchState()
+
+    await KumiteMatchState.open_disqualification_dialog.fn(
+        state,
+        participant=Participant.AKA.value,
+    )
+
+    assert state.disqualification_dialog_open is True
+    assert state.disqualification_target_participant == Participant.AKA.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_apply_disqualification_emits_toast_closes_dialog_and_marks_end(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aplicar SHIKKAKU/KIKEN termina combate por toast y sin modal final."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+    await KumiteMatchState.open_disqualification_dialog.fn(
+        state,
+        participant=Participant.AKA.value,
+    )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.KumiteScoringService.apply_disqualification",
+        lambda match_id, penalized_participant, disqualification_type: SimpleNamespace(
+            success=True,
+            match_ended=True,
+            winner=Participant.AO.value,
+            end_reason=disqualification_type,
+            hantei_required=False,
+            message="ok",
+        ),
+    )
+    toast_success = Mock(return_value="toast-dq")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.apply_disqualification("SHIKKAKU")]
+
+    assert events == ["toast-dq"]
+    assert state.disqualification_dialog_open is False
+    assert state.disqualification_target_participant == ""
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "SHIKKAKU"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_apply_penalty_hansoku_emits_winner_toast_no_modal(
+    sample_match,
+    sample_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Al llegar a HANSOKU termina combate automático por toast (sin dialog)."""
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        session.add(match)
+        session.commit()
+
+    for _ in range(3):
+        KumiteScoringService.apply_penalty(
+            match_id=sample_match.id,
+            participant=Participant.AKA,
+            penalty_type=PenaltyType.CHUI,
+            reason="chui",
+            applied_by_id=sample_user.id,
+        )
+    KumiteScoringService.apply_penalty(
+        match_id=sample_match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.HANSOKU_CHUI,
+        reason="hc",
+        applied_by_id=sample_user.id,
+    )
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+    await KumiteMatchState.load_match.fn(state)
+
+    toast_success = Mock(return_value="toast-hansoku")
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.rx.toast.success",
+        toast_success,
+    )
+
+    events = [event async for event in state.apply_penalty_cumulative("AKA")]
+
+    assert events == ["toast-hansoku"]
+    assert state.match_end_modal_open is False
+    assert state.match_end_reason == "HANSOKU"
+    toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")

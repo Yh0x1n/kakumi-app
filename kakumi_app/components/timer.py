@@ -9,15 +9,10 @@ def timer() -> rx.Component:
             rx.heading(
                 KumiteMatchState.timer_formatted,
                 size="9",
-                font_family="Archivo Black",
             ),
             rx.hstack(
                 rx.button(
-                    rx.cond(
-                        ~KumiteMatchState.timer_running,
-                        "Comenzar",
-                        "Detener",
-                    ),
+                    rx.cond(~KumiteMatchState.timer_running, "Comenzar", "Detener"),
                     on_click=rx.cond(
                         ~KumiteMatchState.timer_running,
                         KumiteMatchState.start_timer,
@@ -29,11 +24,16 @@ def timer() -> rx.Component:
                     on_click=KumiteMatchState.reset_timer,
                     color_scheme="blue",
                 ),
+            ),
+            rx.hstack(
                 rx.button("Establecer 1 min", on_click=KumiteMatchState.set_timer(60)),
                 rx.button(
                     "Establecer 3 min",
                     on_click=KumiteMatchState.set_timer(180),
                 ),
+                wrap="wrap",
+                justify="center",
+                width="100%",
             ),
             rx.hstack(
                 rx.foreach(
@@ -48,6 +48,10 @@ def timer() -> rx.Component:
                         on_click=KumiteMatchState.add_or_substract_timer(i[1]),
                     ),
                 ),
+                justify="center",
+                width="100%",
             ),
+            align="center",
+            width="100%",
         )
     )

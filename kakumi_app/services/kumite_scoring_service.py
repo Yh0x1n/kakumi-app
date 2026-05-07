@@ -834,6 +834,8 @@ class MatchResult:
     match_ended: bool
     winner: Optional[str]
     message: str
+    end_reason: Optional[str] = None
+    hantei_required: bool = False
 
 
 @dataclass
@@ -876,6 +878,33 @@ class KumiteScoringService:
     MAX_CHUI: int = 3
 
     @staticmethod
+    def _set_match_completed_for_winner(match: Match, winner: str) -> None:
+        """Set match terminal fields for resolved AKA/AO winner."""
+        match.status = MatchStatus.COMPLETED.value
+        match.end_time = datetime.datetime.utcnow()
+        match.winner_id = (
+            match.aka_id if winner == Participant.AKA.value else match.ao_id
+        )
+
+    @staticmethod
+    def _resolve_time_over_decision(match: Match) -> tuple[Optional[str], str, bool]:
+        """Resolve winner when time expires: points, then SENSHU, else HANTEI."""
+        if match.aka_score != match.ao_score:
+            winner = (
+                Participant.AKA.value
+                if match.aka_score > match.ao_score
+                else Participant.AO.value
+            )
+            return winner, "TIME_OVER_POINTS", False
+
+        if match.aka_senshu and not match.ao_senshu:
+            return Participant.AKA.value, "TIME_OVER_SENSHU", False
+        if match.ao_senshu and not match.aka_senshu:
+            return Participant.AO.value, "TIME_OVER_SENSHU", False
+
+        return None, "HANTEI_REQUIRED", True
+
+    @staticmethod
     def apply_score(
         match_id: int,
         participant: Participant,
@@ -896,6 +925,8 @@ class KumiteScoringService:
                 match_ended=False,
                 winner=None,
                 message=f"Tipo de puntaje inválido: {score_type_value}",
+                end_reason=None,
+                hantei_required=False,
             )
 
         with rx.session() as session:
@@ -921,7 +952,7 @@ class KumiteScoringService:
             else:
                 return MatchResult(False, False, None, "Participante inválido")
 
-            winner = KumiteScoringService._check_match_termination(match)
+            winner, end_reason = KumiteScoringService._check_match_termination(match)
             match_score = MatchScore(
                 match_id=match.id,
                 judge_id=match.referee_id or 1,
@@ -955,6 +986,127 @@ class KumiteScoringService:
                 match_ended=winner is not None,
                 winner=winner,
                 message="Puntaje aplicado",
+                end_reason=end_reason,
+                hantei_required=False,
+            )
+
+    @staticmethod
+    def resolve_time_expired(match_id: int) -> MatchResult:
+        """Resolve end-of-time winner contract for real match flow."""
+        with rx.session() as session:
+            match = session.get(Match, match_id)
+            if not match:
+                return MatchResult(False, False, None, "Match no encontrado")
+            if match.status != MatchStatus.IN_PROGRESS.value:
+                return MatchResult(False, False, None, "Match no está en progreso")
+
+            winner, end_reason, hantei_required = (
+                KumiteScoringService._resolve_time_over_decision(match)
+            )
+            if winner is not None:
+                KumiteScoringService._set_match_completed_for_winner(match, winner)
+            else:
+                match.end_time = datetime.datetime.utcnow()
+
+            session.add(match)
+            session.commit()
+
+            return MatchResult(
+                success=True,
+                match_ended=True,
+                winner=winner,
+                message="Tiempo finalizado",
+                end_reason=end_reason,
+                hantei_required=hantei_required,
+            )
+
+    @staticmethod
+    def apply_hantei_decision(
+        match_id: int,
+        winner_participant: Participant | str,
+    ) -> MatchResult:
+        """Apply operator HANTEI winner decision and complete match."""
+        winner_value = (
+            winner_participant.value
+            if isinstance(winner_participant, Participant)
+            else winner_participant
+        )
+        if winner_value not in (Participant.AKA.value, Participant.AO.value):
+            return MatchResult(
+                success=False,
+                match_ended=False,
+                winner=None,
+                message="Participante inválido",
+            )
+
+        with rx.session() as session:
+            match = session.get(Match, match_id)
+            if not match:
+                return MatchResult(False, False, None, "Match no encontrado")
+            if match.status != MatchStatus.IN_PROGRESS.value:
+                return MatchResult(False, False, None, "Match no está en progreso")
+
+            KumiteScoringService._set_match_completed_for_winner(match, winner_value)
+            session.add(match)
+            session.commit()
+
+            return MatchResult(
+                success=True,
+                match_ended=True,
+                winner=winner_value,
+                message="HANTEI aplicado",
+                end_reason="HANTEI_DECISION",
+                hantei_required=False,
+            )
+
+    @staticmethod
+    def apply_disqualification(
+        match_id: int,
+        penalized_participant: Participant | str,
+        disqualification_type: str,
+    ) -> MatchResult:
+        """Apply manual disqualification (SHIKKAKU/KIKEN) and end match."""
+        penalized_value = (
+            penalized_participant.value
+            if isinstance(penalized_participant, Participant)
+            else penalized_participant
+        )
+        if penalized_value not in (Participant.AKA.value, Participant.AO.value):
+            return MatchResult(
+                success=False,
+                match_ended=False,
+                winner=None,
+                message="Participante inválido",
+            )
+
+        sanction_type = str(disqualification_type or "").upper()
+        if sanction_type not in {"SHIKKAKU", "KIKEN"}:
+            return MatchResult(
+                success=False,
+                match_ended=False,
+                winner=None,
+                message="Tipo de descalificación inválido",
+            )
+
+        with rx.session() as session:
+            match = session.get(Match, match_id)
+            if not match:
+                return MatchResult(False, False, None, "Match no encontrado")
+            if match.status != MatchStatus.IN_PROGRESS.value:
+                return MatchResult(False, False, None, "Match no está en progreso")
+
+            winner = KumiteScoringService._get_opponent(penalized_value)
+            KumiteScoringService._set_match_completed_for_winner(match, winner)
+            session.add(match)
+            session.commit()
+
+            return MatchResult(
+                success=True,
+                match_ended=True,
+                winner=winner,
+                message="Descalificación aplicada",
+                end_reason=sanction_type,
+                hantei_required=False,
             )
 
     @staticmethod
@@ -1170,23 +1322,19 @@ class KumiteScoringService:
             return MatchResult(True, False, None, "Acción revertida")
 
     @staticmethod
-    def _check_match_termination(match: Match) -> Optional[str]:
-        """Finaliza match solo si diferencia de puntaje es >= 8."""
+    def _check_match_termination(match: Match) -> tuple[Optional[str], Optional[str]]:
+        """Finaliza match por superioridad (diferencia >= 8)."""
         score_diff = abs(match.aka_score - match.ao_score)
         if score_diff < KumiteScoringService.SUPERIORITY_LEAD:
-            return None
+            return None, None
 
         winner = (
             Participant.AKA.value
             if match.aka_score > match.ao_score
             else Participant.AO.value
         )
-        match.status = MatchStatus.COMPLETED.value
-        match.end_time = datetime.datetime.utcnow()
-        match.winner_id = (
-            match.aka_id if winner == Participant.AKA.value else match.ao_id
-        )
-        return winner
+        KumiteScoringService._set_match_completed_for_winner(match, winner)
+        return winner, "SUPERIORITY"
 
     @staticmethod
     def _get_tiebreaker_winner(match: Match) -> TiebreakerResult:

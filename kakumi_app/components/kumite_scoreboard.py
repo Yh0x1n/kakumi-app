@@ -17,6 +17,11 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
         KumiteMatchState.ao_penalty_slots,
     )
     senshu = rx.cond(is_aka, KumiteMatchState.aka_senshu, KumiteMatchState.ao_senshu)
+    score_color = rx.cond(
+        is_aka,
+        KumiteMatchState.aka_score_color,
+        KumiteMatchState.ao_score_color,
+    )
 
     def _slot(label: str) -> rx.Component:
         return rx.vstack(
@@ -48,7 +53,7 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
             ),
             spacing="2",
         ),
-        rx.heading(score, as_="div", size="9"),
+        rx.heading(score, as_="div", size="9", color=score_color),
         rx.hstack(
             rx.button(
                 "YUKO",
@@ -83,11 +88,21 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
             _slot("H"),
             spacing="3",
         ),
-        rx.button(
-            "Penalización",
-            bg="white",
-            color="black",
-            on_click=KumiteMatchState.apply_penalty_cumulative(participant),
+        rx.hstack(
+            rx.button(
+                "Penalización",
+                bg="white",
+                color="black",
+                on_click=KumiteMatchState.apply_penalty_cumulative(participant),
+            ),
+            rx.button(
+                "Descalificación",
+                variant="outline",
+                on_click=KumiteMatchState.open_disqualification_dialog(
+                    participant=participant,
+                ),
+            ),
+            spacing="2",
         ),
         bg=color,
         width="50vh",
@@ -108,25 +123,123 @@ def kumite_scoreboard() -> rx.Component:
                 rx.badge("Match Active", color_scheme="green", size="3"),
             ),
             rx.hstack(
-                _participant_panel(
-                    participant=Participant.AKA.value,
-                    color="red",
-                    title="AKA",
-                ),
-                rx.vstack(
-                    timer(),
-                    rx.button(
-                        "Undo",
-                        on_click=KumiteMatchState.undo_last_action,
+                rx.box(
+                    _participant_panel(
+                        participant=Participant.AKA.value,
+                        color="red",
+                        title="AKA",
                     ),
-                    align="center",
+                    display="flex",
+                    justify_content="center",
                 ),
-                _participant_panel(
-                    participant=Participant.AO.value,
-                    color="blue",
-                    title="AO",
+                rx.box(
+                    rx.vstack(
+                        timer(),
+                        rx.button(
+                            "Deshacer",
+                            on_click=KumiteMatchState.undo_last_action,
+                        ),
+                        rx.cond(
+                            KumiteMatchState.is_exhibition_mode,
+                            rx.button(
+                                "Reiniciar puntos",
+                                on_click=KumiteMatchState.reset_points,
+                                variant="outline",
+                            ),
+                            rx.fragment(),
+                        ),
+                        align="center",
+                        width="100%",
+                    ),
+                    max_width="100%",
+                    display="flex",
+                    justify_content="center",
+                    align_items="center",
+                    flex_shrink="0",
                 ),
+                rx.box(
+                    _participant_panel(
+                        participant=Participant.AO.value,
+                        color="blue",
+                        title="AO",
+                    ),
+                    display="flex",
+                    justify_content="center",
+                ),
+                align="start",
+                justify="center",
+                width="100%",
+            ),
+            rx.cond(
+                KumiteMatchState.disqualification_dialog_open,
+                rx.dialog.root(
+                    rx.dialog.content(
+                        rx.dialog.title("Descalificación"),
+                        rx.dialog.description(
+                            "Seleccioná tipo de descalificación para finalizar combate"
+                        ),
+                        rx.hstack(
+                            rx.button(
+                                "SHIKKAKU",
+                                color_scheme="red",
+                                on_click=KumiteMatchState.apply_disqualification(
+                                    "SHIKKAKU"
+                                ),
+                            ),
+                            rx.button(
+                                "KIKEN",
+                                color_scheme="orange",
+                                on_click=KumiteMatchState.apply_disqualification(
+                                    "KIKEN"
+                                ),
+                            ),
+                            spacing="2",
+                        ),
+                        rx.button(
+                            "Cancelar",
+                            on_click=KumiteMatchState.close_disqualification_dialog,
+                            variant="soft",
+                        ),
+                    ),
+                    open=KumiteMatchState.disqualification_dialog_open,
+                ),
+                rx.fragment(),
+            ),
+            rx.cond(
+                KumiteMatchState.match_end_modal_open,
+                rx.dialog.root(
+                    rx.dialog.content(
+                        rx.dialog.title("HANTEI"),
+                        rx.dialog.description(KumiteMatchState.match_end_message),
+                        rx.cond(
+                            KumiteMatchState.hantei_required,
+                            rx.hstack(
+                                rx.button(
+                                    "Gana AKA",
+                                    on_click=KumiteMatchState.apply_hantei_decision(
+                                        winner_participant=Participant.AKA.value,
+                                    ),
+                                ),
+                                rx.button(
+                                    "Gana AO",
+                                    on_click=KumiteMatchState.apply_hantei_decision(
+                                        winner_participant=Participant.AO.value,
+                                    ),
+                                ),
+                                spacing="2",
+                            ),
+                            rx.button(
+                                "Entendido",
+                                on_click=KumiteMatchState.close_match_end_modal,
+                                variant="soft",
+                            ),
+                        ),
+                    ),
+                    open=KumiteMatchState.match_end_modal_open,
+                ),
+                rx.fragment(),
             ),
             spacing="4",
-        )
+            align="center",
+        ),
     )

@@ -18,7 +18,10 @@ from ..states.kumite_match_state import KumiteMatchState
     on_load=KumiteMatchState.enable_exhibition_mode,
 )
 def kumite_system() -> rx.Component:
-    return rx.box(rx.vstack(kumite_scoreboard()))
+    return rx.center(
+        rx.vstack(kumite_scoreboard()),
+        align="center",
+    )
 
 
 # Menú de exhibición

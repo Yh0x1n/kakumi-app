@@ -49,6 +49,13 @@ class KumiteMatchState(rx.State):
     timer_base_seconds: int = 180
     error_message: str = ""
     last_action_label: str = ""
+    match_end_modal_open: bool = False
+    match_end_reason: str = ""
+    match_end_message: str = ""
+    hantei_required: bool = False
+    match_winner_participant: str = ""
+    disqualification_dialog_open: bool = False
+    disqualification_target_participant: str = ""
 
     aka_score: int = 0
     ao_score: int = 0
@@ -97,6 +104,94 @@ class KumiteMatchState(rx.State):
         self.aka_penalty_slots = self._build_penalty_slots([])
         self.ao_penalty_slots = self._build_penalty_slots([])
         self._exhibition_undo_stack = []
+        self.match_end_modal_open = False
+        self.match_end_reason = ""
+        self.match_end_message = ""
+        self.hantei_required = False
+        self.match_winner_participant = ""
+        self.disqualification_dialog_open = False
+        self.disqualification_target_participant = ""
+
+    def _end_reason_message(self, end_reason: str | None) -> str:
+        """Map backend end reason to operator-facing message."""
+        reason = end_reason or ""
+        messages = {
+            "TIME_OVER_POINTS": "Ganó por puntos al finalizar tiempo",
+            "TIME_OVER_SENSHU": "Ganó por SENSHU al finalizar tiempo",
+            "HANTEI_REQUIRED": "Se requiere HANTEI",
+            "SUPERIORITY": "Finalizado por superioridad",
+            "HANTEI_DECISION": "Definido por HANTEI",
+            "HANSOKU": "Finalizado por HANSOKU",
+            "SHIKKAKU": "Finalizado por SHIKKAKU",
+            "KIKEN": "Finalizado por KIKEN",
+        }
+        return messages.get(reason, "Combate finalizado")
+
+    def _apply_match_end_result(self, result: Any) -> None:
+        """Apply backend match-end contract into synced UI state."""
+        self.timer_running = False
+        self._timer_loop_active = False
+        self.match_end_reason = str(getattr(result, "end_reason", "") or "")
+        self.match_end_message = self._end_reason_message(self.match_end_reason)
+        self.hantei_required = bool(getattr(result, "hantei_required", False))
+        self.match_winner_participant = str(getattr(result, "winner", "") or "")
+        self.match_end_modal_open = bool(
+            getattr(result, "match_ended", False) and self.hantei_required
+        )
+
+    def _winner_toast_message(self, winner: str) -> str:
+        """Build exact winner toast text contract."""
+        return f"¡Combate terminado!\nGanador: {winner}"
+
+    def _winner_from_scoreboard(self) -> str | None:
+        """Resolve winner from current synced scoreboard points."""
+        if self.aka_score == self.ao_score:
+            return None
+        return (
+            Participant.AKA.value
+            if self.aka_score > self.ao_score
+            else Participant.AO.value
+        )
+
+    @rx.var
+    def aka_score_color(self) -> str:
+        """Winner score text in gold; loser in gray."""
+        if self.match_winner_participant == Participant.AKA.value:
+            return "gold"
+        if self.match_winner_participant == Participant.AO.value:
+            return "gray"
+        return "inherit"
+
+    @rx.var
+    def ao_score_color(self) -> str:
+        """Winner score text in gold; loser in gray."""
+        if self.match_winner_participant == Participant.AO.value:
+            return "gold"
+        if self.match_winner_participant == Participant.AKA.value:
+            return "gray"
+        return "inherit"
+
+    def _resolve_local_timeout_and_toast_message(self) -> str | None:
+        """Resolve exhibition timeout result and optional winner toast text."""
+        end_reason, hantei_required = self._resolve_local_time_over_decision()
+        winner = None
+        if not hantei_required:
+            if end_reason == "TIME_OVER_POINTS":
+                winner = self._winner_from_scoreboard()
+            elif end_reason == "TIME_OVER_SENSHU":
+                winner = (
+                    Participant.AKA.value
+                    if self.aka_senshu
+                    else Participant.AO.value
+                )
+        self._apply_local_match_end_result(
+            end_reason=end_reason,
+            hantei_required=hantei_required,
+            winner=winner,
+        )
+        if winner in (Participant.AKA.value, Participant.AO.value):
+            return self._winner_toast_message(winner)
+        return None
 
     def _exhibition_snapshot(self) -> dict[str, Any]:
         """Capture local exhibition state for one-step undo stack."""
@@ -123,6 +218,18 @@ class KumiteMatchState(rx.State):
         else:
             self.ao_score += points
         self.last_action_label = f"EXH-SCORE:{participant}:{score_type}"
+
+        if abs(self.aka_score - self.ao_score) >= 8:
+            winner = (
+                Participant.AKA.value
+                if self.aka_score > self.ao_score
+                else Participant.AO.value
+            )
+            self._apply_local_match_end_result(
+                end_reason="SUPERIORITY",
+                hantei_required=False,
+                winner=winner,
+            )
 
     def _apply_exhibition_manual_senshu(self, participant: str) -> None:
         """Set manual senshu locally for exhibition flow."""
@@ -181,6 +288,34 @@ class KumiteMatchState(rx.State):
         self.aka_senshu = bool(snapshot["aka_senshu"])
         self.ao_senshu = bool(snapshot["ao_senshu"])
         self.last_action_label = "EXH-UNDO"
+
+    def _resolve_local_time_over_decision(self) -> tuple[str, bool]:
+        """Resolve local timeout end reason in exhibition mode."""
+        if self.aka_score != self.ao_score:
+            return "TIME_OVER_POINTS", False
+
+        if self.aka_senshu != self.ao_senshu:
+            return "TIME_OVER_SENSHU", False
+
+        return "HANTEI_REQUIRED", True
+
+    def _apply_local_match_end_result(
+        self,
+        *,
+        end_reason: str,
+        hantei_required: bool,
+        winner: str | None,
+    ) -> None:
+        """Apply exhibition/local end contract to shared modal state."""
+        self.timer_running = False
+        self._timer_loop_active = False
+        self.match_end_reason = end_reason
+        self.match_end_message = self._end_reason_message(end_reason)
+        self.hantei_required = hantei_required
+        self.match_end_modal_open = hantei_required
+        self.match_winner_participant = winner or ""
+        if winner is not None:
+            self.last_action_label = f"EXH-END:{end_reason}:{winner}"
 
     @rx.var
     def timer_formatted(self) -> str:
@@ -419,7 +554,9 @@ class KumiteMatchState(rx.State):
         while True:
             await asyncio.sleep(1)
 
-            toast_event = None
+            toast_message = None
+            resolve_time_expired = False
+            match_id_to_resolve = 0
             async with self:
                 if not self.timer_running:
                     self._timer_loop_active = False
@@ -436,15 +573,36 @@ class KumiteMatchState(rx.State):
                     self.timer_seconds = 0
                     self.timer_running = False
                     self._timer_loop_active = False
-                    toast_event = rx.toast.success("¡Combate terminado!")
+                    if self.is_exhibition_mode or self.match_id <= 0:
+                        toast_message = self._resolve_local_timeout_and_toast_message()
+                    else:
+                        resolve_time_expired = True
+                        match_id_to_resolve = self.match_id
 
-            if toast_event is not None:
-                yield toast_event
+            if resolve_time_expired:
+                result = KumiteScoringService.resolve_time_expired(match_id_to_resolve)
+                winner = ""
+                async with self:
+                    self._apply_match_end_result(result)
+                    winner = str(getattr(result, "winner", "") or "")
+                    with rx.session() as session:
+                        self._sync_from_match(
+                            session=session,
+                            match_id=match_id_to_resolve,
+                        )
+                if winner in (Participant.AKA.value, Participant.AO.value):
+                    yield rx.toast.success(self._winner_toast_message(winner))
+                break
+
+            if toast_message is not None:
+                yield rx.toast.success(toast_message)
                 break
 
     @rx.event
     async def tick_timer(self) -> None:
         """Advance one second in running timer and emit end signal."""
+        if False:  # pragma: no cover
+            yield rx.toast.success("")
         if not self.timer_running:
             return
         if self.timer_seconds <= 0:
@@ -455,7 +613,20 @@ class KumiteMatchState(rx.State):
         if self.timer_seconds <= 0:
             self.timer_seconds = 0
             self.timer_running = False
-            yield rx.toast.success("¡Combate terminado!")
+            self._timer_loop_active = False
+            if self.is_exhibition_mode or self.match_id <= 0:
+                toast_message = self._resolve_local_timeout_and_toast_message()
+                if toast_message is not None:
+                    yield rx.toast.success(toast_message)
+                return
+
+            result = KumiteScoringService.resolve_time_expired(self.match_id)
+            self._apply_match_end_result(result)
+            winner = str(getattr(result, "winner", "") or "")
+            with rx.session() as session:
+                self._sync_from_match(session=session, match_id=self.match_id)
+            if winner in (Participant.AKA.value, Participant.AO.value):
+                yield rx.toast.success(self._winner_toast_message(winner))
 
     def _is_latest_action_shikkaku(self, session: Session) -> bool:
         """Detect whether latest action corresponds to SHIKKAKU penalty."""
@@ -528,6 +699,23 @@ class KumiteMatchState(rx.State):
 
         if self.is_exhibition_mode and self.match_id <= 0:
             self._apply_exhibition_penalty(participant=participant)
+            participant_slots = (
+                self.aka_penalty_slots
+                if participant == Participant.AKA.value
+                else self.ao_penalty_slots
+            )
+            if participant_slots.get("H", False):
+                winner = (
+                    Participant.AO.value
+                    if participant == Participant.AKA.value
+                    else Participant.AKA.value
+                )
+                self._apply_local_match_end_result(
+                    end_reason=PenaltyType.HANSOKU.value,
+                    hantei_required=False,
+                    winner=winner,
+                )
+                yield rx.toast.success(self._winner_toast_message(winner))
             return
 
         warning_event = self._guard_active_match_event()
@@ -540,6 +728,27 @@ class KumiteMatchState(rx.State):
         )
         if not success:
             yield rx.toast.error(message)
+            return
+
+        applied_penalty = (
+            self.last_penalty_aka
+            if participant == Participant.AKA.value
+            else self.last_penalty_ao
+        )
+        if applied_penalty in (PenaltyType.HANSOKU.value, PenaltyType.SHIKKAKU.value):
+            winner = (
+                Participant.AO.value
+                if participant == Participant.AKA.value
+                else Participant.AKA.value
+            )
+            self.timer_running = False
+            self._timer_loop_active = False
+            self.match_end_reason = applied_penalty
+            self.match_end_message = self._end_reason_message(applied_penalty)
+            self.hantei_required = False
+            self.match_end_modal_open = False
+            self.match_winner_participant = winner
+            yield rx.toast.success(self._winner_toast_message(winner))
 
     @rx.event
     async def apply_penalty_direct(self, participant: str, penalty_type: str) -> None:
@@ -562,6 +771,27 @@ class KumiteMatchState(rx.State):
         )
         if not success:
             yield rx.toast.error(message)
+            return
+
+        applied_penalty = (
+            self.last_penalty_aka
+            if participant == Participant.AKA.value
+            else self.last_penalty_ao
+        )
+        if applied_penalty in (PenaltyType.HANSOKU.value, PenaltyType.SHIKKAKU.value):
+            winner = (
+                Participant.AO.value
+                if participant == Participant.AKA.value
+                else Participant.AKA.value
+            )
+            self.timer_running = False
+            self._timer_loop_active = False
+            self.match_end_reason = applied_penalty
+            self.match_end_message = self._end_reason_message(applied_penalty)
+            self.hantei_required = False
+            self.match_end_modal_open = False
+            self.match_winner_participant = winner
+            yield rx.toast.success(self._winner_toast_message(winner))
 
     @rx.event
     async def remove_last_penalty(self, participant: str) -> None:
@@ -595,6 +825,18 @@ class KumiteMatchState(rx.State):
                 participant=participant,
                 score_type=score_type,
             )
+            if (
+                self.match_end_reason == "SUPERIORITY"
+                and not self.hantei_required
+                and abs(self.aka_score - self.ao_score) >= 8
+            ):
+                winner = self._winner_from_scoreboard()
+                if winner is not None:
+                    yield rx.toast.success(self._winner_toast_message(winner))
+            return
+
+        if self.hantei_required:
+            yield rx.toast.error("Resolver HANTEI antes de puntuar")
             return
 
         warning_event = self._guard_active_match_event()
@@ -616,12 +858,153 @@ class KumiteMatchState(rx.State):
                 self.error_message = result.message
                 yield rx.toast.error(result.message)
                 return
+
+            if result.match_ended:
+                self._apply_match_end_result(result)
+                winner = str(getattr(result, "winner", "") or "")
+                if winner in (Participant.AKA.value, Participant.AO.value):
+                    yield rx.toast.success(self._winner_toast_message(winner))
+
             with rx.session() as session:
                 self._sync_from_match(session=session, match_id=self.match_id)
             self.last_action_label = f"SCORE:{participant}:{score_type}"
         finally:
             self.timer_paused = False
             self._processing = False
+
+    @rx.event
+    async def apply_hantei_decision(self, winner_participant: str) -> None:
+        """Resolve HANTEI-required match with operator-selected winner."""
+        if self.is_exhibition_mode and self.match_id <= 0:
+            if winner_participant not in (Participant.AKA.value, Participant.AO.value):
+                yield rx.toast.error("Participante inválido")
+                return
+            self._apply_local_match_end_result(
+                end_reason="HANTEI_DECISION",
+                hantei_required=False,
+                winner=winner_participant,
+            )
+            self.hantei_required = False
+            self.match_end_modal_open = False
+            self.match_winner_participant = winner_participant
+            yield rx.toast.success(self._winner_toast_message(winner_participant))
+            return
+
+        warning_event = self._guard_active_match_event()
+        if warning_event is not None:
+            yield warning_event
+            return
+
+        self.error_message = ""
+        result = KumiteScoringService.apply_hantei_decision(
+            match_id=self.match_id,
+            winner_participant=winner_participant,
+        )
+        if not result.success:
+            self.error_message = result.message
+            yield rx.toast.error(result.message)
+            return
+
+        self._apply_match_end_result(result)
+        self.hantei_required = False
+        self.match_end_modal_open = False
+        winner = str(getattr(result, "winner", "") or "")
+        if winner in (Participant.AKA.value, Participant.AO.value):
+            yield rx.toast.success(self._winner_toast_message(winner))
+
+        with rx.session() as session:
+            self._sync_from_match(session=session, match_id=self.match_id)
+
+    @rx.event
+    async def close_match_end_modal(self) -> None:
+        """Allow operator to dismiss end-reason modal."""
+        self.match_end_modal_open = False
+
+    @rx.event
+    async def open_disqualification_dialog(self, participant: str) -> None:
+        """Open disqualification dialog targeting one side."""
+        if participant not in (Participant.AKA.value, Participant.AO.value):
+            return
+        self.disqualification_target_participant = participant
+        self.disqualification_dialog_open = True
+
+    @rx.event
+    async def close_disqualification_dialog(self) -> None:
+        """Close disqualification dialog and clear selected participant."""
+        self.disqualification_dialog_open = False
+        self.disqualification_target_participant = ""
+
+    @rx.event
+    async def apply_disqualification(self, disqualification_type: str) -> None:
+        """Apply SHIKKAKU/KIKEN for selected side and resolve winner."""
+        sanction_type = str(disqualification_type or "").upper()
+        if sanction_type not in {"SHIKKAKU", "KIKEN"}:
+            yield rx.toast.error("Tipo de descalificación inválido")
+            return
+
+        penalized = self.disqualification_target_participant
+        if penalized not in (Participant.AKA.value, Participant.AO.value):
+            yield rx.toast.error("Seleccionar participante")
+            return
+
+        winner = (
+            Participant.AO.value
+            if penalized == Participant.AKA.value
+            else Participant.AKA.value
+        )
+
+        if self.is_exhibition_mode and self.match_id <= 0:
+            self._apply_local_match_end_result(
+                end_reason=sanction_type,
+                hantei_required=False,
+                winner=winner,
+            )
+            self.disqualification_dialog_open = False
+            self.disqualification_target_participant = ""
+            yield rx.toast.success(self._winner_toast_message(winner))
+            return
+
+        warning_event = self._guard_active_match_event()
+        if warning_event is not None:
+            yield warning_event
+            return
+
+        result = KumiteScoringService.apply_disqualification(
+            match_id=self.match_id,
+            penalized_participant=penalized,
+            disqualification_type=sanction_type,
+        )
+        if not result.success:
+            yield rx.toast.error(result.message)
+            return
+
+        self._apply_match_end_result(result)
+        self.disqualification_dialog_open = False
+        self.disqualification_target_participant = ""
+        self.match_end_modal_open = False
+        with rx.session() as session:
+            self._sync_from_match(session=session, match_id=self.match_id)
+        if result.winner in (Participant.AKA.value, Participant.AO.value):
+            yield rx.toast.success(self._winner_toast_message(str(result.winner)))
+
+    @rx.event
+    async def reset_points(self) -> None:
+        """Reset scoreboard points/penalties/senshu in exhibition mode."""
+        if not self.is_exhibition_mode or self.match_id > 0:
+            return
+        self._push_exhibition_snapshot()
+        self.aka_score = 0
+        self.ao_score = 0
+        self.aka_senshu = False
+        self.ao_senshu = False
+        self.aka_penalty_slots = self._build_penalty_slots([])
+        self.ao_penalty_slots = self._build_penalty_slots([])
+        self.match_end_reason = ""
+        self.match_end_message = ""
+        self.hantei_required = False
+        self.match_end_modal_open = False
+        self.match_winner_participant = ""
+        self.last_action_label = "EXH-RESET-POINTS"
 
     @rx.event
     async def undo_last_action(self) -> None:

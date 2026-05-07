@@ -165,6 +165,134 @@ def test_8_point_lead_ends_match(sample_match, sample_user):
         assert refreshed.status == MatchStatus.COMPLETED.value
 
 
+def test_8_point_lead_returns_superiority_reason(sample_match, sample_user):
+    """Ventaja >= 8 devuelve razón explícita SUPERIORITY."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    KumiteScoringService.apply_score(
+        match_id=match.id,
+        participant=Participant.AKA,
+        score_type=ScoreType.IPPON,
+        applied_by_id=sample_user.id,
+    )
+    KumiteScoringService.apply_score(
+        match_id=match.id,
+        participant=Participant.AKA,
+        score_type=ScoreType.IPPON,
+        applied_by_id=sample_user.id,
+    )
+    result = KumiteScoringService.apply_score(
+        match_id=match.id,
+        participant=Participant.AKA,
+        score_type=ScoreType.WAZA_ARI,
+        applied_by_id=sample_user.id,
+    )
+
+    assert result.match_ended is True
+    assert result.end_reason == "SUPERIORITY"
+
+
+def test_resolve_time_expired_wins_by_points(sample_match):
+    """Al terminar tiempo con ventaja en puntos, define ganador por puntos."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    with rx.session() as session:
+        row = session.get(Match, match.id)
+        row.aka_score = 3
+        row.ao_score = 1
+        session.add(row)
+        session.commit()
+
+    result = KumiteScoringService.resolve_time_expired(match.id)
+
+    assert result.success is True
+    assert result.match_ended is True
+    assert result.winner == Participant.AKA.value
+    assert result.end_reason == "TIME_OVER_POINTS"
+
+
+def test_resolve_time_expired_wins_by_senshu(sample_match):
+    """Al terminar tiempo empatado, SENSHU define ganador."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    with rx.session() as session:
+        row = session.get(Match, match.id)
+        row.aka_score = 2
+        row.ao_score = 2
+        row.ao_senshu = True
+        row.aka_senshu = False
+        session.add(row)
+        session.commit()
+
+    result = KumiteScoringService.resolve_time_expired(match.id)
+
+    assert result.success is True
+    assert result.match_ended is True
+    assert result.winner == Participant.AO.value
+    assert result.end_reason == "TIME_OVER_SENSHU"
+
+
+def test_resolve_time_expired_returns_hantei_required(sample_match):
+    """Al terminar tiempo empatado sin SENSHU, requiere HANTEI."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    with rx.session() as session:
+        row = session.get(Match, match.id)
+        row.aka_score = 2
+        row.ao_score = 2
+        row.aka_senshu = False
+        row.ao_senshu = False
+        session.add(row)
+        session.commit()
+
+    result = KumiteScoringService.resolve_time_expired(match.id)
+
+    assert result.success is True
+    assert result.match_ended is True
+    assert result.winner is None
+    assert result.hantei_required is True
+    assert result.end_reason == "HANTEI_REQUIRED"
+
+    with rx.session() as session:
+        refreshed = session.get(Match, match.id)
+        assert refreshed.status == MatchStatus.IN_PROGRESS.value
+        assert refreshed.winner_id is None
+
+
+def test_apply_hantei_decision_completes_match(sample_match):
+    """Decisión operatoria HANTEI debe cerrar combate con ganador."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    with rx.session() as session:
+        row = session.get(Match, match.id)
+        row.aka_score = 1
+        row.ao_score = 1
+        row.aka_senshu = False
+        row.ao_senshu = False
+        session.add(row)
+        session.commit()
+
+    result = KumiteScoringService.apply_hantei_decision(
+        match_id=match.id,
+        winner_participant=Participant.AKA,
+    )
+
+    assert result.success is True
+    assert result.match_ended is True
+    assert result.winner == Participant.AKA.value
+    assert result.end_reason == "HANTEI_DECISION"
+
+    with rx.session() as session:
+        refreshed = session.get(Match, match.id)
+        assert refreshed.status == MatchStatus.COMPLETED.value
+        assert refreshed.winner_id == refreshed.aka_id
+
+
 def test_first_score_does_not_auto_assign_senshu(sample_match, sample_user):
     """Primer puntaje no debe asignar SENSHU automáticamente."""
     from kakumi_app.services.kumite_scoring_service import KumiteScoringService
@@ -666,3 +794,58 @@ def test_apply_score_rejects_invalid_participant(sample_match, sample_user):
     )
 
     assert result.success is False
+
+
+def test_apply_disqualification_kiken_completes_match_for_opponent(sample_match):
+    """KIKEN manual termina combate y otorga victoria al lado opuesto."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    result = KumiteScoringService.apply_disqualification(
+        match_id=match.id,
+        penalized_participant=Participant.AKA,
+        disqualification_type="KIKEN",
+    )
+
+    assert result.success is True
+    assert result.match_ended is True
+    assert result.winner == Participant.AO.value
+    assert result.end_reason == "KIKEN"
+
+    with rx.session() as session:
+        refreshed = session.get(Match, match.id)
+        assert refreshed is not None
+        assert refreshed.status == MatchStatus.COMPLETED.value
+        assert refreshed.winner_id == refreshed.ao_id
+
+
+def test_apply_disqualification_shikkaku_completes_match_for_opponent(sample_match):
+    """SHIKKAKU manual termina combate y otorga victoria al lado opuesto."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    result = KumiteScoringService.apply_disqualification(
+        match_id=match.id,
+        penalized_participant=Participant.AO,
+        disqualification_type="SHIKKAKU",
+    )
+
+    assert result.success is True
+    assert result.match_ended is True
+    assert result.winner == Participant.AKA.value
+    assert result.end_reason == "SHIKKAKU"
+
+
+def test_apply_disqualification_rejects_invalid_type(sample_match):
+    """Tipo de descalificación inválido devuelve error de contrato."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_in_progress(sample_match.id)
+    result = KumiteScoringService.apply_disqualification(
+        match_id=match.id,
+        penalized_participant=Participant.AKA,
+        disqualification_type="INVALID",
+    )
+
+    assert result.success is False
+    assert result.match_ended is False

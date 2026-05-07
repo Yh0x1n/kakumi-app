@@ -33,6 +33,23 @@ def _rendered_string(component: rx.Component) -> str:
     )
 
 
+def _flatten_component_names(node: object) -> list[str]:
+    if isinstance(node, dict):
+        names: list[str] = []
+        name = node.get("name")
+        if isinstance(name, str):
+            names.append(name)
+        for value in node.values():
+            names.extend(_flatten_component_names(value))
+        return names
+    if isinstance(node, list):
+        names: list[str] = []
+        for item in node:
+            names.extend(_flatten_component_names(item))
+        return names
+    return []
+
+
 def test_bracket_page_returns_component_with_loading_error_empty_and_data_branches(
 ) -> None:
     component = bracket_page()
@@ -58,6 +75,7 @@ def test_category_page_returns_component_with_start_match_actions() -> None:
 
 def test_live_match_page_returns_scoreboard_with_real_match_route_contract() -> None:
     component = live_match_page()
+    component_names = _flatten_component_names(component.render())
     rendered = _rendered_string(component)
 
     assert isinstance(component, rx.Component)
@@ -71,6 +89,33 @@ def test_live_match_page_returns_scoreboard_with_real_match_route_contract() -> 
     assert "-10" in rendered
     assert "Otorgar SENSHU" in rendered
     assert "Revocar SENSHU" in rendered
+    assert "Descalificación" in rendered
+    assert "SHIKKAKU" in rendered
+    assert "KIKEN" in rendered
+    assert "Reiniciar puntos" in rendered
+    assert "aka_score_color" in rendered
+    assert "ao_score_color" in rendered
+    assert "HANTEI" in rendered
+    assert "Ganó por puntos al finalizar tiempo" not in rendered
+    assert "Ganó por SENSHU al finalizar tiempo" not in rendered
+    assert "Se requiere HANTEI" not in rendered
+    assert "Finalizado por superioridad" not in rendered
+    assert "Gana AKA" in rendered
+    assert "Gana AO" in rendered
+    assert "Entendido" in rendered
+    assert "RadixThemesDialog.Root" in component_names
+    assert "RadixThemesDialog.Content" in component_names
+
+
+def test_scoreboard_renders_single_backend_driven_scenario_message_binding() -> None:
+    component = live_match_page()
+    rendered = _rendered_string(component)
+
+    assert "match_end_message" in rendered
+    assert "Ganó por puntos al finalizar tiempo" not in rendered
+    assert "Ganó por SENSHU al finalizar tiempo" not in rendered
+    assert "Se requiere HANTEI" not in rendered
+    assert "Finalizado por superioridad" not in rendered
 
 
 def test_empty_category_state_shows_name_and_competition_system_context() -> None:
