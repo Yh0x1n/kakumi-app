@@ -5,8 +5,14 @@ import sys
 
 import reflex as rx
 
-from kakumi_app.pages.competition import bracket_page, category_page, live_match_page
+from kakumi_app.pages.competition import (
+    bracket_page,
+    category_page,
+    kata_live_match_page,
+    live_match_page,
+)
 from kakumi_app.pages.competition.category_page import _empty_category_state
+from kakumi_app.states.kata_match_state import KataMatchState
 from kakumi_app.states.kumite_match_state import KumiteMatchState
 
 
@@ -69,7 +75,7 @@ def test_category_page_returns_component_with_start_match_actions() -> None:
     assert isinstance(component, rx.Component)
     assert "Cargando categoría" in rendered
     assert "No hay encuentros generados aún" in rendered
-    assert "Iniciar combate" in rendered
+    assert "Iniciar encuentro" in rendered
     assert "/scoring/" not in rendered
 
 
@@ -151,3 +157,38 @@ def test_exhibition_kumite_route_wires_on_load_exhibition_mode() -> None:
     ]
     assert route_configs
     assert route_configs[-1].get("on_load") == KumiteMatchState.enable_exhibition_mode
+
+
+def test_exhibition_kata_route_wires_on_load_exhibition_mode() -> None:
+    page_module = importlib.import_module("reflex.page")
+    original_count = len(page_module.DECORATED_PAGES.get("kakumi_app", []))
+
+    sys.modules.pop("kakumi_app.pages.exhibition", None)
+    importlib.import_module("kakumi_app.pages.exhibition")
+
+    new_pages = page_module.DECORATED_PAGES.get("kakumi_app", [])[original_count:]
+    route_configs = [
+        config
+        for _, config in new_pages
+        if config.get("route") == "/exhibition/kata_system"
+    ]
+    assert route_configs
+    assert route_configs[-1].get("on_load") == KataMatchState.enable_exhibition_mode
+
+
+def test_live_match_routes_register_kata_and_kumite_paths() -> None:
+    app_module = importlib.import_module("kakumi_app.kakumi_app")
+    routes = {
+        f"/{route}" for route in app_module.app._unevaluated_pages.keys()  # noqa: SLF001
+    }
+    assert "/competition/match/[id]/kata" in routes
+    assert "/competition/match/[id]/kumite" in routes
+
+
+def test_kata_tournament_route_uses_kata_state_and_dedicated_page() -> None:
+    app_module = importlib.import_module("kakumi_app.kakumi_app")
+    kata_route = app_module.app._unevaluated_pages.get("competition/match/[id]/kata")  # noqa: SLF001
+
+    assert kata_route is not None
+    assert kata_route.on_load == KataMatchState.load_match
+    assert kata_route.component == kata_live_match_page

@@ -10,6 +10,7 @@ import reflex as rx
 from ..components.kata_scoreboard import kata_scoreboard
 from ..components.kumite_scoreboard import kumite_scoreboard
 from ..components.sidebar import sidebar
+from ..states.kata_match_state import KataMatchState
 from ..states.kumite_match_state import KumiteMatchState
 
 
@@ -27,7 +28,7 @@ def kumite_system() -> rx.Component:
 
 @rx.page(
     route="/exhibition/kata_system",
-    # on_load=
+    on_load=KataMatchState.enable_exhibition_mode,
 )
 def kata_system() -> rx.Component:
     return rx.center(

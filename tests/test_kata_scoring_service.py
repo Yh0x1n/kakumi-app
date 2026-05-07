@@ -143,7 +143,15 @@ def test_calculate_match_winner_numerical_majority_3_2(
     kata_match, sample_judges
 ) -> None:
     """Panel 5 jueces: mayoría 3-2 define ganador."""
+    from kakumi_app.models.kata_model import KataDecisionRule
     from kakumi_app.services.kata_scoring_service import KataScoringService
+
+    with rx.session() as session:
+        match = session.get(Match, kata_match.id)
+        category = match.category
+        category.kata_decision_rule = KataDecisionRule.MAJORITY_BY_JUDGE.value
+        session.add(category)
+        session.commit()
 
     judges = sample_judges(5)
     for index, judge in enumerate(judges):
@@ -173,23 +181,26 @@ def test_calculate_match_winner_numerical_majority_3_2(
     assert result.is_draw is False
 
 
-def test_calculate_match_winner_numerical_majority_4_3(
+def test_calculate_match_winner_rejects_panel_size_four(
     kata_match, sample_judges
 ) -> None:
-    """Panel 7 jueces: mayoría 4-3 define ganador."""
+    """Panel 4 debe rechazarse: contrato válido solo 3 o 5."""
+    from kakumi_app.models.kata_model import KataDecisionRule
+    from kakumi_app.models.kata_model import KataJudgeCountError
     from kakumi_app.services.kata_scoring_service import KataScoringService
 
     with rx.session() as session:
         match = session.get(Match, kata_match.id)
         category = match.category
-        category.judge_panel_size = 7
+        category.judge_panel_size = 4
+        category.kata_decision_rule = KataDecisionRule.MAJORITY_BY_JUDGE.value
         session.add(category)
         session.commit()
 
-    judges = sample_judges(7)
+    judges = sample_judges(4)
     for index, judge in enumerate(judges):
-        aka_score = 8.2 if index < 4 else 7.1
-        ao_score = 7.1 if index < 4 else 8.2
+        aka_score = 8.2 if index < 3 else 7.1
+        ao_score = 7.1 if index < 3 else 8.2
         KataScoringService.record_numerical_score(
             match_id=kata_match.id,
             judge_id=judge.id,
@@ -207,11 +218,86 @@ def test_calculate_match_winner_numerical_majority_4_3(
             score=ao_score,
         )
 
+    with pytest.raises(KataJudgeCountError):
+        KataScoringService.calculate_match_winner(kata_match.id)
+
+
+def test_calculate_match_winner_average_with_discard_for_five_judges(
+    kata_match, sample_judges
+) -> None:
+    """Modo legacy: descarta alto/bajo y define por promedio."""
+    from kakumi_app.models.kata_model import KataDecisionRule
+    from kakumi_app.services.kata_scoring_service import KataScoringService
+
+    with rx.session() as session:
+        match = session.get(Match, kata_match.id)
+        category = match.category
+        category.judge_panel_size = 5
+        category.kata_decision_rule = KataDecisionRule.AVERAGE_WITH_DISCARD.value
+        session.add(category)
+        session.commit()
+
+    judges = sample_judges(5)
+    aka_scores = [9.9, 8.4, 8.5, 8.6, 7.0]
+    ao_scores = [8.8, 8.3, 8.2, 8.1, 7.2]
+    for index, judge in enumerate(judges):
+        KataScoringService.record_numerical_score(
+            match_id=kata_match.id,
+            judge_id=judge.id,
+            participant="AKA",
+            performer_id=kata_match.aka_id,
+            team_id=None,
+            score=aka_scores[index],
+        )
+        KataScoringService.record_numerical_score(
+            match_id=kata_match.id,
+            judge_id=judge.id,
+            participant="AO",
+            performer_id=kata_match.ao_id,
+            team_id=None,
+            score=ao_scores[index],
+        )
+
     result = KataScoringService.calculate_match_winner(kata_match.id)
     assert result.winner == "AKA"
     assert result.aka_votes == 4
-    assert result.ao_votes == 3
-    assert result.is_draw is False
+    assert result.ao_votes == 1
+
+
+def test_calculate_match_winner_rejects_panel_size_greater_than_five(
+    kata_match, sample_judges
+) -> None:
+    """Panel 7 debe rechazarse por contrato 3..5."""
+    from kakumi_app.models.kata_model import KataJudgeCountError
+    from kakumi_app.services.kata_scoring_service import KataScoringService
+
+    with rx.session() as session:
+        match = session.get(Match, kata_match.id)
+        category = match.category
+        category.judge_panel_size = 7
+        session.add(category)
+        session.commit()
+
+    for judge in sample_judges(5):
+        KataScoringService.record_numerical_score(
+            match_id=kata_match.id,
+            judge_id=judge.id,
+            participant="AKA",
+            performer_id=kata_match.aka_id,
+            team_id=None,
+            score=8.0,
+        )
+        KataScoringService.record_numerical_score(
+            match_id=kata_match.id,
+            judge_id=judge.id,
+            participant="AO",
+            performer_id=kata_match.ao_id,
+            team_id=None,
+            score=7.0,
+        )
+
+    with pytest.raises(KataJudgeCountError):
+        KataScoringService.calculate_match_winner(kata_match.id)
 
 
 def test_record_flag_vote_creates_kata_judge_score(kata_match, sample_judges) -> None:

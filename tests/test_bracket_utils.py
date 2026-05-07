@@ -1,6 +1,10 @@
 """Tests for bracket grouping utilities."""
 
-from kakumi_app.utils.bracket_utils import group_matches_by_round
+from kakumi_app.utils.bracket_utils import (
+    _resolve_live_match_href,
+    build_match_cards,
+    group_matches_by_round,
+)
 
 
 def test_group_matches_by_round_returns_empty_list_for_empty_input() -> None:
@@ -87,7 +91,59 @@ def test_group_matches_by_round_preserves_display_fields_and_none_assignments() 
                     "ao_label": "Equipo Ao",
                     "tatami_label": None,
                     "referee_label": None,
+                    "live_match_href": None,
                 }
             ],
         }
     ]
+
+
+def test_resolve_live_match_href_chooses_kata_path_for_kata_modality() -> None:
+    class _Category:
+        modality = "KATA_INDIVIDUAL"
+
+    class _Match:
+        id = 42
+        status = "PENDING"
+        category = _Category()
+
+    assert _resolve_live_match_href(_Match()) == "/competition/match/42/kata"
+
+
+def test_resolve_live_match_href_chooses_kumite_path_for_other_modalities() -> None:
+    class _Category:
+        modality = "KUMITE_INDIVIDUAL"
+
+    class _Match:
+        id = 77
+        status = "PENDING"
+        category = _Category()
+
+    assert _resolve_live_match_href(_Match()) == "/competition/match/77/kumite"
+
+
+def test_build_match_cards_uses_category_modality_mapping_for_live_route() -> None:
+    class _Match:
+        id = 9
+        round = 1
+        position = 1
+        status = "PENDING"
+        match_type = "ELIMINATION"
+        aka_id = None
+        aka_team_id = None
+        ao_id = None
+        ao_team_id = None
+        tatami_id = None
+        referee_id = None
+        category_id = 77
+
+    cards = build_match_cards(
+        [_Match()],
+        athlete_names={},
+        team_names={},
+        tatami_names={},
+        referee_names={},
+        category_modalities={77: "KATA_TEAM"},
+    )
+
+    assert cards[0]["live_match_href"] == "/competition/match/9/kata"

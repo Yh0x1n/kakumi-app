@@ -117,6 +117,7 @@ class CompetitionCategoryState(rx.State):
                 team_names=team_names,
                 tatami_names=tatami_names,
                 referee_names=referee_names,
+                category_modalities={category.id: str(category.modality)},
             )
         except ValueError:
             self.error_message = "ID de categoría inválido"

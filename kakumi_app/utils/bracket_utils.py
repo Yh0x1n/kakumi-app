@@ -22,6 +22,35 @@ class MatchCardData(TypedDict):
     live_match_href: str | None
 
 
+KATA_MODALITIES: tuple[str, ...] = ("KATA_INDIVIDUAL", "KATA_TEAM")
+
+
+def _resolve_live_match_href(
+    match: Any,
+    *,
+    category_modalities: Mapping[int, str] | None = None,
+) -> str | None:
+    """Resolve live route by status + category modality."""
+    status = str(getattr(match, "status", "PENDING") or "PENDING")
+    if status != "PENDING":
+        return None
+
+    match_id = int(getattr(match, "id", 0) or 0)
+    modality = ""
+    if category_modalities is not None:
+        category_id = int(getattr(match, "category_id", 0) or 0)
+        modality = str(category_modalities.get(category_id, "") or "")
+    else:
+        try:
+            category = getattr(match, "category", None)
+            modality = str(getattr(category, "modality", "") or "")
+        except Exception:
+            modality = ""
+    if modality in KATA_MODALITIES:
+        return f"/competition/match/{match_id}/kata"
+    return f"/competition/match/{match_id}/kumite"
+
+
 class BracketRoundData(TypedDict):
     """Bracket round payload."""
 
@@ -121,6 +150,7 @@ def build_match_cards(
     team_names: Mapping[int, str],
     tatami_names: Mapping[int, str],
     referee_names: Mapping[int, str],
+    category_modalities: Mapping[int, str] | None = None,
 ) -> list[MatchCardData]:
     """Build render-ready match card payloads from persisted match rows."""
     payloads: list[dict[str, Any]] = []
@@ -156,10 +186,10 @@ def build_match_cards(
                 "tatami_name": tatami_names.get(tatami_id),
                 "referee_name": referee_names.get(referee_id),
                 "live_match_href": (
-                    f"/competition/kumite/match/{int(getattr(match, 'id', 0) or 0)}"
-                    if str(getattr(match, "status", "PENDING") or "PENDING")
-                    == "PENDING"
-                    else None
+                    _resolve_live_match_href(
+                        match,
+                        category_modalities=category_modalities,
+                    )
                 ),
             }
         )

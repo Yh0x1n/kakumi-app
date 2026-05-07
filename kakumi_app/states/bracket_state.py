@@ -153,6 +153,9 @@ class BracketState(rx.State):
                             team_names=team_names,
                             tatami_names=tatami_names,
                             referee_names=referee_names,
+                            category_modalities={
+                                item.id: str(item.modality) for item in categories
+                            },
                         )
                     ),
                 }

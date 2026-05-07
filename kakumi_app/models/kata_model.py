@@ -30,6 +30,13 @@ class KataScoringMode(str, Enum):
     FLAG = "FLAG"
 
 
+class KataDecisionRule(str, Enum):
+    """Regla de decisión para ganador numérico en Kata."""
+
+    AVERAGE_WITH_DISCARD = "average-with-discard"
+    MAJORITY_BY_JUDGE = "majority-by-judge"
+
+
 class KataScoreValidationError(Exception):
     """Score fuera de rango permitido para Kata."""
 

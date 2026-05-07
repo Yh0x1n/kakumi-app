@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, List, Optional
 import reflex as rx
 from sqlmodel import Field, Relationship
 
+from .kata_model import KataDecisionRule
+
 if TYPE_CHECKING:
     from .athlete_model import Athlete
     from .team_model import Team
@@ -217,8 +219,11 @@ class TournamentCategory(rx.Model, table=True):
     max_belt_rank: Optional[str] = Field(default=None, max_length=10)
     flag_count: Optional[int] = Field(default=None)  # 1-3 flags
     has_bunkai: bool = Field(default=False)
-    judge_panel_size: int = Field(default=3)  # 3 o 5
+    judge_panel_size: int = Field(default=3)  # 3..5
     scoring_type: Optional[str] = Field(default=None)  # STANDARD, FLAG
+    kata_decision_rule: str = Field(
+        default=KataDecisionRule.AVERAGE_WITH_DISCARD.value
+    )
     bunkai_mode: str = Field(default="NONE")
 
     # Campos opcionales para Kumite

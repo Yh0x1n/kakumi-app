@@ -9,6 +9,7 @@ from sqlmodel import select
 from kakumi_app.models.kata_model import (
     BunkaiMode,
     FlagVote,
+    KataDecisionRule,
     KataDuplicateScoreError,
     KataJudgeCountError,
     KataJudgeScore,
@@ -27,12 +28,16 @@ class KataMatchResult:
     ao_votes: int
     is_draw: bool
     message: str
+    success: bool = True
+    panel_complete: bool = True
+    needs_extra_kata: bool = False
+    match_ended: bool = True
 
 
 class KataScoringService:
     """Servicio backend para scoring de Kata."""
 
-    VALID_PANEL_SIZES: tuple[int, ...] = (5, 7)
+    VALID_PANEL_SIZES: tuple[int, ...] = (3, 5)
     SCORE_MIN: float = 5.0
     SCORE_MAX: float = 10.0
     SCORE_DQ: float = 0.0
@@ -141,8 +146,18 @@ class KataScoringService:
                     flag_scores, panel_size
                 )
 
+            decision_rule = str(
+                getattr(
+                    match.category,
+                    "kata_decision_rule",
+                    KataDecisionRule.AVERAGE_WITH_DISCARD.value,
+                )
+                or KataDecisionRule.AVERAGE_WITH_DISCARD.value
+            )
             return KataScoringService._calculate_numerical_winner(
-                all_scores, panel_size
+                all_scores,
+                panel_size,
+                decision_rule=decision_rule,
             )
 
     @staticmethod
@@ -317,7 +332,9 @@ class KataScoringService:
 
     @staticmethod
     def _calculate_numerical_winner(
-        scores: list[KataJudgeScore], panel_size: int
+        scores: list[KataJudgeScore],
+        panel_size: int,
+        decision_rule: str,
     ) -> KataMatchResult:
         """Calcula ganador en modo numérico comparando score por juez."""
         per_judge = KataScoringService._group_scores_by_judge(scores)
@@ -326,13 +343,12 @@ class KataScoringService:
             raise KataJudgeCountError("Panel incompleto para modo numérico")
 
         aka_votes, ao_votes = KataScoringService._count_numerical_votes(per_judge)
-
-        winner = None
-        is_draw = aka_votes == ao_votes
-        if aka_votes > ao_votes:
-            winner = FlagVote.AKA.value
-        elif ao_votes > aka_votes:
-            winner = FlagVote.AO.value
+        winner, is_draw = KataScoringService._resolve_numerical_winner(
+            per_judge,
+            decision_rule=decision_rule,
+            aka_votes=aka_votes,
+            ao_votes=ao_votes,
+        )
 
         return KataMatchResult(
             winner=winner,
@@ -341,6 +357,44 @@ class KataScoringService:
             is_draw=is_draw,
             message="Winner calculado por score numérico",
         )
+
+    @staticmethod
+    def _resolve_numerical_winner(
+        per_judge: dict[int, dict[str, float]],
+        *,
+        decision_rule: str,
+        aka_votes: int,
+        ao_votes: int,
+    ) -> tuple[Optional[str], bool]:
+        """Resuelve ganador numérico por regla de decisión configurada."""
+        if decision_rule == KataDecisionRule.MAJORITY_BY_JUDGE.value:
+            if aka_votes > ao_votes:
+                return FlagVote.AKA.value, False
+            if ao_votes > aka_votes:
+                return FlagVote.AO.value, False
+            return None, True
+
+        if decision_rule != KataDecisionRule.AVERAGE_WITH_DISCARD.value:
+            raise KataScoreValidationError("Regla de decisión kata inválida")
+
+        aka_scores = [scores[FlagVote.AKA.value] for scores in per_judge.values()]
+        ao_scores = [scores[FlagVote.AO.value] for scores in per_judge.values()]
+        aka_average = KataScoringService._average_with_optional_discard(aka_scores)
+        ao_average = KataScoringService._average_with_optional_discard(ao_scores)
+        if aka_average > ao_average:
+            return FlagVote.AKA.value, False
+        if ao_average > aka_average:
+            return FlagVote.AO.value, False
+        return None, True
+
+    @staticmethod
+    def _average_with_optional_discard(scores: list[float]) -> float:
+        """Promedia score; con 5 jueces descarta extremo alto y bajo."""
+        if len(scores) == 5:
+            sorted_scores = sorted(scores)
+            usable_scores = sorted_scores[1:-1]
+            return sum(usable_scores) / len(usable_scores)
+        return sum(scores) / len(scores)
 
     @staticmethod
     def _group_scores_by_judge(

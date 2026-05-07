@@ -9,7 +9,15 @@ from sqlmodel import Session as SQLModelSession
 
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import LicenseLevel, Referee, RefereeRole
-from kakumi_app.models.tournament_model import Match, MatchType, Tatami
+from kakumi_app.models.tournament_model import (
+    CategoryStatus,
+    CompetitionSystem,
+    Match,
+    MatchType,
+    Modality,
+    Tatami,
+    TournamentCategory,
+)
 from kakumi_app.states.competition_category_state import CompetitionCategoryState
 
 
@@ -170,7 +178,7 @@ async def test_load_category_missing_tatami_or_referee_uses_safe_none_labels(
 
 
 @pytest.mark.anyio
-async def test_load_category_exposes_pending_match_live_route_for_start_cta(
+async def test_load_category_exposes_pending_kata_live_route_for_start_cta(
     sample_tournament,
     sample_category,
 ) -> None:
@@ -184,7 +192,42 @@ async def test_load_category_exposes_pending_match_live_route_for_start_cta(
         match for match in state.matches if match["status"] == "PENDING"
     )
     assert pending_match["live_match_href"] == (
-        f"/competition/kumite/match/{pending_match['id']}"
+        f"/competition/match/{pending_match['id']}/kata"
+    )
+
+
+@pytest.mark.anyio
+async def test_load_category_exposes_pending_kumite_live_route_for_start_cta(
+    sample_tournament,
+) -> None:
+    with rx.session() as session:
+        category = TournamentCategory(
+            name="Kumite Senior Test",
+            modality=Modality.KUMITE_INDIVIDUAL.value,
+            gender="MALE",
+            min_age=18,
+            max_age=35,
+            competition_system=CompetitionSystem.ELIMINATION.value,
+            bracket_size=8,
+            status=CategoryStatus.PENDING.value,
+            tournament_id=sample_tournament.id,
+        )
+        session.add(category)
+        session.commit()
+        session.refresh(category)
+        category_id = category.id
+
+    _create_category_match_bundle(category_id, sample_tournament.id)
+    state = CompetitionCategoryState()
+    _set_route_param(state, "category_id", str(category_id))
+
+    await CompetitionCategoryState.load_category.fn(state)
+
+    pending_match = next(
+        match for match in state.matches if match["status"] == "PENDING"
+    )
+    assert pending_match["live_match_href"] == (
+        f"/competition/match/{pending_match['id']}/kumite"
     )
 
 
