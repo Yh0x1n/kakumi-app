@@ -45,11 +45,13 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                 "Otorgar SENSHU",
                 variant="outline",
                 on_click=KumiteMatchState.apply_manual_senshu(participant=participant),
+                color="white",
             ),
             rx.button(
                 "Revocar SENSHU",
                 variant="outline",
                 on_click=KumiteMatchState.revoke_manual_senshu(participant=participant),
+                color="white",
             ),
             spacing="2",
         ),
@@ -62,6 +64,7 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                     score_type=ScoreType.YUKO.value,
                     applied_by_id=1,
                 ),
+                bg="gray",
             ),
             rx.button(
                 "WAZA-ARI",
@@ -70,6 +73,7 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                     score_type=ScoreType.WAZA_ARI.value,
                     applied_by_id=1,
                 ),
+                bg="gray",
             ),
             rx.button(
                 "IPPON",
@@ -78,6 +82,7 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
                     score_type=ScoreType.IPPON.value,
                     applied_by_id=1,
                 ),
+                bg="gray",
             ),
         ),
         rx.hstack(
@@ -91,13 +96,14 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
         rx.hstack(
             rx.button(
                 "Penalización",
-                bg="white",
+                bg="yellow",
                 color="black",
                 on_click=KumiteMatchState.apply_penalty_cumulative(participant),
             ),
             rx.button(
                 "Descalificación",
-                variant="outline",
+                bg="crimson",
+                fg="white",
                 on_click=KumiteMatchState.open_disqualification_dialog(
                     participant=participant,
                 ),
@@ -108,6 +114,8 @@ def _participant_panel(participant: str, color: str, title: str) -> rx.Component
         width="50vh",
         align="center",
         padding="3",
+        border_radius="5px",
+        padding_y="10px",
     )
 
 

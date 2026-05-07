@@ -7,6 +7,7 @@ Módulo de página de exhibición
 # Importaciones
 import reflex as rx
 
+from ..components.kata_scoreboard import kata_scoreboard
 from ..components.kumite_scoreboard import kumite_scoreboard
 from ..components.sidebar import sidebar
 from ..states.kumite_match_state import KumiteMatchState
@@ -20,6 +21,17 @@ from ..states.kumite_match_state import KumiteMatchState
 def kumite_system() -> rx.Component:
     return rx.center(
         rx.vstack(kumite_scoreboard()),
+        align="center",
+    )
+
+
+@rx.page(
+    route="/exhibition/kata_system",
+    # on_load=
+)
+def kata_system() -> rx.Component:
+    return rx.center(
+        rx.vstack(kata_scoreboard()),
         align="center",
     )
 
@@ -45,7 +57,12 @@ def exhibition() -> rx.Component:
                         align="left",
                         color="black",
                     ),
-                    rx.link(rx.button("Ir a Kumite"), href="/exhibition/kumite_system"),
+                    rx.hstack(
+                        rx.link(rx.button("Ir a Kata"), href="/exhibition/kata_system"),
+                        rx.link(
+                            rx.button("Ir a Kumite"), href="/exhibition/kumite_system"
+                        ),
+                    ),
                 ),
             ),
             background_color="white",
