@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -12,12 +13,14 @@ from sqlmodel import select
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
 from kakumi_app.models.team_model import Team
+from kakumi_app.models.tournament_model import Tournament
 from kakumi_app.states.athlete_state import AthleteState
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.export_state import ExportState
 from kakumi_app.states.import_state import ImportState
 from kakumi_app.states.referee_state import RefereeState
 from kakumi_app.states.team_state import TeamState
+from kakumi_app.states.tournament_crud_state import TournamentCrudState
 from kakumi_app.states.tournament_state import TournamentState
 from kakumi_app.states.viewer_state import ViewerState
 
@@ -351,6 +354,55 @@ async def test_delete_athlete_success_returns_toast_and_removes_row(
     with rx.session() as session:
         athlete = session.get(Athlete, sample_athlete.id)
     assert athlete is None
+
+
+@pytest.mark.anyio
+async def test_delete_tournament_with_related_records_returns_guard_toast(
+    sample_tournament,
+    sample_category,
+) -> None:
+    del sample_category
+    state = TournamentCrudState()
+
+    result = await TournamentCrudState.delete_tournament.fn(state, sample_tournament.id)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="error") for event in events)
+
+    with rx.session() as session:
+        tournament = session.get(Tournament, sample_tournament.id)
+    assert tournament is not None
+
+
+@pytest.mark.anyio
+async def test_delete_tournament_without_related_records_deletes_and_toasts_success(
+    sample_user,
+) -> None:
+    del sample_user
+    with rx.session() as session:
+        tournament = Tournament(
+            name="Torneo CRUD Borrable",
+            venue="Dojo Test",
+            start_date=datetime.date(2026, 10, 1),
+            end_date=datetime.date(2026, 10, 2),
+            status="PLANIFICADO",
+        )
+        session.add(tournament)
+        session.commit()
+        session.refresh(tournament)
+        tournament_id = tournament.id
+
+    state = TournamentCrudState()
+    result = await TournamentCrudState.delete_tournament.fn(state, tournament_id)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+
+    with rx.session() as session:
+        deleted = session.get(Tournament, tournament_id)
+    assert deleted is None
 
 
 @pytest.mark.anyio

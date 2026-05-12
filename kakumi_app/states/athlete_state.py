@@ -7,9 +7,12 @@ import datetime
 from typing import Any, Optional
 
 import reflex as rx
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.services.export_service import ExportService
+from kakumi_app.services.import_service import ImportService
 from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
@@ -21,6 +24,8 @@ class AthleteState(CrudStateMixin, rx.State):
     show_form: bool = CrudStateMixin.show_form
     error_message: str = CrudStateMixin.error_message
     search_query: str = CrudStateMixin.search_query
+    current_page: int = CrudStateMixin.current_page
+    page_size: int = CrudStateMixin.page_size
 
     athletes: list[dict[str, Any]] = []
     current_athlete: Optional[dict[str, Any]] = None
@@ -36,6 +41,14 @@ class AthleteState(CrudStateMixin, rx.State):
     nationality: str = ""
     license_number: str = ""
     is_active: bool = True
+
+    # Import / Export UI state
+    import_content: str = ""
+    import_file_type: str = "csv"
+    import_success_count: int = 0
+    import_error_count: int = 0
+    import_error_messages: list[str] = []
+    export_content: str = ""
 
     @rx.event
     async def load_athletes(self) -> None:
@@ -61,6 +74,24 @@ class AthleteState(CrudStateMixin, rx.State):
                 or (a.email and query in a.email.lower())
                 or (a.dojo and query in a.dojo.lower())
             ]
+
+    @rx.event
+    async def initialize_registry_view(self) -> None:
+        """Prepare CRUD route state on page load."""
+        self.show_form = False
+        self.error_message = ""
+        self.reset_filters()
+        self.import_content = ""
+        self.import_file_type = "csv"
+        self.import_success_count = 0
+        self.import_error_count = 0
+        self.import_error_messages = []
+        self.export_content = ""
+        await self.load_athletes()
+
+    def athlete_status_label(self, athlete: dict[str, Any]) -> str:
+        """Return UI label for athlete active flag."""
+        return "Activo" if athlete.get("is_active", True) else "Inactivo"
 
     @rx.event
     def set_form_values(
@@ -159,11 +190,12 @@ class AthleteState(CrudStateMixin, rx.State):
         return True
 
     def _validate_belt_rank(self) -> bool:
-        """Validate optional belt rank prefix for Kyu or Dan entries."""
-        if self.belt_rank and not (
-            self.belt_rank.startswith("Kyu ") or self.belt_rank.startswith("Dan ")
-        ):
-            self.error_message = "Belt rank must be 'Kyu 1-8' or 'Dan 1-10'"
+        """Validate optional belt rank for Kyu/Dan or belt colors."""
+        if self.belt_rank and not ImportService.validate_belt_rank(self.belt_rank):
+            self.error_message = (
+                "Belt rank must be 'Kyu 1-8', 'Dan 1-10', "
+                "or belt colors from 'Blanco' to 'Negro'"
+            )
             return False
         return True
 
@@ -193,33 +225,39 @@ class AthleteState(CrudStateMixin, rx.State):
         }
 
         with rx.session() as session:
-            if self.is_editing and self.current_athlete:
-                # Update existing
-                athlete_id = self.current_athlete.get("id")
-                athlete = session.get(Athlete, int(athlete_id)) if athlete_id else None
-                if not athlete:
-                    return rx.toast.error("Athlete not found")
-
-                for key, value in athlete_data.items():
-                    setattr(athlete, key, value)
-
-                session.add(athlete)
-                session.commit()
-                success_message = f"Athlete '{athlete.name}' updated successfully"
-            else:
-                # Check duplicate name
-                existing = session.exec(
-                    select(Athlete).where(Athlete.name == self.name)
-                ).first()
-                if existing:
-                    return rx.toast.error(
-                        f"Athlete with name '{self.name}' already exists"
+            try:
+                if self.is_editing and self.current_athlete:
+                    # Update existing
+                    athlete_id = self.current_athlete.get("id")
+                    athlete = (
+                        session.get(Athlete, int(athlete_id)) if athlete_id else None
                     )
+                    if not athlete:
+                        return rx.toast.error("Athlete not found")
 
-                athlete = Athlete(**athlete_data)
-                session.add(athlete)
-                session.commit()
-                success_message = f"Athlete '{athlete.name}' created successfully"
+                    for key, value in athlete_data.items():
+                        setattr(athlete, key, value)
+
+                    session.add(athlete)
+                    session.commit()
+                    success_message = f"Athlete '{athlete.name}' updated successfully"
+                else:
+                    # Check duplicate name
+                    existing = session.exec(
+                        select(Athlete).where(Athlete.name == self.name)
+                    ).first()
+                    if existing:
+                        return rx.toast.error(
+                            f"Athlete with name '{self.name}' already exists"
+                        )
+
+                    athlete = Athlete(**athlete_data)
+                    session.add(athlete)
+                    session.commit()
+                    success_message = f"Athlete '{athlete.name}' created successfully"
+            except SQLAlchemyError:
+                session.rollback()
+                return rx.toast.error("Error al guardar atleta")
 
         self.show_form = False
         await self.load_athletes()
@@ -229,13 +267,17 @@ class AthleteState(CrudStateMixin, rx.State):
     async def delete_athlete(self, athlete_id: int) -> Any:
         """Delete athlete by ID."""
         with rx.session() as session:
-            athlete = session.get(Athlete, athlete_id)
-            if not athlete:
-                return rx.toast.error("Athlete not found")
+            try:
+                athlete = session.get(Athlete, athlete_id)
+                if not athlete:
+                    return rx.toast.error("Athlete not found")
 
-            athlete_name = athlete.name
-            session.delete(athlete)
-            session.commit()
+                athlete_name = athlete.name
+                session.delete(athlete)
+                session.commit()
+            except SQLAlchemyError:
+                session.rollback()
+                return rx.toast.error("Error al eliminar atleta")
 
         await self.load_athletes()
         return rx.toast.success(f"Athlete '{athlete_name}' deleted")
@@ -244,3 +286,40 @@ class AthleteState(CrudStateMixin, rx.State):
     def cancel_form(self) -> None:
         """Cancel form and hide it using shared mixin logic."""
         CrudStateMixin.cancel_form(self)
+
+    @rx.event
+    async def import_athletes(self) -> Any:
+        """Import athletes from inline CSV/JSON content."""
+        if not self.import_content.strip():
+            self.error_message = "Pegá contenido CSV o JSON antes de importar"
+            return rx.toast.error(self.error_message)
+
+        if self.import_file_type == "json":
+            success, errors, messages = ImportService.import_athletes_json(
+                self.import_content
+            )
+        else:
+            success, errors, messages = ImportService.import_athletes_csv(
+                self.import_content
+            )
+
+        self.import_success_count = success
+        self.import_error_count = errors
+        self.import_error_messages = messages
+
+        if errors:
+            self.error_message = "Importación con errores: revisá el detalle"
+        else:
+            self.error_message = ""
+
+        await self.load_athletes()
+        message = f"Importación finalizada: {success} correctos, {errors} errores"
+        if errors > 0:
+            return rx.toast.warning(message)
+        return rx.toast.success(message)
+
+    @rx.event
+    def export_athletes(self) -> Any:
+        """Export athletes as CSV content available in-page."""
+        self.export_content = ExportService.export_athletes_csv()
+        return rx.toast.success("Exportación de atletas generada")

@@ -146,6 +146,34 @@ def test_b2_athlete_validate_form_approval_valid_case() -> None:
     assert state.error_message == ""
 
 
+@pytest.mark.parametrize(
+    "belt_rank",
+    [
+        "Kyu 1",
+        "Dan 10",
+        "Blanco",
+        "Amarillo",
+        "Naranja",
+        "Verde",
+        "Azul",
+        "Marron",
+        "Negro",
+    ],
+)
+def test_b2_athlete_validate_form_accepts_kyu_dan_and_belt_colors(
+    belt_rank: str,
+) -> None:
+    state = AthleteState()
+    state.name = "Jane Doe"
+    state.date_of_birth = "2000-05-01"
+    state.gender = "FEMALE"
+    state.weight_kg = "55"
+    state.belt_rank = belt_rank
+
+    assert state.validate_form() is True
+    assert state.error_message == ""
+
+
 def test_b2_athlete_validate_form_approval_invalid_weight_case() -> None:
     state = AthleteState()
     state.name = "Jane Doe"

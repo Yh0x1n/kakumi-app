@@ -7,7 +7,6 @@ import csv
 import datetime
 import io
 import json
-from typing import Any, Dict, List, Optional
 
 import reflex as rx
 from sqlmodel import select
@@ -120,8 +119,40 @@ class ExportService:
     @staticmethod
     def export_referees_csv() -> str:
         """Export all referees to CSV."""
-        # Placeholder
-        return ""
+        with rx.session() as session:
+            referees = session.exec(select(Referee)).all()
+
+        output = io.StringIO()
+        fieldnames = [
+            "id",
+            "name",
+            "license_number",
+            "license_level",
+            "role",
+            "is_available",
+            "dojo",
+            "email",
+            "phone",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for referee in referees:
+            writer.writerow(
+                {
+                    "id": referee.id,
+                    "name": referee.name,
+                    "license_number": referee.license_number,
+                    "license_level": referee.license_level,
+                    "role": referee.role,
+                    "is_available": referee.is_available,
+                    "dojo": referee.dojo or "",
+                    "email": referee.email or "",
+                    "phone": referee.phone or "",
+                }
+            )
+
+        return output.getvalue()
 
     @staticmethod
     def export_teams_csv() -> str:

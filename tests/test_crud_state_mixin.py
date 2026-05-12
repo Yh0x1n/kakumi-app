@@ -7,7 +7,9 @@ from datetime import date
 
 import pytest
 import reflex as rx
+from sqlalchemy.exc import SQLAlchemyError
 from reflex.event import EventHandler
+from sqlmodel.orm.session import Session as SQLModelSession
 from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
@@ -601,3 +603,72 @@ def test_boundary_db_event_handlers_remain_async(
     handler = getattr(state_cls, method_name)
     assert isinstance(handler, EventHandler)
     assert inspect.iscoroutinefunction(handler.fn)
+
+
+@pytest.mark.anyio
+async def test_save_athlete_rolls_back_and_surfaces_toast_on_db_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Athlete save must rollback and return toast error on commit failure."""
+    from kakumi_app.states import athlete_state as athlete_state_module
+
+    rollback_calls = {"count": 0}
+
+    def _raise_commit(self) -> None:
+        raise SQLAlchemyError("db down")
+
+    def _count_rollback(self) -> None:
+        rollback_calls["count"] += 1
+
+    monkeypatch.setattr(SQLModelSession, "commit", _raise_commit)
+    monkeypatch.setattr(SQLModelSession, "rollback", _count_rollback)
+    monkeypatch.setattr(athlete_state_module.rx.toast, "error", lambda msg: msg)
+
+    state = AthleteState()
+    state.name = "Atleta DB Error"
+    state.date_of_birth = "2001-06-01"
+    state.gender = "MALE"
+
+    result = await AthleteState.save_athlete.fn(state)
+
+    assert rollback_calls["count"] == 1
+    assert isinstance(result, str)
+    assert "Error al guardar atleta" in result
+
+    with rx.session() as session:
+        created = session.exec(
+            select(Athlete).where(Athlete.name == "Atleta DB Error")
+        ).first()
+    assert created is None
+
+
+@pytest.mark.anyio
+async def test_delete_referee_rolls_back_and_surfaces_toast_on_db_error(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_referee: Referee,
+) -> None:
+    """Referee delete must rollback and return toast error on commit failure."""
+    from kakumi_app.states import referee_state as referee_state_module
+
+    rollback_calls = {"count": 0}
+
+    def _raise_commit(self) -> None:
+        raise SQLAlchemyError("db down")
+
+    def _count_rollback(self) -> None:
+        rollback_calls["count"] += 1
+
+    monkeypatch.setattr(SQLModelSession, "commit", _raise_commit)
+    monkeypatch.setattr(SQLModelSession, "rollback", _count_rollback)
+    monkeypatch.setattr(referee_state_module.rx.toast, "error", lambda msg: msg)
+
+    state = RefereeState()
+    result = await RefereeState.delete_referee.fn(state, sample_referee.id)
+
+    assert rollback_calls["count"] == 1
+    assert isinstance(result, str)
+    assert "Error al eliminar árbitro" in result
+
+    with rx.session() as session:
+        still_exists = session.get(Referee, sample_referee.id)
+    assert still_exists is not None

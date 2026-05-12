@@ -7,9 +7,12 @@ import json
 from typing import Any, Optional
 
 import reflex as rx
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from kakumi_app.models.referee_model import Referee
+from kakumi_app.services.export_service import ExportService
+from kakumi_app.services.import_service import ImportService
 from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
@@ -21,6 +24,8 @@ class RefereeState(CrudStateMixin, rx.State):
     show_form: bool = CrudStateMixin.show_form
     error_message: str = CrudStateMixin.error_message
     search_query: str = CrudStateMixin.search_query
+    current_page: int = CrudStateMixin.current_page
+    page_size: int = CrudStateMixin.page_size
 
     referees: list[dict[str, Any]] = []
     current_referee: Optional[dict[str, Any]] = None
@@ -35,6 +40,14 @@ class RefereeState(CrudStateMixin, rx.State):
     dojo: str = ""
     email: str = ""
     phone: str = ""
+
+    # Import / Export UI state
+    import_content: str = ""
+    import_file_type: str = "csv"
+    import_success_count: int = 0
+    import_error_count: int = 0
+    import_error_messages: list[str] = []
+    export_content: str = ""
 
     @rx.event
     async def load_referees(self) -> None:
@@ -61,6 +74,24 @@ class RefereeState(CrudStateMixin, rx.State):
                 or (r.dojo and query in r.dojo.lower())
                 or query in r.license_number.lower()
             ]
+
+    @rx.event
+    async def initialize_registry_view(self) -> None:
+        """Prepare CRUD route state on page load."""
+        self.show_form = False
+        self.error_message = ""
+        self.reset_filters()
+        self.import_content = ""
+        self.import_file_type = "csv"
+        self.import_success_count = 0
+        self.import_error_count = 0
+        self.import_error_messages = []
+        self.export_content = ""
+        await self.load_referees()
+
+    def referee_availability_label(self, referee: dict[str, Any]) -> str:
+        """Return UI label for referee availability flag."""
+        return "Disponible" if referee.get("is_available", True) else "No disponible"
 
     @rx.event
     def set_form_values(
@@ -118,8 +149,11 @@ class RefereeState(CrudStateMixin, rx.State):
 
         if self.tatami_certified:
             try:
-                json.loads(self.tatami_certified)
+                parsed_tatami = json.loads(self.tatami_certified)
             except json.JSONDecodeError:
+                self.error_message = "Tatami certified must be valid JSON array"
+                return False
+            if not isinstance(parsed_tatami, list):
                 self.error_message = "Tatami certified must be valid JSON array"
                 return False
 
@@ -146,33 +180,39 @@ class RefereeState(CrudStateMixin, rx.State):
         }
 
         with rx.session() as session:
-            if self.is_editing and self.current_referee:
-                # Update existing
-                referee_id = self.current_referee.get("id")
-                referee = session.get(Referee, int(referee_id)) if referee_id else None
-                if not referee:
-                    return rx.toast.error("Referee not found")
-
-                for key, value in referee_data.items():
-                    setattr(referee, key, value)
-
-                session.add(referee)
-                session.commit()
-                success_message = f"Referee '{referee.name}' updated successfully"
-            else:
-                # Check duplicate name
-                existing = session.exec(
-                    select(Referee).where(Referee.name == self.name)
-                ).first()
-                if existing:
-                    return rx.toast.error(
-                        f"Referee with name '{self.name}' already exists"
+            try:
+                if self.is_editing and self.current_referee:
+                    # Update existing
+                    referee_id = self.current_referee.get("id")
+                    referee = (
+                        session.get(Referee, int(referee_id)) if referee_id else None
                     )
+                    if not referee:
+                        return rx.toast.error("Referee not found")
 
-                referee = Referee(**referee_data)
-                session.add(referee)
-                session.commit()
-                success_message = f"Referee '{referee.name}' created successfully"
+                    for key, value in referee_data.items():
+                        setattr(referee, key, value)
+
+                    session.add(referee)
+                    session.commit()
+                    success_message = f"Referee '{referee.name}' updated successfully"
+                else:
+                    # Check duplicate name
+                    existing = session.exec(
+                        select(Referee).where(Referee.name == self.name)
+                    ).first()
+                    if existing:
+                        return rx.toast.error(
+                            f"Referee with name '{self.name}' already exists"
+                        )
+
+                    referee = Referee(**referee_data)
+                    session.add(referee)
+                    session.commit()
+                    success_message = f"Referee '{referee.name}' created successfully"
+            except SQLAlchemyError:
+                session.rollback()
+                return rx.toast.error("Error al guardar árbitro")
 
         self.show_form = False
         await self.load_referees()
@@ -182,13 +222,17 @@ class RefereeState(CrudStateMixin, rx.State):
     async def delete_referee(self, referee_id: int) -> Any:
         """Delete referee by ID."""
         with rx.session() as session:
-            referee = session.get(Referee, referee_id)
-            if not referee:
-                return rx.toast.error("Referee not found")
+            try:
+                referee = session.get(Referee, referee_id)
+                if not referee:
+                    return rx.toast.error("Referee not found")
 
-            referee_name = referee.name
-            session.delete(referee)
-            session.commit()
+                referee_name = referee.name
+                session.delete(referee)
+                session.commit()
+            except SQLAlchemyError:
+                session.rollback()
+                return rx.toast.error("Error al eliminar árbitro")
 
         await self.load_referees()
         return rx.toast.success(f"Referee '{referee_name}' deleted")
@@ -197,3 +241,40 @@ class RefereeState(CrudStateMixin, rx.State):
     def cancel_form(self) -> None:
         """Cancel form and hide it using shared mixin logic."""
         CrudStateMixin.cancel_form(self)
+
+    @rx.event
+    async def import_referees(self) -> Any:
+        """Import referees from inline CSV/JSON content."""
+        if not self.import_content.strip():
+            self.error_message = "Pegá contenido CSV o JSON antes de importar"
+            return rx.toast.error(self.error_message)
+
+        if self.import_file_type == "json":
+            success, errors, messages = ImportService.import_referees_json(
+                self.import_content
+            )
+        else:
+            success, errors, messages = ImportService.import_referees_csv(
+                self.import_content
+            )
+
+        self.import_success_count = success
+        self.import_error_count = errors
+        self.import_error_messages = messages
+
+        if errors:
+            self.error_message = "Importación con errores: revisá el detalle"
+        else:
+            self.error_message = ""
+
+        await self.load_referees()
+        message = f"Importación finalizada: {success} correctos, {errors} errores"
+        if errors > 0:
+            return rx.toast.warning(message)
+        return rx.toast.success(message)
+
+    @rx.event
+    def export_referees(self) -> Any:
+        """Export referees as CSV content available in-page."""
+        self.export_content = ExportService.export_referees_csv()
+        return rx.toast.success("Exportación de árbitros generada")
