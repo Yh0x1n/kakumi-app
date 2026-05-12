@@ -80,6 +80,7 @@ secrets.json
 
 # Opencode tool — local dev tooling, not project code
 /.opencode/
+/.gga
 
 # Agent dev tooling — local environment only, not project code
 /.agents/
@@ -91,6 +92,10 @@ secrets.json
 
 # Ignore Python egg caches
 .eggs/
+/kakumi_app/*.egg-info/
+
+# Local lockfile not versioned in this repo
+/uv.lock
 
 # Caches
 .cache/

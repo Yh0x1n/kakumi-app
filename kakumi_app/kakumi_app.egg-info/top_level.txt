@@ -1,7 +1,0 @@
-auth
-components
-models
-pages
-services
-states
-styles
