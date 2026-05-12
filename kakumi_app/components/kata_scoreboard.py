@@ -85,10 +85,29 @@ def kata_scoreboard() -> rx.Component:
                 rx.badge("Exhibition", color_scheme="orange", size="3"),
                 rx.badge("Match Active", color_scheme="green", size="3"),
             ),
+            rx.cond(
+                KataMatchState.is_exhibition_mode,
+                rx.hstack(
+                    rx.text("Modo Kata"),
+                    rx.select(
+                        ["STANDARD", "INFORMAL"],
+                        value=KataMatchState.kata_mode,
+                        on_change=KataMatchState.set_kata_mode,
+                        width="180px",
+                        size="1",
+                    ),
+                    spacing="2",
+                ),
+                rx.fragment(),
+            ),
             rx.heading("Kata en vivo", size="7"),
             rx.hstack(
                 rx.badge(f"Panel: {KataMatchState.judge_panel_size}", size="2"),
-                rx.badge(f"Modo: {KataMatchState.scoring_type}", size="2"),
+                rx.cond(
+                    KataMatchState.is_informal_mode,
+                    rx.badge("Modo: INFORMAL", size="2"),
+                    rx.badge(f"Modo: {KataMatchState.scoring_type}", size="2"),
+                ),
                 rx.cond(
                     KataMatchState.is_exhibition_mode,
                     rx.cond(
@@ -113,39 +132,161 @@ def kata_scoreboard() -> rx.Component:
                 spacing="2",
                 wrap="wrap",
             ),
-            rx.hstack(
-                rx.vstack(
-                    rx.text("AKA", weight="bold", color="red"),
-                    rx.text(KataMatchState.aka_name, size="4"),
-                    spacing="1",
-                    align="center",
-                ),
-                rx.vstack(
-                    rx.text("AO", weight="bold", color="blue"),
-                    rx.text(KataMatchState.ao_name, size="4"),
-                    spacing="1",
-                    align="center",
-                ),
-                spacing="6",
-                justify="center",
-            ),
             rx.cond(
-                KataMatchState.is_flag_mode,
+                KataMatchState.is_informal_mode,
                 rx.vstack(
-                    rx.foreach(KataMatchState.judge_slots, _judge_vote_row),
+                    rx.cond(
+                        (KataMatchState.is_exhibition_mode)
+                        & (KataMatchState.informal_category_id == 0),
+                        rx.input(
+                            placeholder="ATLETA",
+                            value=KataMatchState.informal_exhibition_participant_name,
+                            on_change=(
+                                KataMatchState.set_informal_exhibition_participant_name
+                            ),
+                            width="320px",
+                        ),
+                        rx.fragment(),
+                    ),
+                    rx.cond(
+                        (KataMatchState.is_exhibition_mode)
+                        & (KataMatchState.informal_category_id == 0),
+                        rx.text("Nombre atleta (opcional)"),
+                        rx.fragment(),
+                    ),
+                    rx.text(
+                        rx.cond(
+                            KataMatchState.informal_current_athlete_label != "",
+                            KataMatchState.informal_current_athlete_label,
+                            "—",
+                        ),
+                        weight="bold",
+                    ),
+                    rx.text("Atleta actual"),
+                    rx.cond(
+                        KataMatchState.informal_roster_labels.length() > 0,
+                        rx.select(
+                            KataMatchState.informal_roster_labels,
+                            value=KataMatchState.informal_selected_athlete_label,
+                            on_change=KataMatchState.select_informal_athlete_from_label,
+                            placeholder="Seleccionar atleta",
+                            width="320px",
+                        ),
+                        rx.fragment(),
+                    ),
+                    rx.hstack(
+                        rx.input(
+                            placeholder="J1",
+                            value=KataMatchState.informal_judge_entries["J1"],
+                            on_change=lambda value: KataMatchState.set_informal_judge_score(
+                                "J1", value
+                            ),
+                            width="80px",
+                            text_align="center",
+                        ),
+                        rx.input(
+                            placeholder="J2",
+                            value=KataMatchState.informal_judge_entries["J2"],
+                            on_change=lambda value: KataMatchState.set_informal_judge_score(
+                                "J2", value
+                            ),
+                            width="80px",
+                            text_align="center",
+                        ),
+                        rx.input(
+                            placeholder="J3",
+                            value=KataMatchState.informal_judge_entries["J3"],
+                            on_change=lambda value: KataMatchState.set_informal_judge_score(
+                                "J3", value
+                            ),
+                            width="80px",
+                            text_align="center",
+                        ),
+                        rx.input(
+                            placeholder="J4",
+                            value=KataMatchState.informal_judge_entries["J4"],
+                            on_change=lambda value: KataMatchState.set_informal_judge_score(
+                                "J4", value
+                            ),
+                            width="80px",
+                            text_align="center",
+                        ),
+                        rx.input(
+                            placeholder="J5",
+                            value=KataMatchState.informal_judge_entries["J5"],
+                            on_change=lambda value: KataMatchState.set_informal_judge_score(
+                                "J5", value
+                            ),
+                            width="80px",
+                            text_align="center",
+                        ),
+                        width="100%",
+                        justify="center",
+                    ),
+                    rx.heading("Ranking informal", size="4"),
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("#"),
+                                rx.table.column_header_cell("Atleta"),
+                                rx.table.column_header_cell("Puntaje"),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                KataMatchState.informal_standings,
+                                lambda row: rx.table.row(
+                                    rx.table.cell(row["rank"]),
+                                    rx.table.cell(row["athlete_name"]),
+                                    rx.table.cell(row["final_score"]),
+                                ),
+                            )
+                        ),
+                        width="100%",
+                    ),
                     spacing="2",
                     width="100%",
                     align="stretch",
                 ),
                 rx.vstack(
                     rx.hstack(
-                        rx.text("Juez", width="50px", weight="bold"),
-                        rx.text("AKA", width="120px", text_align="center"),
-                        rx.text("AO", width="120px", text_align="center"),
+                        rx.vstack(
+                            rx.text("AKA", weight="bold", color="red"),
+                            rx.text(KataMatchState.aka_name, size="4"),
+                            spacing="1",
+                            align="center",
+                        ),
+                        rx.vstack(
+                            rx.text("AO", weight="bold", color="blue"),
+                            rx.text(KataMatchState.ao_name, size="4"),
+                            spacing="1",
+                            align="center",
+                        ),
+                        spacing="6",
                         justify="center",
-                        width="100%",
                     ),
-                    rx.foreach(KataMatchState.judge_slots, _judge_input_row),
+                    rx.cond(
+                        KataMatchState.is_flag_mode,
+                        rx.vstack(
+                            rx.foreach(KataMatchState.judge_slots, _judge_vote_row),
+                            spacing="2",
+                            width="100%",
+                            align="stretch",
+                        ),
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("Juez", width="50px", weight="bold"),
+                                rx.text("AKA", width="120px", text_align="center"),
+                                rx.text("AO", width="120px", text_align="center"),
+                                justify="center",
+                                width="100%",
+                            ),
+                            rx.foreach(KataMatchState.judge_slots, _judge_input_row),
+                            spacing="2",
+                            width="100%",
+                            align="stretch",
+                        ),
+                    ),
                     spacing="2",
                     width="100%",
                     align="stretch",
@@ -167,7 +308,14 @@ def kata_scoreboard() -> rx.Component:
                 spacing="2",
             ),
             rx.hstack(
-                rx.button("Finalizar", on_click=KataMatchState.finalize_match),
+                rx.button(
+                    rx.cond(
+                        KataMatchState.is_informal_mode,
+                        "Guardar puntaje informal",
+                        "Finalizar",
+                    ),
+                    on_click=KataMatchState.finalize_match,
+                ),
                 rx.button(
                     "Reiniciar panel",
                     variant="outline",

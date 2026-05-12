@@ -11,7 +11,14 @@ from sqlmodel import select
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.kata_model import KataDecisionRule
 from kakumi_app.models.referee_model import Referee, RefereeRole
-from kakumi_app.models.tournament_model import Match, MatchStatus, Participant
+from kakumi_app.models.tournament_model import (
+    Match,
+    MatchStatus,
+    Modality,
+    Participant,
+    TournamentCategory,
+)
+from kakumi_app.services.kata_informal_service import KataInformalService
 from kakumi_app.services.kata_scoring_service import KataScoringService
 
 
@@ -44,6 +51,55 @@ class KataMatchState(rx.State):
         KataDecisionRule.AVERAGE_WITH_DISCARD.value,
         KataDecisionRule.MAJORITY_BY_JUDGE.value,
     )
+    kata_mode: str = "STANDARD"
+    informal_category_id: int = 0
+    informal_roster: list[dict[str, object]] = []
+    informal_selected_athlete_id: int = 0
+    informal_exhibition_participant_name: str = ""
+    informal_judge_entries: dict[str, str] = {
+        "J1": "",
+        "J2": "",
+        "J3": "",
+        "J4": "",
+        "J5": "",
+    }
+    informal_standings: list[dict[str, object]] = []
+
+    @rx.var
+    def is_informal_mode(self) -> bool:
+        """Return whether scoreboard should use informal single-panel mode."""
+        return self.kata_mode == "INFORMAL"
+
+    @rx.var
+    def informal_roster_labels(self) -> list[str]:
+        """Return informal roster labels for select."""
+        return [
+            f"{int(row['id'])} - {str(row['name'])}"
+            for row in self.informal_roster
+            if "id" in row and "name" in row
+        ]
+
+    @rx.var
+    def informal_selected_athlete_label(self) -> str:
+        """Return selected informal athlete label."""
+        if self.informal_selected_athlete_id <= 0:
+            return ""
+        for row in self.informal_roster:
+            if int(row.get("id", 0)) == self.informal_selected_athlete_id:
+                return f"{int(row['id'])} - {str(row['name'])}"
+        return ""
+
+    @rx.var
+    def informal_current_athlete_label(self) -> str:
+        """Return current informal athlete label."""
+        if (
+            self.is_informal_mode
+            and self.is_exhibition_mode
+            and self.informal_category_id == 0
+        ):
+            candidate = self.informal_exhibition_participant_name.strip()
+            return candidate if candidate != "" else "ATLETA"
+        return self.informal_selected_athlete_label
 
     @rx.var
     def judge_slots(self) -> list[str]:
@@ -65,6 +121,7 @@ class KataMatchState(rx.State):
         self.match_id = 0 if exhibition_mode else self.match_id
         self.has_active_match = False
         self.is_exhibition_mode = exhibition_mode
+        self.kata_mode = "STANDARD"
         self.judge_panel_size = 5
         self.scoring_type = "STANDARD"
         self.decision_rule = KataDecisionRule.AVERAGE_WITH_DISCARD.value
@@ -77,6 +134,82 @@ class KataMatchState(rx.State):
         self.result_message = ""
         self.error_message = ""
         self._judge_ids_by_slot = {}
+        self.informal_category_id = 0
+        self.informal_roster = []
+        self.informal_selected_athlete_id = 0
+        self.informal_exhibition_participant_name = ""
+        self.informal_judge_entries = {"J1": "", "J2": "", "J3": "", "J4": "", "J5": ""}
+        self.informal_standings = []
+
+    def _build_informal_judge_entries(self) -> dict[str, str]:
+        return {f"J{index}": "" for index in range(1, self.judge_panel_size + 1)}
+
+    def _refresh_informal_standings(self) -> None:
+        if self.informal_category_id <= 0:
+            self.informal_standings = []
+            return
+        ranking = KataInformalService.rank_category(self.informal_category_id)
+        name_by_id = {
+            int(row["id"]): str(row["name"])
+            for row in self.informal_roster
+            if "id" in row and "name" in row
+        }
+        self.informal_standings = [
+            {
+                "rank": index + 1,
+                "athlete_id": int(row["athlete_id"]),
+                "athlete_name": name_by_id.get(int(row["athlete_id"]), "—"),
+                "final_score": f"{float(row['final_score']):.3f}",
+                "victory_points": int(row.get("victory_points", 0)),
+                "needs_extra_kata": bool(row["needs_extra_kata"]),
+            }
+            for index, row in enumerate(ranking)
+        ]
+
+    def _advance_informal_next_athlete(self) -> None:
+        roster_ids = [
+            int(row["id"])
+            for row in self.informal_roster
+            if "id" in row
+        ]
+        if not roster_ids:
+            self.informal_selected_athlete_id = 0
+            return
+        if self.informal_selected_athlete_id not in roster_ids:
+            self.informal_selected_athlete_id = roster_ids[0]
+            return
+        current_index = roster_ids.index(self.informal_selected_athlete_id)
+        next_index = (current_index + 1) % len(roster_ids)
+        self.informal_selected_athlete_id = roster_ids[next_index]
+
+    def _load_informal_session(self, category_id: int) -> None:
+        with rx.session() as session:
+            athletes = session.exec(
+                select(Athlete)
+                .where(Athlete.kata_category_id == category_id)
+                .order_by(Athlete.name)
+            ).all()
+
+        self.informal_category_id = category_id
+        self.informal_roster = [
+            {"id": athlete.id, "name": athlete.name} for athlete in athletes
+        ]
+        self.informal_selected_athlete_id = (
+            int(self.informal_roster[0]["id"]) if len(self.informal_roster) > 0 else 0
+        )
+        self.informal_judge_entries = self._build_informal_judge_entries()
+        self._refresh_informal_standings()
+
+    def _resolve_exhibition_informal_category_id(self) -> int:
+        with rx.session() as session:
+            category = session.exec(
+                select(TournamentCategory)
+                .where(TournamentCategory.modality == Modality.KATA_INDIVIDUAL.value)
+                .order_by(TournamentCategory.id.asc())
+            ).first()
+        if category is None:
+            raise ValueError("No hay categoría disponible para modo informal")
+        return int(category.id)
 
     def _route_params(self) -> dict[str, Any]:
         try:
@@ -271,6 +404,26 @@ class KataMatchState(rx.State):
         self._reset_state(exhibition_mode=True)
 
     @rx.event
+    async def set_kata_mode(self, mode: str) -> None:
+        """Set exhibition Kata flow mode."""
+        if mode not in {"STANDARD", "INFORMAL"}:
+            return
+        self.kata_mode = mode
+        self.error_message = ""
+        self.winner_participant = ""
+        self.result_message = ""
+        if mode == "INFORMAL":
+            if self.is_exhibition_mode:
+                self.informal_category_id = 0
+                self.informal_roster = []
+                self.informal_selected_athlete_id = 0
+                self.informal_exhibition_participant_name = ""
+                self.informal_judge_entries = self._build_informal_judge_entries()
+                self.informal_standings = []
+            elif self.informal_category_id > 0:
+                self._load_informal_session(self.informal_category_id)
+
+    @rx.event
     async def load_match(self) -> None:
         self.error_message = ""
         self.winner_participant = ""
@@ -295,6 +448,7 @@ class KataMatchState(rx.State):
             self.has_active_match = True
             self.judge_panel_size = panel_size
             self.scoring_type = str(match.category.scoring_type or "STANDARD")
+            self.kata_mode = str(getattr(match.category, "kata_flow_mode", "STANDARD"))
             self.decision_rule = str(
                 match.category.kata_decision_rule
                 or KataDecisionRule.AVERAGE_WITH_DISCARD.value
@@ -314,6 +468,9 @@ class KataMatchState(rx.State):
                 f"J{index + 1}": judge.id
                 for index, judge in enumerate(judges[:panel_size])
             }
+
+            if self.kata_mode == "INFORMAL":
+                self._load_informal_session(match.category_id)
 
     @rx.event
     async def set_panel_size(self, size: int) -> None:
@@ -361,17 +518,112 @@ class KataMatchState(rx.State):
 
     @rx.event
     async def reset_entries(self) -> None:
-        self.judge_entries = self._build_judge_entries(self.judge_panel_size)
+        if self.is_informal_mode:
+            self.informal_judge_entries = self._build_informal_judge_entries()
+            if self.is_exhibition_mode and self.informal_category_id == 0:
+                self.informal_exhibition_participant_name = ""
+        else:
+            self.judge_entries = self._build_judge_entries(self.judge_panel_size)
         self.panel_complete = False
         self.winner_participant = ""
         self.result_message = ""
         self.error_message = ""
 
     @rx.event
+    async def select_informal_athlete_from_label(self, label: str) -> None:
+        """Set current informal athlete from roster label."""
+        athlete_id = str(label).split(" - ")[0]
+        self.informal_selected_athlete_id = int(athlete_id)
+        self.informal_judge_entries = self._build_informal_judge_entries()
+        self.error_message = ""
+
+    @rx.event
+    async def set_informal_judge_score(self, judge_slot: str, value: str) -> None:
+        """Set one informal judge score input."""
+        if judge_slot not in self.informal_judge_entries:
+            return
+        updated = dict(self.informal_judge_entries)
+        updated[judge_slot] = value.strip()
+        self.informal_judge_entries = updated
+
+    @rx.event
+    async def set_informal_exhibition_participant_name(self, value: str) -> None:
+        """Set optional participant label for free exhibition informal run."""
+        self.informal_exhibition_participant_name = value
+
+    def _finalize_informal_exhibition_free(self) -> None:
+        """Persist one free-sequence exhibition informal run in-memory."""
+        scores: list[float] = []
+        for slot in self.judge_slots:
+            raw = self.informal_judge_entries.get(slot, "")
+            if raw == "":
+                raise ValueError("Panel incompleto")
+            scores.append(float(raw))
+
+        run_name = self.informal_exhibition_participant_name.strip() or "ATLETA"
+        final_score = KataInformalService._compute_score(scores).final_score
+        next_rows = [dict(row) for row in self.informal_standings]
+        next_rows.append(
+            {
+                "rank": 0,
+                "athlete_id": 0,
+                "athlete_name": run_name,
+                "final_score": f"{final_score:.3f}",
+                "victory_points": 0,
+                "needs_extra_kata": False,
+            }
+        )
+        sorted_rows = sorted(
+            next_rows,
+            key=lambda row: float(str(row["final_score"])),
+            reverse=True,
+        )
+        self.informal_standings = [
+            {**row, "rank": index + 1}
+            for index, row in enumerate(sorted_rows)
+        ]
+        self.informal_judge_entries = self._build_informal_judge_entries()
+        self.informal_exhibition_participant_name = ""
+
+    def _finalize_informal_performance(self) -> None:
+        if self.is_exhibition_mode and self.informal_category_id == 0:
+            self._finalize_informal_exhibition_free()
+            return
+
+        if self.informal_category_id <= 0:
+            raise ValueError("Categoría informal no disponible")
+        if self.informal_selected_athlete_id <= 0:
+            raise ValueError("Seleccioná un atleta")
+
+        scores: list[float] = []
+        for slot in self.judge_slots:
+            raw = self.informal_judge_entries.get(slot, "")
+            if raw == "":
+                raise ValueError("Panel incompleto")
+            scores.append(float(raw))
+
+        KataInformalService.save_performance(
+            category_id=self.informal_category_id,
+            athlete_id=self.informal_selected_athlete_id,
+            judge_scores=scores,
+        )
+        self._refresh_informal_standings()
+        self.informal_judge_entries = self._build_informal_judge_entries()
+        self._advance_informal_next_athlete()
+
+    @rx.event
     async def finalize_match(self):
         self.error_message = ""
         self.winner_participant = ""
         self.result_message = ""
+        if self.is_informal_mode:
+            try:
+                self._finalize_informal_performance()
+            except ValueError as error:
+                self.error_message = str(error)
+                yield rx.toast.error(str(error))
+            return
+
         self.panel_complete = self._resolve_panel_complete()
         if not self.panel_complete:
             self.error_message = "Panel incompleto"

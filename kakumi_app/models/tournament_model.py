@@ -55,6 +55,13 @@ class CategoryStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class KataFlowMode(str, Enum):
+    """Kata flow mode for individual categories."""
+
+    STANDARD = "STANDARD"
+    INFORMAL = "INFORMAL"
+
+
 class MatchType(str, Enum):
     """Tipos de encuentro según specs.md sección 2.5."""
 
@@ -224,6 +231,7 @@ class TournamentCategory(rx.Model, table=True):
     kata_decision_rule: str = Field(
         default=KataDecisionRule.AVERAGE_WITH_DISCARD.value
     )
+    kata_flow_mode: str = Field(default=KataFlowMode.STANDARD.value)
     bunkai_mode: str = Field(default="NONE")
 
     # Campos opcionales para Kumite

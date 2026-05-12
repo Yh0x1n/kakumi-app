@@ -7,6 +7,7 @@ import reflex as rx
 from reflex.istate.data import PageData
 from sqlmodel import select
 
+from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.kata_model import KataJudgeScore
 from kakumi_app.models.tournament_model import Match, MatchStatus
 from kakumi_app.services.kata_scoring_service import KataScoringService
@@ -288,3 +289,97 @@ async def test_finalize_tournament_updates_standings_and_bunkai_contract(
     assert standings
     assert standings[0].athlete_id == match.aka_id
     assert standings[0].victory_points == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_enable_exhibition_mode_initializes_informal_single_panel_state() -> None:
+    state = KataMatchState()
+
+    await KataMatchState.enable_exhibition_mode.fn(state)
+
+    assert state.kata_mode == "STANDARD"
+    assert state.informal_selected_athlete_label == ""
+    assert state.informal_current_athlete_label == ""
+    assert state.informal_roster_labels == []
+    assert state.informal_standings == []
+    assert state.informal_judge_entries == {
+        "J1": "",
+        "J2": "",
+        "J3": "",
+        "J4": "",
+        "J5": "",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_finalize_exhibition_informal_saves_and_advances_participant(
+) -> None:
+    state = KataMatchState()
+    await KataMatchState.enable_exhibition_mode.fn(state)
+    await KataMatchState.set_kata_mode.fn(state, "INFORMAL")
+    await KataMatchState.set_informal_exhibition_participant_name.fn(state, "Lucía")
+
+    for slot in ("J1", "J2", "J3", "J4", "J5"):
+        await KataMatchState.set_informal_judge_score.fn(state, slot, "8.2")
+
+    events = [event async for event in state.finalize_match()]
+
+    assert events == []
+    assert state.error_message == ""
+    assert state.informal_exhibition_participant_name == ""
+    assert state.informal_current_athlete_label == "ATLETA"
+    assert state.informal_judge_entries == {
+        "J1": "",
+        "J2": "",
+        "J3": "",
+        "J4": "",
+        "J5": "",
+    }
+    assert len(state.informal_standings) == 1
+    assert state.informal_standings[0]["athlete_name"] == "Lucía"
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_exhibition_informal_works_without_category_and_uses_fallback_name() -> None:
+    state = KataMatchState()
+    await KataMatchState.enable_exhibition_mode.fn(state)
+
+    await KataMatchState.set_kata_mode.fn(state, "INFORMAL")
+
+    assert state.kata_mode == "INFORMAL"
+    assert state.error_message == ""
+    assert state.informal_category_id == 0
+    assert state.informal_current_athlete_label == "ATLETA"
+
+    for slot in ("J1", "J2", "J3", "J4", "J5"):
+        await KataMatchState.set_informal_judge_score.fn(state, slot, "8.0")
+
+    events = [event async for event in state.finalize_match()]
+
+    assert events == []
+    assert len(state.informal_standings) == 1
+    assert state.informal_standings[0]["athlete_name"] == "ATLETA"
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_tournament_load_match_activates_informal_single_panel_for_category(
+    kata_match,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, kata_match.id)
+        assert match is not None
+        category = match.category
+        category.kata_flow_mode = "INFORMAL"
+        session.add(category)
+        session.commit()
+
+    state = KataMatchState()
+    _set_match_route_param(state, kata_match.id)
+
+    await KataMatchState.load_match.fn(state)
+
+    assert state.kata_mode == "INFORMAL"

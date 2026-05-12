@@ -267,3 +267,114 @@ async def test_load_category_db_failure_sets_generic_safe_error(
     assert state.matches == []
     assert state.error_message == "Error cargando datos"
     assert state.is_loading is False
+
+
+@pytest.mark.anyio
+async def test_load_category_informal_mode_exposes_table_data(
+    sample_tournament,
+) -> None:
+    with rx.session() as session:
+        category = TournamentCategory(
+            name="Kata Informal Test",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender="MIXED",
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            status=CategoryStatus.IN_PROGRESS.value,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            kata_flow_mode="INFORMAL",
+        )
+        session.add(category)
+        session.commit()
+        session.refresh(category)
+
+        athlete = Athlete(
+            name="Informal State Athlete",
+            date_of_birth=datetime.date(2000, 1, 1),
+            gender="MALE",
+            email="informal-state-athlete@test.local",
+            belt_rank="Dan 1",
+            kata_category_id=category.id,
+        )
+        session.add(athlete)
+        session.commit()
+        session.refresh(athlete)
+        category_id = category.id
+
+    state = CompetitionCategoryState()
+    _set_route_param(state, "category_id", str(category_id))
+    await CompetitionCategoryState.load_category.fn(state)
+
+    assert state.error_message == ""
+    assert state.category["kata_flow_mode"] == "INFORMAL"
+    assert state.is_informal_mode is True
+    assert len(state.informal_standings) == 0
+
+
+@pytest.mark.anyio
+async def test_set_kata_flow_mode_persists_category_mode(sample_tournament) -> None:
+    with rx.session() as session:
+        category = TournamentCategory(
+            name="Kata Mode Persist",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender="MIXED",
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            status=CategoryStatus.PENDING.value,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            kata_flow_mode="STANDARD",
+        )
+        session.add(category)
+        session.commit()
+        session.refresh(category)
+        category_id = category.id
+
+    state = CompetitionCategoryState()
+    _set_route_param(state, "category_id", str(category_id))
+    await CompetitionCategoryState.load_category.fn(state)
+    await CompetitionCategoryState.set_kata_flow_mode.fn(state, "INFORMAL")
+
+    with rx.session() as session:
+        persisted = session.get(TournamentCategory, category_id)
+
+    assert persisted is not None
+    assert persisted.kata_flow_mode == "INFORMAL"
+
+
+@pytest.mark.anyio
+async def test_set_kata_flow_mode_rejects_invalid_value(sample_tournament) -> None:
+    with rx.session() as session:
+        category = TournamentCategory(
+            name="Kata Mode Invalid",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender="MIXED",
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            status=CategoryStatus.PENDING.value,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            kata_flow_mode="STANDARD",
+        )
+        session.add(category)
+        session.commit()
+        session.refresh(category)
+        category_id = category.id
+
+    state = CompetitionCategoryState()
+    _set_route_param(state, "category_id", str(category_id))
+    await CompetitionCategoryState.load_category.fn(state)
+    await CompetitionCategoryState.set_kata_flow_mode.fn(state, "BAD")
+
+    with rx.session() as session:
+        persisted = session.get(TournamentCategory, category_id)
+
+    assert persisted is not None
+    assert persisted.kata_flow_mode == "STANDARD"

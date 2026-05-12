@@ -183,7 +183,8 @@ def test_alembic_bracket_side_migration(
     }
     assert "bracket_side" in upgraded_columns
 
-    command.downgrade(config, "-1")
+    # Downgrade to the revision before bracket_side was introduced.
+    command.downgrade(config, "1a9f9cf5faa1")
 
     downgraded_columns = {
         column["name"]

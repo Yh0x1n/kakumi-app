@@ -11,6 +11,8 @@ from kakumi_app.pages.competition import (
     kata_live_match_page,
     live_match_page,
 )
+from kakumi_app.components.kata_informal_table import kata_informal_table
+from kakumi_app.pages.exhibition import kata_system
 from kakumi_app.pages.competition.category_page import _empty_category_state
 from kakumi_app.states.kata_match_state import KataMatchState
 from kakumi_app.states.kumite_match_state import KumiteMatchState
@@ -192,3 +194,78 @@ def test_kata_tournament_route_uses_kata_state_and_dedicated_page() -> None:
     assert kata_route is not None
     assert kata_route.on_load == KataMatchState.load_match
     assert kata_route.component == kata_live_match_page
+
+
+def test_category_page_contains_informal_table_header_branch() -> None:
+    component = category_page()
+    rendered = _rendered_string(component)
+
+    assert "Ranking informal" in rendered
+    assert "Puntuar siguiente atleta" in rendered
+    assert "Modo torneo" in rendered
+
+
+def test_exhibition_kata_page_contains_mode_selector() -> None:
+    component = kata_system()
+    rendered = _rendered_string(component)
+
+    assert "Modo Kata" in rendered
+    assert "STANDARD" in rendered
+    assert "INFORMAL" in rendered
+
+
+def test_category_page_informal_mode_shows_single_participant_scoring_panel() -> None:
+    component = category_page()
+    rendered = _rendered_string(component)
+
+    assert "Puntuar siguiente atleta" in rendered
+    assert "Atleta actual" in rendered
+    assert "Seleccionar atleta" in rendered
+    assert "Guardar puntaje" in rendered
+
+
+def test_exhibition_kata_informal_mode_shows_single_panel_labels() -> None:
+    component = kata_system()
+    rendered = _rendered_string(component)
+
+    assert "Atleta actual" in rendered
+    assert "Guardar puntaje informal" in rendered
+    assert "Ranking informal" in rendered
+    assert "Nombre atleta (opcional)" in rendered
+
+
+def test_category_page_informal_standings_do_not_render_raw_reflex_expr() -> None:
+    component = category_page()
+    rendered = _rendered_string(component)
+
+    assert '"row_rx_state_?.["rank"]"' not in rendered
+    assert '"row_rx_state_?.["athlete_name"]"' not in rendered
+    assert '"row_rx_state_?.["final_score"]"' not in rendered
+    assert '(isTrue(row_rx_state_?.["rank"]) ? row_rx_state_?.["rank"] : "-")' not in rendered
+
+
+def test_exhibition_informal_standings_do_not_render_raw_reflex_expr() -> None:
+    component = kata_system()
+    rendered = _rendered_string(component)
+
+    assert '"row_rx_state_?.["rank"]"' not in rendered
+    assert '"row_rx_state_?.["athlete_name"]"' not in rendered
+    assert '"row_rx_state_?.["final_score"]"' not in rendered
+
+
+def test_informal_table_with_concrete_rows_renders_real_rank_name_score() -> None:
+    component = kata_informal_table(
+        [
+            {
+                "rank": 1,
+                "athlete_name": "Lucía",
+                "final_score": "7.800",
+                "needs_extra_kata": False,
+            }
+        ]
+    )
+    rendered = _rendered_string(component)
+
+    assert "1" in rendered
+    assert "Lucía" in rendered
+    assert "7.800" in rendered

@@ -16,7 +16,7 @@ def test_fk_index_migration_round_trip(
     db_url = f"sqlite:///{tmp_path / 'db_schema_indexes.sqlite'}"
     config = alembic_config_for_db(db_url)
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "c078f55c0552")
 
     all_target_index_names = {
         index_name
@@ -43,7 +43,7 @@ def test_fk_index_migration_round_trip(
         f"Missing FK indexes after upgrade: {sorted(missing_indexes)}"
     )
 
-    command.downgrade(config, "-1")
+    command.downgrade(config, "fe678c4071ac")
 
     downgraded_tables, downgraded_indexes = index_names_for_tables(
         db_url,
@@ -79,13 +79,13 @@ def test_alembic_round_trip_upgrade_downgrade_upgrade(
     db_url = f"sqlite:///{tmp_path / 'db_schema_indexes_roundtrip.sqlite'}"
     config = alembic_config_for_db(db_url)
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "c078f55c0552")
     first_tables, first_indexes = index_names_for_tables(db_url, fk_target_indexes)
 
-    command.downgrade(config, "-1")
+    command.downgrade(config, "fe678c4071ac")
     down_tables, down_indexes = index_names_for_tables(db_url, fk_target_indexes)
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "c078f55c0552")
     second_tables, second_indexes = index_names_for_tables(db_url, fk_target_indexes)
 
     for table_name, expected_indexes in fk_target_indexes.items():
