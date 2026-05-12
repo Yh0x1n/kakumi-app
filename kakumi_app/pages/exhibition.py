@@ -7,14 +7,34 @@ Módulo de página de exhibición
 # Importaciones
 import reflex as rx
 
+from ..components.kata_scoreboard import kata_scoreboard
+from ..components.kumite_scoreboard import kumite_scoreboard
 from ..components.sidebar import sidebar
-from ..components.timer import timer
+from ..states.kata_match_state import KataMatchState
+from ..states.kumite_match_state import KumiteMatchState
 
 
 # Subpágina del temporizador (Aquí irá todo el sistema de kumite)
-@rx.page(route="/exhibition/kumite_system")
+@rx.page(
+    route="/exhibition/kumite_system",
+    on_load=KumiteMatchState.enable_exhibition_mode,
+)
 def kumite_system() -> rx.Component:
-    return rx.box(rx.vstack(timer()))
+    return rx.center(
+        rx.vstack(kumite_scoreboard()),
+        align="center",
+    )
+
+
+@rx.page(
+    route="/exhibition/kata_system",
+    on_load=KataMatchState.enable_exhibition_mode,
+)
+def kata_system() -> rx.Component:
+    return rx.center(
+        rx.vstack(kata_scoreboard()),
+        align="center",
+    )
 
 
 # Menú de exhibición
@@ -38,7 +58,12 @@ def exhibition() -> rx.Component:
                         align="left",
                         color="black",
                     ),
-                    rx.link(rx.button("Ir a Kumite"), href="/exhibition/kumite_system"),
+                    rx.hstack(
+                        rx.link(rx.button("Ir a Kata"), href="/exhibition/kata_system"),
+                        rx.link(
+                            rx.button("Ir a Kumite"), href="/exhibition/kumite_system"
+                        ),
+                    ),
                 ),
             ),
             background_color="white",

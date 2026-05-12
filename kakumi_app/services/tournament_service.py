@@ -15,6 +15,7 @@ import reflex as rx
 from sqlmodel import select
 
 from kakumi_app.models.tournament_model import (
+    CategoryStatus,
     Match,
     MatchStatus,
     Tournament,
@@ -64,7 +65,7 @@ MIN_ATHLETES_PER_CATEGORY = 4
 
 
 @dataclass
-class ValidationError:
+class ValidationError(Exception):
     """
     Error de validación de pre-condición.
 
@@ -77,6 +78,10 @@ class ValidationError:
     category_name: Optional[str] = None
     current_value: Any = None
     required_value: Any = None
+
+    def __str__(self) -> str:
+        """Return the human-readable validation message."""
+        return self.message
 
 
 @dataclass
@@ -305,12 +310,21 @@ class TournamentService:
                     TournamentCategory.tournament_id == tournament_id
                 )
             ).all()
-            category_ids = [c.id for c in categories]
+            informal_category_ids = [
+                category.id
+                for category in categories
+                if str(getattr(category, "kata_flow_mode", "STANDARD")) == "INFORMAL"
+            ]
+            standard_category_ids = [
+                category.id
+                for category in categories
+                if category.id not in informal_category_ids
+            ]
 
-            if category_ids:
+            if standard_category_ids:
                 incomplete_matches = session.exec(
                     select(Match).where(
-                        Match.category_id.in_(category_ids),
+                        Match.category_id.in_(standard_category_ids),
                         Match.status != MatchStatus.COMPLETED.value,
                     )
                 ).all()
@@ -325,6 +339,39 @@ class TournamentService:
                             ),
                             current_value=incomplete_count,
                             required_value=0,
+                        )
+                    )
+
+            for category in categories:
+                if category.id not in informal_category_ids:
+                    continue
+                if category.status != CategoryStatus.COMPLETED.value:
+                    errors.append(
+                        ValidationError(
+                            code="INFORMAL_CATEGORY_INCOMPLETE",
+                            message=(
+                                f"Categoría informal {category.name!r} no está "
+                                "completada"
+                            ),
+                            category_name=category.name,
+                            current_value=category.status,
+                            required_value=CategoryStatus.COMPLETED.value,
+                        )
+                    )
+                    continue
+                if (
+                    category.first_place_id is None
+                    or category.second_place_id is None
+                    or not category.third_place_ids
+                ):
+                    errors.append(
+                        ValidationError(
+                            code="INFORMAL_PODIUM_INCOMPLETE",
+                            message=(
+                                f"Categoría informal {category.name!r} no tiene podio "
+                                "completo"
+                            ),
+                            category_name=category.name,
                         )
                     )
         return errors

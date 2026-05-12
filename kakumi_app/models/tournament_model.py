@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, List, Optional
 import reflex as rx
 from sqlmodel import Field, Relationship
 
+from .kata_model import KataDecisionRule
+
 if TYPE_CHECKING:
     from .athlete_model import Athlete
     from .team_model import Team
@@ -53,6 +55,13 @@ class CategoryStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class KataFlowMode(str, Enum):
+    """Kata flow mode for individual categories."""
+
+    STANDARD = "STANDARD"
+    INFORMAL = "INFORMAL"
+
+
 class MatchType(str, Enum):
     """Tipos de encuentro según specs.md sección 2.5."""
 
@@ -70,6 +79,13 @@ class MatchStatus(str, Enum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     DISQUALIFIED = "DISQUALIFIED"
+
+
+class BracketSide(str, Enum):
+    """Lado del bracket para doble eliminación."""
+
+    WINNERS = "WINNERS"
+    LOSERS = "LOSERS"
 
 
 class Participant(str, Enum):
@@ -210,8 +226,12 @@ class TournamentCategory(rx.Model, table=True):
     max_belt_rank: Optional[str] = Field(default=None, max_length=10)
     flag_count: Optional[int] = Field(default=None)  # 1-3 flags
     has_bunkai: bool = Field(default=False)
-    judge_panel_size: int = Field(default=3)  # 3 o 5
+    judge_panel_size: int = Field(default=3)  # 3..5
     scoring_type: Optional[str] = Field(default=None)  # STANDARD, FLAG
+    kata_decision_rule: str = Field(
+        default=KataDecisionRule.AVERAGE_WITH_DISCARD.value
+    )
+    kata_flow_mode: str = Field(default=KataFlowMode.STANDARD.value)
     bunkai_mode: str = Field(default="NONE")
 
     # Campos opcionales para Kumite
@@ -282,6 +302,11 @@ class Match(rx.Model, table=True):
     )  # ELIMINATION, BRONZE, FINAL, ROUND_ROBIN
 
     # Foreign Keys
+    tournament_id: Optional[int] = Field(
+        default=None,
+        foreign_key="tournaments.id",
+        index=True,
+    )
     category_id: int = Field(foreign_key="tournament_categories.id", index=True)
 
     # Participantes (uno requerido: bye)
@@ -318,6 +343,7 @@ class Match(rx.Model, table=True):
 
     # Notas
     notes: Optional[str] = Field(default=None)
+    bracket_side: Optional[str] = Field(default=None, max_length=50)
 
     # Relaciones
     category: "TournamentCategory" = Relationship(
@@ -377,6 +403,12 @@ class Match(rx.Model, table=True):
         sa_relationship_kwargs={"foreign_keys": "[MatchScore.match_id]"},
     )
 
+    # Log de acciones para soporte de undo
+    action_logs: List["MatchActionLog"] = Relationship(
+        back_populates="match",
+        sa_relationship_kwargs={"foreign_keys": "[MatchActionLog.match_id]"},
+    )
+
 
 # ==============================================================================
 # MATCH SCORE (Sección 2.6 specs.md)
@@ -421,6 +453,30 @@ class MatchScore(rx.Model, table=True):
     applied_by: Optional["User"] = Relationship(
         back_populates="applied_scores",
         sa_relationship_kwargs={"foreign_keys": "[MatchScore.applied_by_id]"},
+    )
+
+
+class MatchActionLog(rx.Model, table=True):
+    """Log persistido de acciones para rollback seguro de último evento."""
+
+    __tablename__ = "match_action_logs"
+
+    # Foreign Keys
+    match_id: int = Field(foreign_key="matches.id", index=True)
+    applied_by_id: Optional[int] = Field(default=None, foreign_key="users.id")
+
+    # Metadatos de acción
+    action_kind: str = Field(max_length=50, index=True)  # SCORE_APPLY/PENALTY_APPLY
+    participant: Optional[str] = Field(default=None, max_length=10)
+    before_snapshot: str = Field()  # JSON serializado
+
+    # Timestamp
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+
+    # Relaciones
+    match: "Match" = Relationship(
+        back_populates="action_logs",
+        sa_relationship_kwargs={"foreign_keys": "[MatchActionLog.match_id]"},
     )
 
 

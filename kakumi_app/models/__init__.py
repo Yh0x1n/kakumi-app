@@ -18,6 +18,7 @@ from .tournament_model import (
     CompetitionSystem,
     Match,
     MatchScore,
+    BracketSide,
     MatchStatus,
     MatchType,
     Modality,
@@ -65,6 +66,7 @@ __all__ = [
     "CompetitionSystem",
     "CategoryStatus",
     "TournamentStatus",
+    "BracketSide",
     # Enums de encuentros y puntuación
     "MatchType",
     "MatchStatus",

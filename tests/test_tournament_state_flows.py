@@ -10,7 +10,6 @@ Sigue strict-TDD: RED → GREEN → TRIANGULATE → REFACTOR.
 
 import datetime
 
-import pytest
 import reflex as rx
 from sqlmodel import select
 
@@ -655,7 +654,7 @@ class TestValidatePreconditionsLogic:
     def test_transitions_without_required_preconditions_pass_for_simple_states(
         self, sample_tournament
     ):
-        """Transiciones sin precondiciones requeridas (PLANIFICADO→INSCRIPCION) pasan."""
+        """Transiciones sin precondiciones requeridas pasan."""
         from kakumi_app.services.tournament_service import TournamentService
 
         result = TournamentService.validate_preconditions(
@@ -688,7 +687,6 @@ class TestTournamentStateRBAC:
 
     def test_check_manage_tournament_permission_admin_allowed(self):
         """Un usuario ADMIN tiene permiso MANAGE_TOURNAMENT_STATUS."""
-        from kakumi_app.states.tournament_state import TournamentState
         from kakumi_app.services.auth_service import AuthService
 
         # Verificar que ADMIN puede hacer gestión de torneos
@@ -737,7 +735,7 @@ class TestValidationPassesReadyToStart:
     def test_validation_passes_with_arbiters_and_athletes(
         self, sample_tournament, sample_category
     ):
-        """Con árbitros (≥3) y atletas suficientes, VERIFICACION → EN_CURSO debe pasar."""
+        """Con árbitros y atletas suficientes, EN_CURSO debe pasar."""
         from kakumi_app.services.tournament_service import TournamentService
         from kakumi_app.models.athlete_model import Athlete
         from kakumi_app.models.referee_model import Referee
@@ -818,7 +816,7 @@ class TestValidationPassesReadyToFinish:
     def test_transition_to_finalizado_succeeds_when_all_matches_completed(
         self, sample_tournament, sample_match, sample_user
     ):
-        """transition_to FINALIZADO exitoso cuando todos los matches están completados."""
+        """transition_to FINALIZADO ok si todos matches completados."""
         from kakumi_app.services.tournament_service import TournamentService
 
         # Llevar el torneo a EN_CURSO
@@ -926,7 +924,7 @@ class TestMultipleValidationFailures:
     def test_en_curso_can_return_multiple_errors(
         self, sample_tournament, sample_category
     ):
-        """VERIFICACION → EN_CURSO puede retornar INSUFFICIENT_ATHLETES + NO_ARBITERS."""
+        """EN_CURSO puede retornar errores múltiples."""
         from kakumi_app.services.tournament_service import TournamentService
         from kakumi_app.models.athlete_model import Athlete
 
@@ -1273,6 +1271,95 @@ class TestCompleteTournamentTransition:
         assert result.success is True
         assert result.new_status == TournamentStatus.FINALIZADO
         assert result.old_status == TournamentStatus.EN_CURSO
+
+    def test_complete_tournament_allows_informal_category_without_matches(
+        self,
+        sample_tournament,
+        sample_user,
+    ):
+        """Informal Kata category finalized should not require match rows."""
+        from kakumi_app.services.tournament_service import TournamentService
+        from kakumi_app.models.tournament_model import (
+            TournamentCategory,
+            Modality,
+            CategoryGender,
+            CompetitionSystem,
+            CategoryStatus,
+        )
+
+        with rx.session() as session:
+            tournament = session.get(Tournament, sample_tournament.id)
+            tournament.status = TournamentStatus.EN_CURSO.value
+            session.add(tournament)
+
+            category = TournamentCategory(
+                name="Informal Completion",
+                modality=Modality.KATA_INDIVIDUAL.value,
+                gender=CategoryGender.MIXED.value,
+                min_age=16,
+                max_age=40,
+                competition_system=CompetitionSystem.ROUND_ROBIN.value,
+                bracket_size=8,
+                status=CategoryStatus.COMPLETED.value,
+                tournament_id=sample_tournament.id,
+                kata_flow_mode="INFORMAL",
+                first_place_id=1,
+                second_place_id=2,
+                third_place_ids="[3]",
+            )
+            session.add(category)
+            session.commit()
+
+        result = TournamentService.transition_to(
+            tournament_id=sample_tournament.id,
+            new_status=TournamentStatus.FINALIZADO,
+            user_id=sample_user.id,
+        )
+
+        assert result.success is True
+
+    def test_complete_tournament_blocks_when_informal_category_not_completed(
+        self,
+        sample_tournament,
+        sample_user,
+    ):
+        """Informal category in progress blocks EN_CURSO -> FINALIZADO."""
+        from kakumi_app.services.tournament_service import TournamentService
+        from kakumi_app.models.tournament_model import (
+            TournamentCategory,
+            Modality,
+            CategoryGender,
+            CompetitionSystem,
+            CategoryStatus,
+        )
+
+        with rx.session() as session:
+            tournament = session.get(Tournament, sample_tournament.id)
+            tournament.status = TournamentStatus.EN_CURSO.value
+            session.add(tournament)
+
+            category = TournamentCategory(
+                name="Informal Pending",
+                modality=Modality.KATA_INDIVIDUAL.value,
+                gender=CategoryGender.MIXED.value,
+                min_age=16,
+                max_age=40,
+                competition_system=CompetitionSystem.ROUND_ROBIN.value,
+                bracket_size=8,
+                status=CategoryStatus.IN_PROGRESS.value,
+                tournament_id=sample_tournament.id,
+                kata_flow_mode="INFORMAL",
+            )
+            session.add(category)
+            session.commit()
+
+        result = TournamentService.transition_to(
+            tournament_id=sample_tournament.id,
+            new_status=TournamentStatus.FINALIZADO,
+            user_id=sample_user.id,
+        )
+
+        assert result.success is False
 
 
 class TestReopenRegistrationsTransition:

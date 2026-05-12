@@ -9,6 +9,7 @@ from kakumi_app.models.tournament_model import (
     MatchStatus,
     Participant,
     Penalty,
+    PenaltyType,
 )
 from kakumi_app.services.exceptions import PenaltyEscalationError
 from kakumi_app.services.kumite_scoring_service import apply_penalty
@@ -149,3 +150,32 @@ def test_penalty_escalation_error_on_invalid_state(sample_match, db_session):
                 match_id=match.id,
                 participant=Participant.AKA.value,
             )
+
+
+def test_undo_last_penalty_action_rolls_back_penalty_slot(sample_match, sample_user):
+    """Undo de penalidad elimina último registro y vuelve slot previo."""
+    from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+
+    match = _set_match_status(sample_match.id, MatchStatus.IN_PROGRESS.value)
+    KumiteScoringService.apply_penalty(
+        match_id=match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.CHUI,
+        reason="Primera",
+        applied_by_id=sample_user.id,
+    )
+    second = KumiteScoringService.apply_penalty(
+        match_id=match.id,
+        participant=Participant.AKA,
+        penalty_type=PenaltyType.CHUI,
+        reason="Segunda",
+        applied_by_id=sample_user.id,
+    )
+    assert second.penalty_type == PenaltyType.CHUI.value
+
+    undo_result = KumiteScoringService.undo_last_action(match.id)
+    assert undo_result.success is True
+
+    penalties = _penalties_for(match.id, Participant.AKA.value)
+    assert len(penalties) == 1
+    assert penalties[-1].penalty_type == PenaltyType.CHUI.value

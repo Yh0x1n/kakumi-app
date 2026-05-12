@@ -20,8 +20,18 @@ from .models.tournament_model import (  # noqa [F401]
     Tournament,
 )
 from .pages.exhibition import exhibition
+from .pages.competition import (
+    bracket_page,
+    category_page,
+    kata_live_match_page,
+    live_match_page,
+)
 from .pages.registries import registries
 from .pages.tournament import tournament
+from .states.bracket_state import BracketState
+from .states.competition_category_state import CompetitionCategoryState
+from .states.kata_match_state import KataMatchState
+from .states.kumite_match_state import KumiteMatchState
 
 # Admin pages — imported for @rx.page side-effect route registration
 import kakumi_app.pages.admin.athletes_page  # noqa: F401
@@ -96,3 +106,27 @@ app.add_page(index, title="Kakumi Tournament Manager")
 app.add_page(registries, title="Kakumi | Registros")
 app.add_page(tournament, title="Kakumi | Torneo")
 app.add_page(exhibition, title="Kakumi | Exhibición")
+app.add_page(
+    bracket_page,
+    route="/tournaments/[id]/bracket",
+    title="Kakumi | Bracket",
+    on_load=BracketState.load_bracket,
+)
+app.add_page(
+    category_page,
+    route="/competition/category/[id]",
+    title="Kakumi | Competencia",
+    on_load=CompetitionCategoryState.load_category,
+)
+app.add_page(
+    live_match_page,
+    route="/competition/match/[id]/kumite",
+    title="Kakumi | Kumite en vivo",
+    on_load=KumiteMatchState.load_match,
+)
+app.add_page(
+    kata_live_match_page,
+    route="/competition/match/[id]/kata",
+    title="Kakumi | Kata en vivo",
+    on_load=KataMatchState.load_match,
+)
