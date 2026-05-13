@@ -101,6 +101,26 @@ async def test_athlete_and_referee_route_init_loads_rows(
 
 
 @pytest.mark.anyio
+async def test_tournament_registry_route_init_resets_stale_ui_and_loads_rows(
+    sample_tournament: Tournament,
+) -> None:
+    """Tournament registries init should behave like CRUD-only registry reset."""
+    from kakumi_app.states.tournament_crud_state import TournamentCrudState
+
+    state = TournamentCrudState()
+    state.show_form = True
+    state.error_message = "stale"
+    state.search_query = "finalizado"
+
+    await TournamentCrudState.initialize_registry_view.fn(state)
+
+    assert state.show_form is False
+    assert state.error_message == ""
+    assert state.search_query == ""
+    assert any(row["id"] == sample_tournament.id for row in state.tournaments)
+
+
+@pytest.mark.anyio
 async def test_tournament_crud_delete_blocks_related_entities(
     sample_tournament: Tournament,
     sample_category: Any,
@@ -179,6 +199,45 @@ async def test_tournament_crud_filter_matches_name_and_venue(
 
 
 @pytest.mark.anyio
+async def test_tournament_crud_filter_keeps_full_row_payload_for_edit_flow(
+    sample_user: Any,
+) -> None:
+    """Filtered CRUD rows must keep same edit-safe payload as full list rows."""
+    from kakumi_app.states.tournament_crud_state import TournamentCrudState
+
+    with rx.session() as session:
+        tournament = Tournament(
+            name="Filtro Completo",
+            venue="Centro",
+            start_date=datetime.date(2027, 4, 10),
+            end_date=datetime.date(2027, 4, 12),
+            tatami_count=3,
+            status=TournamentStatus.INSCRIPCION.value,
+            created_by_id=sample_user.id,
+        )
+        session.add(tournament)
+        session.commit()
+        session.refresh(tournament)
+
+    state = TournamentCrudState()
+    state.search_query = "completo"
+
+    await TournamentCrudState.filter_tournaments.fn(state)
+
+    assert len(state.tournaments) == 1
+    assert state.tournaments[0] == {
+        "id": tournament.id,
+        "name": "Filtro Completo",
+        "venue": "Centro",
+        "status": TournamentStatus.INSCRIPCION.value,
+        "start_date": "2027-04-10",
+        "end_date": "2027-04-12",
+        "tatami_count": 3,
+        "created_by_id": sample_user.id,
+    }
+
+
+@pytest.mark.anyio
 async def test_tournament_crud_save_create_then_update(sample_user: Any) -> None:
     """Tournament CRUD state must create and update using form fields."""
     from kakumi_app.states.tournament_crud_state import TournamentCrudState
@@ -210,6 +269,49 @@ async def test_tournament_crud_save_create_then_update(sample_user: Any) -> None
         updated = session.get(Tournament, created_id)
         assert updated is not None
         assert updated.venue == "Polideportivo Central"
+
+
+@pytest.mark.anyio
+async def test_tournament_crud_save_update_preserves_existing_lifecycle_status(
+    sample_user: Any,
+) -> None:
+    """Edit flow must not mutate lifecycle status from registry form state."""
+    from kakumi_app.states.tournament_crud_state import TournamentCrudState
+
+    with rx.session() as session:
+        tournament = Tournament(
+            name="Copa Estado",
+            venue="Sede Original",
+            start_date=datetime.date(2027, 5, 1),
+            end_date=datetime.date(2027, 5, 2),
+            tatami_count=2,
+            status=TournamentStatus.EN_CURSO.value,
+            created_by_id=sample_user.id,
+        )
+        session.add(tournament)
+        session.commit()
+        session.refresh(tournament)
+
+    state = TournamentCrudState()
+    state.is_editing = True
+    state.current_tournament = {"id": tournament.id}
+    state.name = "Copa Estado"
+    state.venue = "Sede Editada"
+    state.start_date = "2027-05-01"
+    state.end_date = "2027-05-02"
+    state.tatami_count = "4"
+    state.status = TournamentStatus.PLANIFICADO.value
+    state.created_by_id = str(sample_user.id)
+
+    await TournamentCrudState.save_tournament.fn(state)
+
+    with rx.session() as session:
+        updated = session.get(Tournament, tournament.id)
+
+    assert updated is not None
+    assert updated.venue == "Sede Editada"
+    assert updated.tatami_count == 4
+    assert updated.status == TournamentStatus.EN_CURSO.value
 
 
 @pytest.mark.anyio

@@ -10,6 +10,7 @@ Sigue strict-TDD: RED → GREEN → TRIANGULATE → REFACTOR.
 
 import datetime
 
+import pytest
 import reflex as rx
 from sqlmodel import select
 
@@ -719,6 +720,386 @@ class TestTournamentStateRBAC:
         assert callable(getattr(TournamentState, "finish_competition", None))
         assert callable(getattr(TournamentState, "archive_tournament", None))
         assert callable(getattr(TournamentState, "reopen_registrations", None))
+
+
+class TestTournamentWorkspaceState:
+    """Tests de scaffolding del workspace /tournament."""
+
+    @pytest.mark.anyio
+    async def test_load_workspace_loads_tournaments_and_selects_first(
+        self,
+        sample_tournament,
+    ):
+        """Workspace carga torneos serializables y selecciona uno por defecto."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+
+        await TournamentState.load_workspace.fn(state)
+
+        assert state.tournaments
+        assert isinstance(state.tournaments[0], dict)
+        assert state.tournaments[0]["id"] == sample_tournament.id
+        assert state.current_tournament is not None
+        assert state.current_tournament["id"] == sample_tournament.id
+
+    @pytest.mark.anyio
+    async def test_load_workspace_with_no_tournaments_keeps_empty_selection(self):
+        """Workspace vacío no debe inventar torneo actual."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+
+        await TournamentState.load_workspace.fn(state)
+
+        assert state.tournaments == []
+        assert state.current_tournament is None
+
+    @pytest.mark.anyio
+    async def test_load_workspace_clears_previous_transition_feedback(
+        self,
+        sample_tournament,
+    ):
+        """Workspace refresh limpia errores/warnings viejos al seleccionar torneo."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state.transition_error = "viejo"
+        state.validation_warnings = ["warning viejo"]
+
+        await TournamentState.load_workspace.fn(state)
+
+        assert state.current_tournament is not None
+        assert state.current_tournament["id"] == sample_tournament.id
+        assert state.transition_error == ""
+        assert state.validation_warnings == []
+
+    @pytest.mark.anyio
+    async def test_set_current_tournament_syncs_tatami_workspace_context(
+        self,
+        sample_tournament,
+        monkeypatch,
+    ):
+        """Seleccionar torneo debe sincronizar tatamis y summary desde filas Tatami."""
+        from kakumi_app.models.tournament_model import Tatami, Tournament
+        from kakumi_app.states.tournament_category_state import TournamentCategoryState
+        from kakumi_app.states.tournament_state import TournamentState
+        from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
+
+        with rx.session() as session:
+            tournament = session.get(Tournament, sample_tournament.id)
+            assert tournament is not None
+            tournament.tatami_count = 9
+            session.add(tournament)
+            session.add(Tatami(name="Tatami 1", tournament_id=sample_tournament.id))
+            session.add(
+                Tatami(
+                    name="Tatami 2",
+                    tournament_id=sample_tournament.id,
+                    is_active=False,
+                )
+            )
+            session.commit()
+
+        state = TournamentState()
+        category_state = TournamentCategoryState()
+        tatami_state = TournamentTatamiState()
+
+        async def fake_get_state(self, state_cls):
+            if state_cls is TournamentCategoryState:
+                return category_state
+            assert state_cls is TournamentTatamiState
+            return tatami_state
+
+        monkeypatch.setattr(TournamentState, "get_state", fake_get_state)
+
+        await TournamentState.set_current_tournament.fn(state, sample_tournament.id)
+
+        assert state.current_tournament is not None
+        assert state.current_tournament["tatami_count"] == 2
+        assert tatami_state.current_tournament_id == sample_tournament.id
+        assert tatami_state.declared_tatami_count == 2
+        assert tatami_state.active_tatami_count == 1
+
+    @pytest.mark.anyio
+    async def test_set_current_tournament_preserves_sync_failure_message(
+        self,
+        sample_tournament,
+        monkeypatch,
+    ):
+        """Sync failures must remain visible after selection completes."""
+        from kakumi_app.states import tournament_state as state_module
+        from kakumi_app.states.tournament_category_state import TournamentCategoryState
+        from kakumi_app.states.tournament_state import TournamentState
+        from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
+
+        state = TournamentState()
+        tatami_state = TournamentTatamiState()
+        toasts: list[str] = []
+
+        async def fake_get_state(self, state_cls):
+            if state_cls is TournamentCategoryState:
+                raise RuntimeError("sync categoría rota")
+            assert state_cls is TournamentTatamiState
+            return tatami_state
+
+        monkeypatch.setattr(TournamentState, "get_state", fake_get_state)
+        monkeypatch.setattr(
+            state_module.rx.toast,
+            "error",
+            lambda message: toasts.append(message) or message,
+        )
+
+        await TournamentState.set_current_tournament.fn(state, sample_tournament.id)
+
+        assert state.current_tournament is not None
+        assert state.current_tournament["id"] == sample_tournament.id
+        assert state.transition_error == (
+            "No se pudo sincronizar categorías del torneo: sync categoría rota"
+        )
+        assert toasts == [
+            "No se pudo sincronizar categorías del torneo: sync categoría rota"
+        ]
+
+    @pytest.mark.anyio
+    async def test_sync_auth_context_copies_operator_role_from_auth_state(
+        self, monkeypatch
+    ):
+        """Workspace debe leer auth actual y reflejar permisos de operador."""
+        from kakumi_app.states.auth_state import AuthState
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        auth_state = AuthState()
+        auth_state.is_authenticated = True
+        auth_state.user_role = "OPERATOR"
+        auth_state.current_user = {"id": 77, "role": "OPERATOR"}
+
+        async def fake_get_state(self, state_cls):
+            assert state_cls is AuthState
+            return auth_state
+
+        monkeypatch.setattr(TournamentState, "get_state", fake_get_state)
+
+        await TournamentState.sync_auth_context.fn(state)
+
+        assert state._current_user_id == 77
+        assert state._current_user_role == "OPERATOR"
+
+    @pytest.mark.anyio
+    async def test_sync_auth_context_clears_role_when_user_not_authenticated(
+        self, monkeypatch
+    ):
+        """Sin sesión autenticada, lifecycle debe quedar oculto."""
+        from kakumi_app.states.auth_state import AuthState
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state._current_user_id = 55
+        state._current_user_role = "ADMIN"
+        auth_state = AuthState()
+        auth_state.is_authenticated = False
+        auth_state.user_role = ""
+        auth_state.current_user = None
+
+        async def fake_get_state(self, state_cls):
+            assert state_cls is AuthState
+            return auth_state
+
+        monkeypatch.setattr(TournamentState, "get_state", fake_get_state)
+
+        await TournamentState.sync_auth_context.fn(state)
+
+        assert state._current_user_id == 0
+        assert state._current_user_role == ""
+
+    def test_show_lifecycle_controls_requires_operator_role(self):
+        """Solo OPERATOR o ADMIN deben ver controles de ciclo."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state._current_user_role = "VIEWER"
+        assert state.show_lifecycle_controls is False
+
+        state._current_user_role = "OPERATOR"
+        assert state.show_lifecycle_controls is True
+
+        state._current_user_role = "ADMIN"
+        assert state.show_lifecycle_controls is True
+
+    def test_show_lifecycle_actions_follow_transition_table(self):
+        """Workspace debe exponer solo acciones válidas para estado actual."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state._current_user_role = "OPERATOR"
+
+        state.current_tournament = {"id": 1, "status": TournamentStatus.PLANIFICADO.value}
+        assert state.show_open_registrations_action is True
+        assert state.show_close_registrations_action is False
+        assert state.show_start_competition_action is False
+        assert state.show_finish_competition_action is False
+        assert state.show_archive_tournament_action is True
+        assert state.show_reopen_registrations_action is False
+        assert state.show_cancel_tournament_action is False
+
+        state.current_tournament = {"id": 1, "status": TournamentStatus.INSCRIPCION.value}
+        assert state.show_open_registrations_action is False
+        assert state.show_close_registrations_action is True
+        assert state.show_reopen_registrations_action is True
+
+        state.current_tournament = {"id": 1, "status": TournamentStatus.VERIFICACION.value}
+        assert state.show_start_competition_action is True
+
+        state.current_tournament = {"id": 1, "status": TournamentStatus.EN_CURSO.value}
+        assert state.show_finish_competition_action is True
+
+        state.current_tournament = {"id": 1, "status": TournamentStatus.FINALIZADO.value}
+        assert state.show_archive_tournament_action is True
+
+    def test_admin_only_cancel_action_hidden_for_operator(self):
+        """Cancelar torneo queda visible solo para ADMIN."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state.current_tournament = {"id": 1, "status": TournamentStatus.PLANIFICADO.value}
+
+        state._current_user_role = "OPERATOR"
+        assert state.show_cancel_tournament_action is False
+
+        state._current_user_role = "ADMIN"
+        assert state.show_cancel_tournament_action is True
+
+    @pytest.mark.anyio
+    async def test_open_registrations_surfaces_service_success_and_warnings(
+        self,
+        sample_tournament,
+        monkeypatch,
+    ):
+        """UI/state debe delegar a service owner y propagar warnings."""
+        from kakumi_app.services.tournament_service import TransitionResult, Warning
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state._current_user_id = 9
+        state._current_user_role = "OPERATOR"
+        state.current_tournament = sample_tournament.model_dump(mode="json")
+
+        calls: list[tuple[int, TournamentStatus, int]] = []
+
+        def fake_transition_to(tournament_id, new_status, user_id, dry_run=False):
+            calls.append((tournament_id, new_status, user_id))
+            assert dry_run is False
+            return TransitionResult(
+                success=True,
+                tournament_id=tournament_id,
+                old_status=TournamentStatus.PLANIFICADO,
+                new_status=TournamentStatus.INSCRIPCION,
+                warnings=[Warning(code="REMINDER", message="Configurar horario")],
+            )
+
+        monkeypatch.setattr(
+            "kakumi_app.states.tournament_state.TournamentService.transition_to",
+            fake_transition_to,
+        )
+        monkeypatch.setattr(
+            "kakumi_app.states.tournament_state.rx.toast.warning",
+            lambda message, duration=5000: (message, duration),
+        )
+
+        with rx.session() as session:
+            tournament = session.get(Tournament, sample_tournament.id)
+            tournament.status = TournamentStatus.INSCRIPCION.value
+            session.add(tournament)
+            session.commit()
+
+        events = [
+            event async for event in TournamentState.open_registrations.fn(state)
+        ]
+
+        assert calls == [
+            (sample_tournament.id, TournamentStatus.INSCRIPCION, 9)
+        ]
+        assert state.validation_warnings == ["Configurar horario"]
+        assert state.transition_error == ""
+        assert state.current_tournament is not None
+        assert state.current_tournament["status"] == TournamentStatus.INSCRIPCION.value
+        assert events == [("Configurar horario", 5000)]
+
+    @pytest.mark.anyio
+    async def test_close_registrations_blocks_viewer_before_service_call(
+        self,
+        sample_tournament,
+        monkeypatch,
+    ):
+        """Viewer no puede ejecutar transición ni tocar service."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state._current_user_id = 4
+        state._current_user_role = "VIEWER"
+        state.current_tournament = sample_tournament.model_dump(mode="json")
+
+        called = False
+
+        def fake_transition_to(*args, **kwargs):
+            nonlocal called
+            called = True
+            raise AssertionError("service no debe invocarse")
+
+        monkeypatch.setattr(
+            "kakumi_app.states.tournament_state.TournamentService.transition_to",
+            fake_transition_to,
+        )
+
+        events = [
+            event async for event in TournamentState.close_registrations.fn(state)
+        ]
+
+        assert called is False
+        assert events == []
+        assert "No tiene permisos" in state.transition_error
+
+    @pytest.mark.anyio
+    async def test_cancel_tournament_requires_admin_and_skips_service_for_operator(
+        self,
+        sample_tournament,
+        monkeypatch,
+    ):
+        """Cancelar desde workspace debe respetar guard admin-only."""
+        from kakumi_app.states.tournament_state import TournamentState
+
+        state = TournamentState()
+        state._current_user_id = 4
+        state._current_user_role = "OPERATOR"
+        state.current_tournament = sample_tournament.model_dump(mode="json")
+
+        called = False
+
+        def fake_transition_to(*args, **kwargs):
+            nonlocal called
+            called = True
+            raise AssertionError("service no debe invocarse")
+
+        monkeypatch.setattr(
+            "kakumi_app.states.tournament_state.TournamentService.transition_to",
+            fake_transition_to,
+        )
+        monkeypatch.setattr(
+            "kakumi_app.states.tournament_state.rx.toast.error",
+            lambda message, duration=5000: (message, duration),
+        )
+
+        events = [event async for event in TournamentState.cancel_tournament.fn(state)]
+
+        assert called is False
+        assert "Solo administradores" in state.transition_error
+        assert events == [
+            (
+                "Solo administradores pueden cancelar un torneo en estado PLANIFICADO.",
+                5000,
+            )
+        ]
 
 
 # =============================================================================

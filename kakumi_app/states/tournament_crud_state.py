@@ -6,6 +6,7 @@ import datetime
 from typing import Any, Optional
 
 import reflex as rx
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from kakumi_app.models.tournament_model import (
@@ -39,11 +40,25 @@ class TournamentCrudState(CrudStateMixin, rx.State):
 
     status_options: list[str] = [status.value for status in TournamentStatus]
 
+    def _serialize_tournament(self, tournament: Tournament) -> dict[str, Any]:
+        """Return JSON-safe tournament row for CRUD list and edit flow."""
+        return {
+            "id": tournament.id,
+            "name": tournament.name,
+            "venue": tournament.venue,
+            "status": tournament.status,
+            "start_date": tournament.start_date.isoformat(),
+            "end_date": tournament.end_date.isoformat(),
+            "tatami_count": tournament.tatami_count,
+            "created_by_id": tournament.created_by_id,
+        }
+
     @rx.event
     async def initialize_registry_view(self) -> None:
         """Initialize tournament registries page state."""
         self.show_form = False
         self.error_message = ""
+        self.search_query = ""
         await self.load_tournaments()
 
     @rx.event
@@ -52,14 +67,7 @@ class TournamentCrudState(CrudStateMixin, rx.State):
         with rx.session() as session:
             tournaments = session.exec(select(Tournament)).all()
             self.tournaments = [
-                {
-                    "id": tournament.id,
-                    "name": tournament.name,
-                    "venue": tournament.venue,
-                    "status": tournament.status,
-                    "start_date": tournament.start_date.isoformat(),
-                }
-                for tournament in tournaments
+                self._serialize_tournament(tournament) for tournament in tournaments
             ]
 
     @rx.event
@@ -73,13 +81,7 @@ class TournamentCrudState(CrudStateMixin, rx.State):
         with rx.session() as session:
             tournaments = session.exec(select(Tournament)).all()
             self.tournaments = [
-                {
-                    "id": tournament.id,
-                    "name": tournament.name,
-                    "venue": tournament.venue,
-                    "status": tournament.status,
-                    "start_date": tournament.start_date.isoformat(),
-                }
+                self._serialize_tournament(tournament)
                 for tournament in tournaments
                 if query in tournament.name.lower()
                 or query in tournament.venue.lower()
@@ -173,7 +175,6 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             "start_date": start_date,
             "end_date": end_date,
             "tatami_count": tatami_count,
-            "status": self.status,
             "created_by_id": created_by_id,
         }
 
@@ -188,25 +189,43 @@ class TournamentCrudState(CrudStateMixin, rx.State):
                 if not tournament:
                     return rx.toast.error("Tournament not found")
 
-                for key, value in tournament_data.items():
-                    setattr(tournament, key, value)
+                try:
+                    tournament_data["status"] = tournament.status
+                    for key, value in tournament_data.items():
+                        setattr(tournament, key, value)
 
-                session.add(tournament)
-                session.commit()
-                success_message = f"Tournament '{tournament.name}' updated successfully"
-            else:
-                existing = session.exec(
-                    select(Tournament).where(Tournament.name == self.name.strip())
-                ).first()
-                if existing:
-                    return rx.toast.error(
-                        f"Tournament with name '{self.name}' already exists"
+                    session.add(tournament)
+                    session.commit()
+                    success_message = (
+                        f"Tournament '{tournament.name}' updated successfully"
                     )
+                except SQLAlchemyError:
+                    session.rollback()
+                    self.error_message = "Error al guardar torneo"
+                    return rx.toast.error(self.error_message)
+            else:
+                try:
+                    existing = session.exec(
+                        select(Tournament).where(Tournament.name == self.name.strip())
+                    ).first()
+                    if existing:
+                        return rx.toast.error(
+                            f"Tournament with name '{self.name}' already exists"
+                        )
 
-                tournament = Tournament(**tournament_data)
-                session.add(tournament)
-                session.commit()
-                success_message = f"Tournament '{tournament.name}' created successfully"
+                    tournament = Tournament(
+                        **tournament_data,
+                        status=TournamentStatus.PLANIFICADO.value,
+                    )
+                    session.add(tournament)
+                    session.commit()
+                    success_message = (
+                        f"Tournament '{tournament.name}' created successfully"
+                    )
+                except SQLAlchemyError:
+                    session.rollback()
+                    self.error_message = "Error al guardar torneo"
+                    return rx.toast.error(self.error_message)
 
         self.show_form = False
         await self.load_tournaments()
@@ -219,6 +238,12 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             tournament = session.get(Tournament, tournament_id)
             if not tournament:
                 return rx.toast.error("Tournament not found")
+
+            if tournament.status != TournamentStatus.PLANIFICADO.value:
+                self.error_message = (
+                    f"No se puede eliminar torneo en estado {tournament.status}"
+                )
+                return rx.toast.error(self.error_message)
 
             has_categories = session.exec(
                 select(TournamentCategory.id).where(
@@ -233,10 +258,11 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             ).first()
 
             if has_categories or has_matches or has_tatamis:
-                return rx.toast.error(
-                    "Cannot delete tournament with related categories, "
-                    "matches or tatamis"
+                self.error_message = (
+                    "No se puede eliminar torneo con categorías, matches o tatamis "
+                    "relacionados"
                 )
+                return rx.toast.error(self.error_message)
 
             tournament_name = tournament.name
             session.delete(tournament)

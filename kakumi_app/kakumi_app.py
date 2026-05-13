@@ -32,6 +32,7 @@ from .states.bracket_state import BracketState
 from .states.competition_category_state import CompetitionCategoryState
 from .states.kata_match_state import KataMatchState
 from .states.kumite_match_state import KumiteMatchState
+from .states.tournament_state import TournamentState
 
 # Admin pages — imported for @rx.page side-effect route registration
 import kakumi_app.pages.admin.athletes_page  # noqa: F401
@@ -104,7 +105,7 @@ def index() -> rx.Component:
 app = rx.App()
 app.add_page(index, title="Kakumi Tournament Manager")
 app.add_page(registries, title="Kakumi | Registros")
-app.add_page(tournament, title="Kakumi | Torneo")
+app.add_page(tournament, title="Kakumi | Torneo", on_load=TournamentState.load_workspace)
 app.add_page(exhibition, title="Kakumi | Exhibición")
 app.add_page(
     bracket_page,

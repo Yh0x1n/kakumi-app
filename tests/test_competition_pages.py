@@ -58,6 +58,23 @@ def _flatten_component_names(node: object) -> list[str]:
     return []
 
 
+def _flatten_cond_states(node: object) -> list[str]:
+    if isinstance(node, dict):
+        values: list[str] = []
+        cond_state = node.get("cond_state")
+        if isinstance(cond_state, str):
+            values.append(cond_state)
+        for value in node.values():
+            values.extend(_flatten_cond_states(value))
+        return values
+    if isinstance(node, list):
+        values: list[str] = []
+        for item in node:
+            values.extend(_flatten_cond_states(item))
+        return values
+    return []
+
+
 def test_bracket_page_returns_component_with_loading_error_empty_and_data_branches(
 ) -> None:
     component = bracket_page()
@@ -269,3 +286,112 @@ def test_informal_table_with_concrete_rows_renders_real_rank_name_score() -> Non
     assert "1" in rendered
     assert "Lucía" in rendered
     assert "7.800" in rendered
+
+
+def test_tournament_page_returns_workspace_shell_with_operator_sections() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    component = tournament()
+    rendered = _rendered_string(component)
+
+    assert isinstance(component, rx.Component)
+    assert "Workspace del torneo" in rendered
+    assert "Seleccioná torneo para gestionar ciclo competitivo" in rendered
+    assert "Torneos disponibles" in rendered
+    assert "Controles de ciclo" in rendered
+    assert "Categorías manuales" in rendered
+    assert "Tatamis" in rendered
+    assert "Nueva categoría" in rendered
+
+
+def test_tournament_route_registers_workspace_on_load() -> None:
+    app_module = importlib.import_module("kakumi_app.kakumi_app")
+    tournament_route = app_module.app._unevaluated_pages.get("tournament")  # noqa: SLF001
+
+    from kakumi_app.pages.tournament import tournament
+    from kakumi_app.states.tournament_state import TournamentState
+
+    assert tournament_route is not None
+    assert tournament_route.component == tournament
+    assert tournament_route.on_load == TournamentState.load_workspace
+
+
+def test_tournament_page_exposes_full_lifecycle_action_set() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    rendered = _rendered_string(tournament())
+
+    assert "Abrir inscripciones" in rendered
+    assert "Cerrar inscripciones" in rendered
+    assert "Iniciar competencia" in rendered
+    assert "Finalizar torneo" in rendered
+    assert "Archivar torneo" in rendered
+    assert "Reabrir inscripciones" in rendered
+    assert "Cancelar torneo" in rendered
+
+
+def test_tournament_page_wires_operator_visibility_guards_to_state() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    rendered = tournament().render()
+    cond_states = _flatten_cond_states(rendered)
+    rendered_text = _rendered_string(tournament())
+
+    assert any("show_lifecycle_controls" in cond for cond in cond_states)
+    assert any("show_open_registrations_action" in cond for cond in cond_states)
+    assert any("show_cancel_tournament_action" in cond for cond in cond_states)
+    assert "Solo operadores autorizados pueden ejecutar transiciones" in rendered_text
+
+
+def test_tournament_page_exposes_manual_category_crud_fields() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    rendered = _rendered_string(tournament())
+
+    assert "Nueva categoría" in rendered
+    assert "Nombre categoría" in rendered
+    assert "Edad mínima" in rendered
+    assert "Edad máxima" in rendered
+    assert "Grado mínimo" in rendered
+    assert "Grado máximo" in rendered
+    assert "Guardar categoría" in rendered
+
+
+def test_tournament_page_wires_category_workspace_to_dedicated_state() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    cond_states = _flatten_cond_states(tournament().render())
+    rendered = _rendered_string(tournament())
+
+    assert any(
+        "has_selected_tournament_context" in cond for cond in cond_states
+    )
+    assert "Categorías del torneo seleccionado" in rendered
+    assert "Eliminar categoría" in rendered
+
+
+def test_tournament_page_exposes_tatami_crud_and_summary_fields() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    rendered = _rendered_string(tournament())
+
+    assert "Tatamis activos" in rendered
+    assert "Nuevo tatami" in rendered
+    assert "Nombre tatami" in rendered
+    assert "Ubicación / referencia" in rendered
+    assert "Guardar tatami" in rendered
+    assert "Eliminar tatami" in rendered
+
+
+def test_tournament_page_wires_tatami_workspace_to_dedicated_state() -> None:
+    from kakumi_app.pages.tournament import tournament
+
+    cond_states = _flatten_cond_states(tournament().render())
+    rendered = _rendered_string(tournament())
+
+    assert any(
+        "has_selected_tournament_context" in cond and "tournament_tatami_state" in cond
+        for cond in cond_states
+    )
+    assert "Tatamis del torneo seleccionado" in rendered
+    assert "Tatami rows son fuente de verdad" in rendered
