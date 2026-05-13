@@ -2,6 +2,16 @@
 
 This file provides instructions for agentic coding agents working on the kakumi-app repository.
 
+## Referencia obligatoria para delegaciones SDD
+
+Para cualquier delegación a subagentes SDD, es **obligatorio** aplicar el workflow definido en:
+
+- `docs/ai/sdd-subagent-workflows.md`
+
+El orquestador debe inyectar skills y reglas de ejecución según fase, exactamente como indica ese documento.
+
+Para gestión de entorno y dependencias, usá `uv`.
+
 ## Project Overview
 
 Kakumi App is a web application for managing Karate-Do tournaments (Kata and Kumite) built entirely with **Reflex (Python)**. The application follows a "Pure Python" architecture where both the user interface and the server logic are defined using Python.

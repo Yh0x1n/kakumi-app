@@ -112,3 +112,5 @@ secrets.json
 .engram/
 sdd/
 CRUD Registros Kakumi/
+# Local Pi runtime state
+.atl/
