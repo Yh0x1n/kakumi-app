@@ -19,4 +19,4 @@ BG_CODE_PREVIEW = "#f9f9f9"
 
 # Border
 BORDER_SUBTLE = "#ddd"
-BORDER_LIGHT = "#eeeeee"
+BORDER_LIGHT = "#aaaaaa"

@@ -22,7 +22,7 @@ def registry_page_shell(*, body: rx.Component) -> rx.Component:
             rx.box(
                 body,
                 width="100%",
-                max_width="1280px",
+                max_width="1200px",
                 margin_x="auto",
                 padding_x={"base": "16px", "md": "40px"},
                 padding_y="24px",
@@ -104,17 +104,28 @@ def registry_table_filters(
     return rx.hstack(
         rx.hstack(
             rx.input(
+                rx.input.slot(
+                    rx.icon(
+                        tag="search",
+                        width="16",
+                        heigth="12",
+                        color="black",
+                    ),
+                ),
                 placeholder=search_placeholder,
                 on_change=on_search_change,
                 width={"base": "100%", "md": "420px"},
                 background_color=BG_PAGE,
+                color_scheme="gold",
+                color="black",
                 border=f"1px solid {BORDER_LIGHT}",
             ),
             rx.button(
                 "Buscar",
                 on_click=on_search_click,
                 variant="soft",
-                color=BRAND_RED,
+                background_color=BRAND_RED,
+                color="white",
             ),
             spacing="2",
             width="100%",
@@ -159,7 +170,7 @@ def registry_empty_state(
             align_items="center",
             justify_content="center",
         ),
-        rx.heading(title, size="6"),
+        rx.heading(title, size="6", color="black"),
         rx.text(subtitle, color=MUTED_TEXT, text_align="center", max_width="560px"),
         rx.button(
             cta_label,

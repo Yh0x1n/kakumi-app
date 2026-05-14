@@ -34,7 +34,7 @@ class AthleteState(CrudStateMixin, rx.State):
     name: str = ""
     email: str = ""
     date_of_birth: str = ""
-    gender: str = "MALE"
+    gender: str = "MASCULINO"
     weight_kg: str = ""
     belt_rank: str = ""
     dojo: str = ""
@@ -106,7 +106,7 @@ class AthleteState(CrudStateMixin, rx.State):
             self.name = athlete.get("name", "")
             self.email = athlete.get("email") or ""
             self.date_of_birth = athlete.get("date_of_birth") or ""
-            self.gender = athlete.get("gender", "MALE")
+            self.gender = athlete.get("gender", "MASCULINO")
             weight_kg = athlete.get("weight_kg")
             self.weight_kg = str(weight_kg) if weight_kg else ""
             self.belt_rank = athlete.get("belt_rank") or ""
@@ -171,8 +171,8 @@ class AthleteState(CrudStateMixin, rx.State):
 
     def _validate_gender(self) -> bool:
         """Validate gender value against supported enum values."""
-        if self.gender not in ["MALE", "FEMALE"]:
-            self.error_message = "Gender must be MALE or FEMALE"
+        if self.gender not in ["MASCULINO", "FEMENINO"]:
+            self.error_message = "Género debe ser MASCULINO o FEMENINO"
             return False
         return True
 

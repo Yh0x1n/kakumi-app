@@ -23,7 +23,7 @@ from kakumi_app.states.tournament_crud_state import TournamentCrudState
 
 def _registry_form_heading(title: rx.Var | str) -> rx.Component:
     """Render shared form heading for registry modals/cards."""
-    return rx.heading(title, size="6")
+    return rx.heading(title, size="6", color="black")
 
 
 def registries() -> rx.Component:
@@ -31,9 +31,9 @@ def registries() -> rx.Component:
     return registry_page_shell(
         body=rx.vstack(
             rx.vstack(
-                rx.heading("Registros", size="8"),
+                rx.heading("Registros", size="8", color="black"),
                 rx.text(
-                    "Seleccioná módulo para gestionar atletas, árbitros y torneos.",
+                    "Selecciona un módulo para gestionar atletas, árbitros y torneos.",
                     color=MUTED_TEXT,
                 ),
                 spacing="1",
@@ -50,62 +50,162 @@ def registries() -> rx.Component:
 def _athlete_form() -> rx.Component:
     """Render create/edit athlete form."""
     state = AthleteState
+
+    def row(left: rx.Component, right: rx.Component) -> rx.Component:
+        # 1 columna en mobile/tablet, 2 columnas en desktop
+        return rx.flex(
+            rx.box(left, width=["100%", "100%", "50%"]),
+            rx.box(right, width=["100%", "100%", "50%"]),
+            width="100%",
+            spacing="3",
+            flex_direction=["column", "column", "row"],
+        )
+
     return rx.box(
         rx.form(
-            rx.vstack(
+            rx.flex(
                 _registry_form_heading(
-                    rx.cond(state.is_editing, "Editar Atleta", "Nuevo Atleta")
+                    rx.cond(state.is_editing, "Editar Atleta", "Nuevo Atleta"),
                 ),
-                rx.input(
-                    placeholder="Nombre *", value=state.name, on_change=state.set_name
+                row(
+                    rx.vstack(
+                        rx.heading("Nombre *", size="3", color="black"),
+                        rx.input(
+                            placeholder="Nombre *",
+                            value=state.name,
+                            on_change=state.set_name,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Email", size="3", color="black"),
+                        rx.input(
+                            placeholder="Email",
+                            value=state.email,
+                            on_change=state.set_email,
+                            type="email",
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
                 ),
-                rx.input(
-                    placeholder="Email",
-                    value=state.email,
-                    on_change=state.set_email,
-                    type="email",
+                row(
+                    rx.vstack(
+                        rx.heading("Fecha Nac. (YYYY-MM-DD)", size="3", color="black"),
+                        rx.input(
+                            placeholder="Fecha Nac. (YYYY-MM-DD) *",
+                            value=state.date_of_birth,
+                            on_change=state.set_date_of_birth,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Género", size="3", color="black"),
+                        rx.select(
+                            ["MASCULINO", "FEMENINO"],
+                            value=state.gender,
+                            on_change=state.set_gender,
+                            style={
+                                "border": "1px solid black",
+                                "color": "black",
+                                "background_color": "black",
+                            },
+                        ),
+                    ),
                 ),
-                rx.input(
-                    placeholder="Fecha Nac. (YYYY-MM-DD) *",
-                    value=state.date_of_birth,
-                    on_change=state.set_date_of_birth,
+                row(
+                    rx.vstack(
+                        rx.heading("Peso (kg)", size="3", color="black"),
+                        rx.input(
+                            placeholder="Peso (kg)",
+                            value=state.weight_kg,
+                            on_change=state.set_weight_kg,
+                            type="number",
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Grado", size="3", color="black"),
+                        rx.input(
+                            placeholder="Grado",
+                            value=state.belt_rank,
+                            on_change=state.set_belt_rank,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
                 ),
-                rx.select(
-                    ["MALE", "FEMALE"], value=state.gender, on_change=state.set_gender
+                row(
+                    rx.vstack(
+                        rx.heading("Dojo", size="3", color="black"),
+                        rx.input(
+                            placeholder="Dojo",
+                            value=state.dojo,
+                            on_change=state.set_dojo,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
+                    rx.vstack(
+                        rx.heading(
+                            "Nacionalidad (ISO 3 letras)", size="3", color="black"
+                        ),
+                        rx.input(
+                            placeholder="Nacionalidad (ISO 3 letras)",
+                            value=state.nationality,
+                            on_change=state.set_nationality,
+                            max_length=3,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
+                        ),
+                    ),
                 ),
-                rx.input(
-                    placeholder="Peso (kg)",
-                    value=state.weight_kg,
-                    on_change=state.set_weight_kg,
-                    type="number",
-                ),
-                rx.input(
-                    placeholder="Grado",
-                    value=state.belt_rank,
-                    on_change=state.set_belt_rank,
-                ),
-                rx.input(
-                    placeholder="Dojo", value=state.dojo, on_change=state.set_dojo
-                ),
-                rx.input(
-                    placeholder="Nacionalidad (ISO 3 letras)",
-                    value=state.nationality,
-                    on_change=state.set_nationality,
-                    max_length=3,
-                ),
-                rx.input(
-                    placeholder="Licencia",
-                    value=state.license_number,
-                    on_change=state.set_license_number,
-                ),
-                rx.checkbox(
-                    "Activo", checked=state.is_active, on_change=state.set_is_active
+                # Fila final (puedes dejarla a 1 columna si prefieres)
+                rx.flex(
+                    rx.box(
+                        rx.vstack(
+                            rx.heading("Licencia", size="3", color="black"),
+                            rx.input(
+                                placeholder="Licencia",
+                                value=state.license_number,
+                                on_change=state.set_license_number,
+                                border="1px solid black",
+                                background_color="white",
+                                color="black",
+                            ),
+                        ),
+                        width=["100%", "100%", "50%"],
+                    ),
+                    rx.box(
+                        rx.checkbox(
+                            rx.text("Activo", color="black"),
+                            checked=state.is_active,
+                            on_change=state.set_is_active,
+                        ),
+                        width=["100%", "100%", "50%"],
+                    ),
+                    width="100%",
+                    spacing="3",
+                    flex_direction=["column", "column", "row"],
                 ),
                 rx.hstack(
                     rx.button("Guardar", type="submit", color_scheme="green"),
                     rx.button("Cancelar", on_click=state.cancel_form),
+                    spacing="3",
                 ),
+                width="100%",
                 spacing="3",
+                flex_direction="column",
             ),
             on_submit=state.save_athlete,
         ),
@@ -267,7 +367,7 @@ def _athletes_card() -> rx.Component:
                 icon="🥋",
                 title="No hay atletas registrados",
                 subtitle=(
-                    "Comenzá añadiendo un atleta manualmente o importando una lista"
+                    "Comienza añadiendo un atleta manualmente o importando una lista"
                 ),
                 cta_label="Añadir Primer Atleta",
                 on_cta_click=state.set_form_values,
