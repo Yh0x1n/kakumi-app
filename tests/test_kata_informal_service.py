@@ -93,7 +93,8 @@ def test_save_performance_calculates_final_score_with_drop_high_low(
         judge_scores=[9.0, 8.0, 8.5, 8.8, 7.0],
     )
 
-    assert performance.final_score == pytest.approx((8.0 + 8.5 + 8.8) / 3)
+    # After dropping high/low, final score = SUM of remaining three scores
+    assert performance.final_score == pytest.approx(8.0 + 8.5 + 8.8)
     assert performance.highest_score == pytest.approx(9.0)
     assert performance.lowest_score == pytest.approx(7.0)
 

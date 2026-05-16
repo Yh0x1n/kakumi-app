@@ -138,7 +138,9 @@ class KataInformalService:
         highest = ordered[-1]
         kept = ordered[1:-1]
         kept_sum = float(sum(kept))
-        final_score = kept_sum / 3.0
+        # WKF informal scoring: drop highest and lowest, then SUM the
+        # remaining three scores (not average). Final score equals sum.
+        final_score = kept_sum
         max_judge_score = max(judge_scores)
         return InformalScoreComputation(
             final_score=final_score,
