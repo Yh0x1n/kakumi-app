@@ -54,10 +54,10 @@ def _athlete_form() -> rx.Component:
     def row(left: rx.Component, right: rx.Component) -> rx.Component:
         # 1 columna en mobile/tablet, 2 columnas en desktop
         return rx.flex(
-            rx.box(left, width=["100%", "100%", "50%"]),
-            rx.box(right, width=["100%", "100%", "50%"]),
+            rx.box(left, width=["100%", "100%", "75%"]),
+            rx.box(right, width=["100%", "100%", "75%"]),
             width="100%",
-            spacing="3",
+            spacing="2",
             flex_direction=["column", "column", "row"],
         )
 
@@ -216,69 +216,148 @@ def _athlete_form() -> rx.Component:
 def _referee_form() -> rx.Component:
     """Render create/edit referee form."""
     state = RefereeState
+
+    def row(left: rx.Component, right: rx.Component) -> rx.Component:
+        # 1 columna en mobile/tablet, 2 columnas en desktop
+        return rx.flex(
+            rx.box(left, width=["100%", "100%", "50%"]),
+            rx.box(right, width=["100%", "100%", "50%"]),
+            width="100%",
+            spacing="3",
+            flex_direction=["column", "column", "row"],
+        )
+
     return rx.box(
         rx.form(
-            rx.vstack(
+            rx.flex(
                 _registry_form_heading(
                     rx.cond(state.is_editing, "Editar Árbitro", "Nuevo Árbitro")
                 ),
-                rx.hstack(
+                row(
                     rx.vstack(
+                        rx.heading("Nombre *", size="3", color="black"),
                         rx.input(
                             placeholder="Nombre *",
                             value=state.name,
                             on_change=state.set_name,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Licencia *", size="3", color="black"),
                         rx.input(
                             placeholder="Licencia *",
                             value=state.license_number,
                             on_change=state.set_license_number,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                ),
+                row(
+                    rx.vstack(
+                        rx.heading("Nivel de licencia", size="3", color="black"),
                         rx.select(
                             ["NATIONAL", "INTERNATIONAL"],
                             value=state.license_level,
                             on_change=state.set_license_level,
+                            style={
+                                "border": "1px solid black",
+                                "color": "black",
+                                "background_color": "white",
+                            },
                         ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Rol", size="3", color="black"),
                         rx.select(
                             ["REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR"],
                             value=state.role,
                             on_change=state.set_role,
+                            style={
+                                "border": "1px solid black",
+                                "color": "black",
+                                "background_color": "white",
+                            },
                         ),
                     ),
+                ),
+                row(
                     rx.vstack(
+                        rx.heading(
+                            "Certificación tatami (JSON)", size="3", color="black"
+                        ),
                         rx.input(
                             placeholder="Certificación tatami (JSON)",
                             value=state.tatami_certified,
                             on_change=state.set_tatami_certified,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
-                        rx.checkbox(
-                            "Disponible",
-                            checked=state.is_available,
-                            on_change=state.set_is_available,
-                        ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Dojo", size="3", color="black"),
                         rx.input(
                             placeholder="Dojo",
                             value=state.dojo,
                             on_change=state.set_dojo,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                ),
+                row(
+                    rx.vstack(
+                        rx.heading("Email", size="3", color="black"),
                         rx.input(
                             placeholder="Email",
                             value=state.email,
                             on_change=state.set_email,
                             type="email",
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Teléfono", size="3", color="black"),
                         rx.input(
                             placeholder="Teléfono",
                             value=state.phone,
                             on_change=state.set_phone,
-                        ),
-                        rx.hstack(
-                            rx.button("Guardar", type="submit", color_scheme="green"),
-                            rx.button("Cancelar", on_click=state.cancel_form),
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
                     ),
                 ),
+                rx.flex(
+                    rx.box(
+                        rx.checkbox(
+                            rx.text("Disponible", color="black"),
+                            checked=state.is_available,
+                            on_change=state.set_is_available,
+                        ),
+                        width=["100%", "100%", "50%"],
+                    ),
+                    rx.box(width=["100%", "100%", "50%"]),
+                    width="100%",
+                    spacing="3",
+                    flex_direction=["column", "column", "row"],
+                ),
+                rx.hstack(
+                    rx.button("Guardar", type="submit", color_scheme="green"),
+                    rx.button("Cancelar", on_click=state.cancel_form),
+                    spacing="3",
+                ),
+                width="100%",
                 spacing="3",
+                flex_direction="column",
             ),
             on_submit=state.save_referee,
         ),
@@ -289,59 +368,126 @@ def _referee_form() -> rx.Component:
 def _tournament_form() -> rx.Component:
     """Render create/edit tournament form."""
     state = TournamentCrudState
+
+    def row(left: rx.Component, right: rx.Component) -> rx.Component:
+        # 1 columna en mobile/tablet, 2 columnas en desktop
+        return rx.flex(
+            rx.box(left, width=["100%", "100%", "50%"]),
+            rx.box(right, width=["100%", "100%", "50%"]),
+            width="100%",
+            spacing="3",
+            flex_direction=["column", "column", "row"],
+        )
+
     return rx.box(
         rx.form(
-            rx.vstack(
+            rx.flex(
                 _registry_form_heading(
                     rx.cond(state.is_editing, "Editar Torneo", "Nuevo Torneo")
                 ),
-                rx.hstack(
+                row(
                     rx.vstack(
+                        rx.heading("Nombre *", size="3", color="black"),
                         rx.input(
                             placeholder="Nombre *",
                             value=state.name,
                             on_change=state.set_name,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Sede *", size="3", color="black"),
                         rx.input(
                             placeholder="Sede *",
                             value=state.venue,
                             on_change=state.set_venue,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                ),
+                row(
+                    rx.vstack(
+                        rx.heading("Inicio (YYYY-MM-DD)", size="3", color="black"),
                         rx.input(
                             placeholder="Inicio (YYYY-MM-DD)",
                             value=state.start_date,
                             on_change=state.set_start_date,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Fin (YYYY-MM-DD)", size="3", color="black"),
                         rx.input(
                             placeholder="Fin (YYYY-MM-DD)",
                             value=state.end_date,
                             on_change=state.set_end_date,
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
                     ),
+                ),
+                row(
                     rx.vstack(
+                        rx.heading("Tatamis", size="3", color="black"),
                         rx.input(
                             placeholder="Tatamis",
                             value=state.tatami_count,
                             on_change=state.set_tatami_count,
                             type="number",
+                            border="1px solid black",
+                            background_color="white",
+                            color="black",
                         ),
+                    ),
+                    rx.vstack(
+                        rx.heading("Estado", size="3", color="black"),
                         rx.select(
                             state.status_options,
                             value=state.status,
                             on_change=state.set_status,
-                        ),
-                        rx.input(
-                            placeholder="ID creador",
-                            value=state.created_by_id,
-                            on_change=state.set_created_by_id,
-                        ),
-                        rx.hstack(
-                            rx.button("Guardar", type="submit", color_scheme="green"),
-                            rx.button("Cancelar", on_click=state.cancel_form),
+                            style={
+                                "border": "1px solid black",
+                                "color": "black",
+                                "background_color": "white",
+                            },
                         ),
                     ),
+                ),
+                rx.flex(
+                    rx.box(
+                        rx.vstack(
+                            rx.heading("ID creador", size="3", color="black"),
+                            rx.input(
+                                placeholder="ID creador",
+                                value=state.created_by_id,
+                                on_change=state.set_created_by_id,
+                                border="1px solid black",
+                                background_color="white",
+                                color="black",
+                            ),
+                        ),
+                        width=["100%", "100%", "50%"],
+                    ),
+                    rx.box(width=["100%", "100%", "50%"]),
+                    width="100%",
+                    spacing="3",
+                    flex_direction=["column", "column", "row"],
+                ),
+                rx.hstack(
+                    rx.button("Guardar", type="submit", color_scheme="green"),
+                    rx.button("Cancelar", on_click=state.cancel_form),
                     spacing="3",
                 ),
+                width="100%",
+                spacing="3",
+                flex_direction="column",
             ),
             on_submit=state.save_tournament,
         ),
