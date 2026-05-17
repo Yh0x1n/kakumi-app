@@ -47,12 +47,17 @@ def registry_actions_header(
     on_export_click: Any = None,
     import_label: str = "Importar",
     export_label: str = "Exportar",
+    help_text: str | None = None,
 ) -> rx.Component:
     """Header with page copy and action group aligned to screenshot."""
     return rx.hstack(
         rx.vstack(
             rx.heading(title, size="8", color="#1a1c1c"),
             rx.text(subtitle, color=MUTED_TEXT),
+            rx.cond(
+                help_text is not None,
+                rx.text(help_text or "", color=MUTED_TEXT, size="2"),
+            ),
             spacing="1",
             align="start",
         ),
@@ -90,6 +95,76 @@ def registry_actions_header(
         direction={"base": "column", "md": "row"},
         spacing="4",
         margin_bottom="24px",
+    )
+
+
+def registry_import_panel(
+    *,
+    upload_id: str,
+    selected_file_name: Any,
+    on_upload_click: Any,
+    on_cancel_click: Any,
+) -> rx.Component:
+    """Shared import panel with upload picker for registry pages."""
+    return rx.box(
+        rx.vstack(
+            rx.heading("Importar archivo", size="5", color="black"),
+            rx.text(
+                "Seleccioná un archivo .xlsx para importar registros con encabezados en español.",
+                color=MUTED_TEXT,
+            ),
+            rx.upload(
+                rx.vstack(
+                    rx.icon(tag="upload", color=BRAND_RED),
+                    rx.text("Arrastrá el archivo acá o hacé clic para seleccionarlo"),
+                    rx.text("Formato soportado: .xlsx", size="2", color=MUTED_TEXT),
+                    spacing="2",
+                    align="center",
+                ),
+                id=upload_id,
+                max_files=1,
+                border=f"1.5px dashed {BORDER_LIGHT}",
+                border_radius="12px",
+                padding="24px",
+                width="100%",
+                background_color=BG_PAGE,
+            ),
+            rx.vstack(
+                rx.cond(
+                    selected_file_name,
+                    rx.text(selected_file_name, color="black", font_weight="medium"),
+                    rx.foreach(rx.selected_files(upload_id), lambda file: rx.text(file)),
+                ),
+                width="100%",
+                align="start",
+            ),
+            rx.hstack(
+                rx.button(
+                    "Importar archivo",
+                    on_click=on_upload_click,
+                    background_color=BRAND_RED,
+                    _hover={"background_color": BRAND_RED_HOVER},
+                    color="white",
+                ),
+                rx.button(
+                    "Cancelar",
+                    variant="outline",
+                    color=BRAND_RED,
+                    border=f"1.5px solid {BRAND_RED}",
+                    on_click=on_cancel_click,
+                ),
+                spacing="2",
+                wrap="wrap",
+            ),
+            spacing="4",
+            align="start",
+            width="100%",
+        ),
+        width="100%",
+        border=f"1px solid {BORDER_LIGHT}",
+        border_radius="12px",
+        background_color=CARD_BG,
+        padding="24px",
     )
 
 

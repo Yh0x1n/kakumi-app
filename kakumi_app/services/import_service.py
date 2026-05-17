@@ -1,13 +1,10 @@
 """
 Import Service
-Handles CSV/JSON import of athletes, referees, and teams.
+Handles XLSX import of athletes, referees, and teams.
 """
 
 import datetime
-import csv
-import io
-import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import reflex as rx
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +12,11 @@ from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
+from kakumi_app.services.registry_excel_service import (
+    RegistryWorkbookError,
+    parse_athletes_workbook,
+    parse_referees_workbook,
+)
 
 
 # NOTE: Team model not yet implemented
@@ -28,7 +30,7 @@ class ImportError(Exception):
 
 
 class ImportService:
-    """Service for importing data from CSV/JSON files."""
+    """Service for importing registry data from XLSX workbooks."""
 
     BELT_COLORS = {
         "BLANCO",
@@ -99,7 +101,7 @@ class ImportService:
         row: Dict, row_num: int
     ) -> Tuple[bool, Optional[Dict], str]:
         """
-        Parse a single athlete row from CSV/JSON.
+        Parse a single athlete row from workbook data.
         Returns (success, data_dict, error_message).
         """
         errors = []
@@ -163,29 +165,20 @@ class ImportService:
         return True, data, ""
 
     @staticmethod
-    def import_athletes_csv(csv_content: str) -> Tuple[int, int, List[str]]:
+    def _import_athlete_rows(rows: Sequence[Dict[str, Any]]) -> Tuple[int, int, List[str]]:
         """
-        Import athletes from CSV string.
+        Import athletes from normalized workbook rows.
         Returns (success_count, error_count, error_messages).
         """
         success_count = 0
         error_count = 0
         error_messages = []
 
-        reader = csv.DictReader(io.StringIO(csv_content))
-        required_fields = ["name", "date_of_birth", "gender"]
-
-        # Check header
-        if not reader.fieldnames or not all(
-            field in reader.fieldnames for field in required_fields
-        ):
-            return 0, 1, ["CSV missing required fields: name, date_of_birth, gender"]
-
         pending_rows: list[tuple[int, dict[str, Any]]] = []
         seen_names: set[str] = set()
 
         with rx.session() as session:
-            for i, row in enumerate(reader, start=2):  # row 1 is header
+            for i, row in enumerate(rows, start=2):
                 success, data, error = ImportService.parse_athlete_row(row, i)
                 if not success:
                     error_count += 1
@@ -233,71 +226,16 @@ class ImportService:
         return success_count, error_count, error_messages
 
     @staticmethod
-    def import_athletes_json(json_content: str) -> Tuple[int, int, List[str]]:
+    def import_athletes_xlsx(workbook_bytes: bytes) -> Tuple[int, int, List[str]]:
         """
-        Import athletes from JSON string.
-        Expects format: {"athletes": [{...}, ...]}
+        Import athletes from XLSX workbook bytes.
         Returns (success_count, error_count, error_messages).
         """
         try:
-            data = json.loads(json_content)
-        except json.JSONDecodeError as e:
-            return 0, 1, [f"Invalid JSON: {str(e)}"]
-
-        payload = data.get("athletes")
-        if not isinstance(payload, list):
-            return 0, 1, ["JSON must contain 'athletes' array"]
-
-        success_count = 0
-        error_count = 0
-        error_messages = []
-
-        pending_rows: list[tuple[int, dict[str, Any]]] = []
-        seen_names: set[str] = set()
-
-        with rx.session() as session:
-            for i, athlete_dict in enumerate(payload, start=1):
-                success, athlete_data, error = ImportService.parse_athlete_row(
-                    athlete_dict, i
-                )
-                if not success:
-                    error_count += 1
-                    error_messages.append(error)
-                    continue
-
-                athlete_name = str(athlete_data["name"])
-                if ImportService._athlete_name_exists(
-                    session=session,
-                    athlete_name=athlete_name,
-                    seen_names=seen_names,
-                ):
-                    error_count += 1
-                    error_messages.append(
-                        f"Item {i}: Athlete with name '{athlete_name}' already exists"
-                    )
-                    continue
-
-                pending_rows.append((i, athlete_data))
-                seen_names.add(athlete_name)
-
-            try:
-                for _, athlete_data in pending_rows:
-                    normalized_data = dict(athlete_data)
-                    normalized_data["date_of_birth"] = datetime.date.fromisoformat(
-                        str(normalized_data["date_of_birth"])
-                    )
-                    session.add(Athlete(**normalized_data))
-                if pending_rows:
-                    session.commit()
-                    success_count += len(pending_rows)
-            except SQLAlchemyError as e:
-                session.rollback()
-                error_count += len(pending_rows)
-                success_count = 0
-                for item_num, _ in pending_rows:
-                    error_messages.append(f"Item {item_num}: Database error - {str(e)}")
-
-        return success_count, error_count, error_messages
+            rows = parse_athletes_workbook(workbook_bytes)
+        except RegistryWorkbookError as exc:
+            return 0, 1, [str(exc)]
+        return ImportService._import_athlete_rows(rows)
 
     @staticmethod
     def _athlete_name_exists(
@@ -314,7 +252,7 @@ class ImportService:
         return existing is not None
 
     @staticmethod
-    def _parse_referee_csv_row(
+    def _parse_referee_row(
         row: Dict[str, str],
         row_number: int,
         valid_levels: set[str],
@@ -363,25 +301,11 @@ class ImportService:
         }, None
 
     @staticmethod
-    def import_referees_csv(csv_content: str) -> Tuple[int, int, List[str]]:
-        """Import referees from CSV string."""
+    def _import_referee_rows(rows: Sequence[Dict[str, str]]) -> Tuple[int, int, List[str]]:
+        """Import referees from normalized workbook rows."""
         success_count = 0
         error_count = 0
         error_messages: list[str] = []
-
-        reader = csv.DictReader(io.StringIO(csv_content))
-        required_fields = ["name", "license_number", "license_level", "role"]
-        if not reader.fieldnames or not all(
-            field in reader.fieldnames for field in required_fields
-        ):
-            return (
-                0,
-                1,
-                [
-                    "CSV missing required fields: "
-                    "name, license_number, license_level, role"
-                ],
-            )
 
         valid_levels = {"NATIONAL", "INTERNATIONAL"}
         valid_roles = {"REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR"}
@@ -390,8 +314,8 @@ class ImportService:
         seen_licenses: set[str] = set()
 
         with rx.session() as session:
-            for i, row in enumerate(reader, start=2):
-                referee_data, row_error = ImportService._parse_referee_csv_row(
+            for i, row in enumerate(rows, start=2):
+                referee_data, row_error = ImportService._parse_referee_row(
                     row=row,
                     row_number=i,
                     valid_levels=valid_levels,
@@ -445,46 +369,13 @@ class ImportService:
         return success_count, error_count, error_messages
 
     @staticmethod
-    def import_referees_json(json_content: str) -> Tuple[int, int, List[str]]:
-        """Import referees from JSON string ({"referees": [...]}) format."""
+    def import_referees_xlsx(workbook_bytes: bytes) -> Tuple[int, int, List[str]]:
+        """Import referees from XLSX workbook bytes."""
         try:
-            data = json.loads(json_content)
-        except json.JSONDecodeError as e:
-            return 0, 1, [f"Invalid JSON: {str(e)}"]
-
-        if "referees" not in data or not isinstance(data["referees"], list):
-            return 0, 1, ["JSON must contain 'referees' array"]
-
-        csv_buffer = io.StringIO()
-        writer = csv.DictWriter(
-            csv_buffer,
-            fieldnames=[
-                "name",
-                "license_number",
-                "license_level",
-                "role",
-                "is_available",
-                "dojo",
-                "email",
-                "phone",
-            ],
-        )
-        writer.writeheader()
-        for referee in data["referees"]:
-            writer.writerow(
-                {
-                    "name": referee.get("name", ""),
-                    "license_number": referee.get("license_number", ""),
-                    "license_level": referee.get("license_level", ""),
-                    "role": referee.get("role", ""),
-                    "is_available": referee.get("is_available", "true"),
-                    "dojo": referee.get("dojo", ""),
-                    "email": referee.get("email", ""),
-                    "phone": referee.get("phone", ""),
-                }
-            )
-
-        return ImportService.import_referees_csv(csv_buffer.getvalue())
+            rows = parse_referees_workbook(workbook_bytes)
+        except RegistryWorkbookError as exc:
+            return 0, 1, [str(exc)]
+        return ImportService._import_referee_rows(rows)
 
     @staticmethod
     def import_teams_csv(csv_content: str) -> Tuple[int, int, List[str]]:

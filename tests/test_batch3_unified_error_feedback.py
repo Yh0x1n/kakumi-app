@@ -23,6 +23,7 @@ from kakumi_app.states.team_state import TeamState
 from kakumi_app.states.tournament_crud_state import TournamentCrudState
 from kakumi_app.states.tournament_state import TournamentState
 from kakumi_app.states.viewer_state import ViewerState
+from kakumi_app.services.registry_excel_service import build_athletes_workbook
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,7 +124,7 @@ async def test_save_athlete_duplicate_name_uses_toast_feedback(sample_athlete) -
 
     result = await AthleteState.save_athlete.fn(state)
 
-    _assert_toast_event(result)
+    _assert_toast_event(result, toast_kind="error")
     assert state.error_message == ""
 
 
@@ -340,6 +341,48 @@ async def test_save_athlete_success_returns_toast_and_persists_row() -> None:
 
 
 @pytest.mark.anyio
+async def test_athlete_import_file_flow_returns_success_toast(monkeypatch) -> None:
+    state = AthleteState()
+
+    class UploadStub:
+        filename = "athletes.xlsx"
+
+        async def read(self) -> bytes:
+            return build_athletes_workbook(
+                [
+                    {
+                        "name": "Ana",
+                        "date_of_birth": "2000-01-01",
+                        "gender": "FEMALE",
+                    }
+                ]
+            )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.athlete_state.ImportService.import_athletes_xlsx",
+        lambda _: (1, 0, []),
+    )
+
+    result = await AthleteState.handle_import_upload.fn(state, [UploadStub()])
+
+    _assert_toast_event(result, toast_kind="success")
+    assert state.import_file_name == "athletes.xlsx"
+    assert state.import_success_count == 1
+    assert state.import_error_count == 0
+
+
+def test_athlete_export_returns_download_plus_success_toast() -> None:
+    state = AthleteState()
+
+    result = AthleteState.export_athletes.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+    assert any("filename" in _event_args_map(event) for event in events)
+
+
+@pytest.mark.anyio
 async def test_delete_athlete_success_returns_toast_and_removes_row(
     sample_athlete,
 ) -> None:
@@ -512,16 +555,13 @@ def test_import_state_error_messages_persist_inline_until_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = ImportState()
-    state.file_type = "csv"
-    state.file_content = "name,date_of_birth,gender\n"
+    state.file_type = "xlsx"
+    state.file_content = "dGVzdA=="
     persisted_errors = ["Row 2: name is required", "Row 3: invalid category"]
 
-    def fake_import_csv(_: str) -> tuple[int, int, list[str]]:
-        return (0, len(persisted_errors), persisted_errors)
-
     monkeypatch.setattr(
-        "kakumi_app.states.import_state.ImportService.import_athletes_csv",
-        fake_import_csv,
+        "kakumi_app.states.import_state.ImportService.import_athletes_xlsx",
+        lambda _: (0, len(persisted_errors), persisted_errors),
     )
 
     result = ImportState.import_athletes.fn(state)

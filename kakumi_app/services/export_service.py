@@ -1,11 +1,9 @@
 """
 Export Service
-Handles export of tournament results, athletes, and other data in JSON/CSV formats.
+Handles export of tournament results and registry workbooks.
 """
 
-import csv
 import datetime
-import io
 import json
 
 import reflex as rx
@@ -14,54 +12,37 @@ from sqlmodel import select
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
 from kakumi_app.models.tournament_model import Match, Tournament, TournamentCategory
+from kakumi_app.services.registry_excel_service import (
+    build_athletes_workbook,
+    build_referees_workbook,
+)
 
 
 class ExportService:
-    """Service for exporting data in various formats."""
+    """Service for exporting tournament data and registry XLSX workbooks."""
 
     @staticmethod
-    def export_athletes_csv() -> str:
-        """Export all athletes to CSV string."""
+    def export_athletes_xlsx() -> bytes:
+        """Export all athletes to XLSX workbook bytes."""
         with rx.session() as session:
             athletes = session.exec(select(Athlete)).all()
 
-        output = io.StringIO()
-        fieldnames = [
-            "id",
-            "name",
-            "email",
-            "date_of_birth",
-            "gender",
-            "weight_kg",
-            "belt_rank",
-            "dojo",
-            "nationality",
-            "license_number",
-            "is_active",
-        ]
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
-        writer.writeheader()
-
-        for athlete in athletes:
-            writer.writerow(
+        return build_athletes_workbook(
+            [
                 {
-                    "id": athlete.id,
                     "name": athlete.name,
                     "email": athlete.email,
-                    "date_of_birth": athlete.date_of_birth.isoformat()
-                    if athlete.date_of_birth
-                    else "",
+                    "date_of_birth": athlete.date_of_birth,
                     "gender": athlete.gender,
-                    "weight_kg": athlete.weight_kg or "",
-                    "belt_rank": athlete.belt_rank or "",
-                    "dojo": athlete.dojo or "",
-                    "nationality": athlete.nationality or "",
-                    "license_number": athlete.license_number or "",
-                    "is_active": athlete.is_active,
+                    "weight_kg": athlete.weight_kg,
+                    "belt_rank": athlete.belt_rank,
+                    "dojo": athlete.dojo,
+                    "nationality": athlete.nationality,
+                    "license_number": athlete.license_number,
                 }
-            )
-
-        return output.getvalue()
+                for athlete in athletes
+            ]
+        )
 
     @staticmethod
     def export_tournament_results_json(tournament_id: int) -> str:
@@ -112,47 +93,32 @@ class ExportService:
     @staticmethod
     def export_tournament_results_csv(tournament_id: int) -> str:
         """Export tournament results in CSV format per spec 9.2.2."""
+        del tournament_id
         # NOTE: Match and Penalty models are not yet implemented
         # This function returns empty until the models are created
         return ""
 
     @staticmethod
-    def export_referees_csv() -> str:
-        """Export all referees to CSV."""
+    def export_referees_xlsx() -> bytes:
+        """Export all referees to XLSX workbook bytes."""
         with rx.session() as session:
             referees = session.exec(select(Referee)).all()
 
-        output = io.StringIO()
-        fieldnames = [
-            "id",
-            "name",
-            "license_number",
-            "license_level",
-            "role",
-            "is_available",
-            "dojo",
-            "email",
-            "phone",
-        ]
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
-        writer.writeheader()
-
-        for referee in referees:
-            writer.writerow(
+        return build_referees_workbook(
+            [
                 {
-                    "id": referee.id,
                     "name": referee.name,
                     "license_number": referee.license_number,
                     "license_level": referee.license_level,
                     "role": referee.role,
                     "is_available": referee.is_available,
-                    "dojo": referee.dojo or "",
-                    "email": referee.email or "",
-                    "phone": referee.phone or "",
+                    "dojo": referee.dojo,
+                    "email": referee.email,
+                    "phone": referee.phone,
                 }
-            )
-
-        return output.getvalue()
+                for referee in referees
+            ]
+        )
 
     @staticmethod
     def export_teams_csv() -> str:

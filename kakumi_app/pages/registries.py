@@ -10,6 +10,7 @@ from kakumi_app.components.registry_crud import (
     registry_actions_header,
     registry_empty_state,
     registry_error,
+    registry_import_panel,
     registry_page_shell,
     registry_pagination_footer,
     registry_table,
@@ -551,6 +552,18 @@ def _athletes_card() -> rx.Component:
     )
 
 
+def _athletes_import_panel() -> rx.Component:
+    """Render athlete import panel with upload flow."""
+    state = AthleteState
+    upload_id = "athletes_registry_upload"
+    return registry_import_panel(
+        upload_id=upload_id,
+        selected_file_name=state.import_file_name,
+        on_upload_click=state.handle_import_upload(rx.upload_files(upload_id=upload_id)),
+        on_cancel_click=[state.close_import_panel, rx.clear_selected_files(upload_id)],
+    )
+
+
 def _referees_card() -> rx.Component:
     """Render referees table card."""
     state = RefereeState
@@ -603,6 +616,18 @@ def _referees_card() -> rx.Component:
             ),
         ),
         footer=registry_pagination_footer(summary_label="Mostrando árbitros"),
+    )
+
+
+def _referees_import_panel() -> rx.Component:
+    """Render referee import panel with upload flow."""
+    state = RefereeState
+    upload_id = "referees_registry_upload"
+    return registry_import_panel(
+        upload_id=upload_id,
+        selected_file_name=state.import_file_name,
+        on_upload_click=state.handle_import_upload(rx.upload_files(upload_id=upload_id)),
+        on_cancel_click=[state.close_import_panel, rx.clear_selected_files(upload_id)],
     )
 
 
@@ -662,15 +687,20 @@ def athletes() -> rx.Component:
         registry_actions_header(
             title="Gestión de Atletas",
             subtitle="Directorio principal de competidores registrados.",
+            help_text="Importá o exportá plantillas .xlsx con encabezados en español.",
             add_label="Añadir Atleta",
             on_add_click=state.set_form_values,
-            import_label="Importar",
-            export_label="Exportar",
+            import_label="Importar .xlsx",
+            export_label="Exportar .xlsx",
             on_import_click=state.import_athletes,
             on_export_click=state.export_athletes,
         ),
         registry_error(state.error_message),
-        rx.cond(state.show_form, _athlete_form(), _athletes_card()),
+        rx.cond(
+            state.show_form,
+            _athlete_form(),
+            rx.cond(state.show_import_panel, _athletes_import_panel(), _athletes_card()),
+        ),
         spacing="4",
         width="100%",
     )
@@ -685,15 +715,24 @@ def referees() -> rx.Component:
         registry_actions_header(
             title="Gestión de Árbitros",
             subtitle="Directorio y control de licencias oficiales.",
+            help_text="Importá o exportá plantillas .xlsx con encabezados en español.",
             add_label="Añadir Árbitro",
             on_add_click=state.set_form_values,
-            import_label="Importar",
-            export_label="Exportar",
+            import_label="Importar .xlsx",
+            export_label="Exportar .xlsx",
             on_import_click=state.import_referees,
             on_export_click=state.export_referees,
         ),
         registry_error(state.error_message),
-        rx.cond(state.show_form, _referee_form(), _referees_card()),
+        rx.cond(
+            state.show_form,
+            _referee_form(),
+            rx.cond(
+                state.show_import_panel,
+                _referees_import_panel(),
+                _referees_card(),
+            ),
+        ),
         spacing="4",
         width="100%",
     )

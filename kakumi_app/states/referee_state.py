@@ -3,7 +3,8 @@ Referee State
 Manages CRUD operations for referees.
 """
 
-import json
+import base64
+import binascii
 from typing import Any, Optional
 
 import reflex as rx
@@ -42,12 +43,46 @@ class RefereeState(CrudStateMixin, rx.State):
     phone: str = ""
 
     # Import / Export UI state
+    show_import_panel: bool = False
     import_content: str = ""
-    import_file_type: str = "csv"
+    import_file_name: str = ""
+    import_file_type: str = "xlsx"
     import_success_count: int = 0
     import_error_count: int = 0
     import_error_messages: list[str] = []
     export_content: str = ""
+
+    def _build_export_filename(self) -> str:
+        """Return the downloadable export filename."""
+        return "referees.xlsx"
+
+    def _import_from_content(self) -> tuple[int, int, list[str]]:
+        """Dispatch import using current XLSX payload."""
+        try:
+            workbook_bytes = base64.b64decode(self.import_content, validate=True)
+        except (binascii.Error, ValueError):
+            workbook_bytes = self.import_content.encode("utf-8")
+        return ImportService.import_referees_xlsx(workbook_bytes)
+
+    async def _finalize_import(self) -> Any:
+        """Run import from current content and update UI state."""
+        success, errors, messages = self._import_from_content()
+
+        self.import_success_count = success
+        self.import_error_count = errors
+        self.import_error_messages = messages
+
+        if errors:
+            self.error_message = "Importación con errores: revisá el detalle"
+        else:
+            self.error_message = ""
+
+        await self.load_referees()
+        self.show_import_panel = False
+        message = f"Importación finalizada: {success} correctos, {errors} errores"
+        if errors > 0:
+            return rx.toast.warning(message)
+        return rx.toast.success(message)
 
     @rx.event
     async def load_referees(self) -> None:
@@ -79,10 +114,12 @@ class RefereeState(CrudStateMixin, rx.State):
     async def initialize_registry_view(self) -> None:
         """Prepare CRUD route state on page load."""
         self.show_form = False
+        self.show_import_panel = False
         self.error_message = ""
         self.reset_filters()
         self.import_content = ""
-        self.import_file_type = "csv"
+        self.import_file_name = ""
+        self.import_file_type = "xlsx"
         self.import_success_count = 0
         self.import_error_count = 0
         self.import_error_messages = []
@@ -244,37 +281,57 @@ class RefereeState(CrudStateMixin, rx.State):
 
     @rx.event
     async def import_referees(self) -> Any:
-        """Import referees from inline CSV/JSON content."""
-        if not self.import_content.strip():
-            self.error_message = "Pegá contenido CSV o JSON antes de importar"
+        """Open file flow, or import preloaded content for compatibility."""
+        if self.import_content.strip():
+            return await self._finalize_import()
+        self.show_import_panel = True
+        self.error_message = ""
+        return None
+
+    @rx.event
+    def close_import_panel(self) -> None:
+        """Close import panel without mutating previous import results."""
+        self.show_import_panel = False
+
+    @rx.event
+    async def handle_import_upload(self, files: list[rx.UploadFile]) -> Any:
+        """Read an uploaded XLSX file and import referees from it."""
+        if not files:
+            self.error_message = "Seleccioná un archivo XLSX antes de importar"
             return rx.toast.error(self.error_message)
 
-        if self.import_file_type == "json":
-            success, errors, messages = ImportService.import_referees_json(
-                self.import_content
-            )
+        uploaded_file = files[0]
+        self.import_file_name = uploaded_file.filename
+        filename = uploaded_file.filename.lower()
+        if filename.endswith(".xlsx"):
+            self.import_file_type = "xlsx"
         else:
-            success, errors, messages = ImportService.import_referees_csv(
-                self.import_content
-            )
+            self.error_message = "Formato no soportado. Usá .xlsx; .xls no está soportado."
+            return rx.toast.error(self.error_message)
 
-        self.import_success_count = success
-        self.import_error_count = errors
-        self.import_error_messages = messages
+        upload_data = await uploaded_file.read()
+        self.import_content = (
+            base64.b64encode(upload_data).decode("ascii") if upload_data else ""
+        )
+        if not self.import_content.strip():
+            self.error_message = "El archivo está vacío o no se pudo leer"
+            return rx.toast.error(self.error_message)
 
-        if errors:
-            self.error_message = "Importación con errores: revisá el detalle"
-        else:
-            self.error_message = ""
-
-        await self.load_referees()
-        message = f"Importación finalizada: {success} correctos, {errors} errores"
-        if errors > 0:
-            return rx.toast.warning(message)
-        return rx.toast.success(message)
+        return await self._finalize_import()
 
     @rx.event
     def export_referees(self) -> Any:
-        """Export referees as CSV content available in-page."""
-        self.export_content = ExportService.export_referees_csv()
-        return rx.toast.success("Exportación de árbitros generada")
+        """Export referees as a downloadable XLSX file."""
+        workbook_bytes = ExportService.export_referees_xlsx()
+        self.export_content = base64.b64encode(workbook_bytes).decode("ascii")
+        return [
+            rx.toast.success("Exportación de árbitros generada"),
+            rx.download(
+                data=workbook_bytes,
+                mime_type=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                filename=self._build_export_filename(),
+            ),
+        ]

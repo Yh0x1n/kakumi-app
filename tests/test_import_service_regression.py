@@ -1,20 +1,25 @@
-"""Approval-style regression tests for ImportService public behavior."""
+"""Regression tests for registry XLSX service behavior."""
 
 from __future__ import annotations
 
+from kakumi_app.services.export_service import ExportService
 from kakumi_app.services.import_service import ImportService
+from kakumi_app.services.registry_excel_service import (
+    build_athletes_workbook,
+    build_referees_workbook,
+)
 
 
-def test_import_athletes_json_reports_duplicate_name_in_payload() -> None:
-    json_content = (
-        '{"athletes": ['
-        '{"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMALE"},'
-        '{"name": "Ana", "date_of_birth": "2001-01-01", "gender": "FEMALE"}'
-        "]}"
+def test_import_athletes_xlsx_reports_duplicate_name_in_payload() -> None:
+    workbook_bytes = build_athletes_workbook(
+        [
+            {"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMALE"},
+            {"name": "Ana", "date_of_birth": "2001-01-01", "gender": "FEMALE"},
+        ]
     )
 
-    success_count, error_count, errors = ImportService.import_athletes_json(
-        json_content
+    success_count, error_count, errors = ImportService.import_athletes_xlsx(
+        workbook_bytes
     )
 
     assert success_count == 1
@@ -23,15 +28,22 @@ def test_import_athletes_json_reports_duplicate_name_in_payload() -> None:
     assert "already exists" in errors[0]
 
 
-def test_import_referees_csv_rejects_invalid_is_available_token() -> None:
-    csv_content = "\n".join(
+def test_import_referees_xlsx_rejects_invalid_is_available_token() -> None:
+    workbook_bytes = build_referees_workbook(
         [
-            "name,license_number,license_level,role,is_available",
-            "Ref Uno,REF-CSV-001,NATIONAL,REFEREE,maybe",
+            {
+                "name": "Ref Uno",
+                "license_number": "REF-CSV-001",
+                "license_level": "NATIONAL",
+                "role": "REFEREE",
+                "is_available": "maybe",
+            }
         ]
     )
 
-    success_count, error_count, errors = ImportService.import_referees_csv(csv_content)
+    success_count, error_count, errors = ImportService.import_referees_xlsx(
+        workbook_bytes
+    )
 
     assert success_count == 0
     assert error_count == 1
@@ -39,17 +51,42 @@ def test_import_referees_csv_rejects_invalid_is_available_token() -> None:
     assert "is_available must be true/false" in errors[0]
 
 
-def test_import_referees_csv_imports_valid_rows() -> None:
-    csv_content = "\n".join(
+def test_import_referees_xlsx_imports_valid_rows() -> None:
+    workbook_bytes = build_referees_workbook(
         [
-            "name,license_number,license_level,role,is_available",
-            "Ref A,REF-CSV-OK-1,NATIONAL,REFEREE,true",
-            "Ref B,REF-CSV-OK-2,INTERNATIONAL,JUDGE,false",
+            {
+                "name": "Ref A",
+                "license_number": "REF-CSV-OK-1",
+                "license_level": "NATIONAL",
+                "role": "REFEREE",
+                "is_available": "true",
+            },
+            {
+                "name": "Ref B",
+                "license_number": "REF-CSV-OK-2",
+                "license_level": "INTERNATIONAL",
+                "role": "JUDGE",
+                "is_available": "false",
+            },
         ]
     )
 
-    success_count, error_count, errors = ImportService.import_referees_csv(csv_content)
+    success_count, error_count, errors = ImportService.import_referees_xlsx(
+        workbook_bytes
+    )
 
     assert success_count == 2
     assert error_count == 0
     assert errors == []
+
+
+def test_registry_services_do_not_expose_registry_json_entrypoints() -> None:
+    missing_entrypoints = (
+        (ImportService, "import_athletes_json"),
+        (ImportService, "import_referees_json"),
+        (ExportService, "export_athletes_json"),
+        (ExportService, "export_referees_json"),
+    )
+
+    for service, entrypoint in missing_entrypoints:
+        assert hasattr(service, entrypoint) is False

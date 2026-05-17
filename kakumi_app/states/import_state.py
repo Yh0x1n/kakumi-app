@@ -3,6 +3,9 @@ Import State
 Manages file upload and import process for athletes.
 """
 
+import base64
+import binascii
+
 import reflex as rx
 
 from kakumi_app.services.import_service import ImportService
@@ -14,7 +17,7 @@ class ImportState(rx.State):
     # File content
     file_content: str = ""
     file_name: str = ""
-    file_type: str = ""  # "csv" or "json"
+    file_type: str = ""  # "xlsx"
 
     # Import results
     is_importing: bool = False
@@ -36,17 +39,15 @@ class ImportState(rx.State):
         self.file_name = file.filename
 
         # Determine file type
-        if file.filename.endswith(".csv"):
-            self.file_type = "csv"
-        elif file.filename.endswith(".json"):
-            self.file_type = "json"
+        if file.filename.endswith(".xlsx"):
+            self.file_type = "xlsx"
         else:
-            self.error_message = "Unsupported file type. Please upload CSV or JSON."
+            self.error_message = "Unsupported file type. Please upload XLSX."
             return
 
         # Read file content
         upload_data = await file.read()
-        content = upload_data.decode("utf-8") if upload_data else ""
+        content = base64.b64encode(upload_data).decode("ascii") if upload_data else ""
         if content:
             self.file_content = content
             self.error_message = ""
@@ -63,18 +64,19 @@ class ImportState(rx.State):
         self.is_importing = True
         self.error_message = ""
 
-        if self.file_type == "csv":
-            success, errors, error_list = ImportService.import_athletes_csv(
-                self.file_content
-            )
-        elif self.file_type == "json":
-            success, errors, error_list = ImportService.import_athletes_json(
-                self.file_content
-            )
-        else:
+        if self.file_type != "xlsx":
             self.is_importing = False
             self.error_message = "Invalid file type"
             return
+
+        try:
+            workbook_bytes = base64.b64decode(self.file_content, validate=True)
+        except (binascii.Error, ValueError):
+            self.is_importing = False
+            self.error_message = "Invalid file content"
+            return
+
+        success, errors, error_list = ImportService.import_athletes_xlsx(workbook_bytes)
 
         self.success_count = success
         self.error_count = errors

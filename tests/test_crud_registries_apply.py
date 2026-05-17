@@ -7,11 +7,14 @@ import importlib
 import io
 import sys
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import openpyxl
 import pytest
 import reflex as rx
+from reflex.event import EventSpec
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel.orm.session import Session as SQLModelSession
 from sqlmodel import select
@@ -27,6 +30,66 @@ from kakumi_app.models.tournament_model import (
 from kakumi_app.states.athlete_state import AthleteState
 from kakumi_app.states.referee_state import RefereeState
 from kakumi_app.states.tournament_state import TournamentState
+from kakumi_app.services.registry_excel_service import (
+    build_athletes_workbook,
+    build_referees_workbook,
+)
+
+
+def _as_event_list(result: object) -> list[EventSpec]:
+    """Normalize handler output into EventSpec instances."""
+    if result is None:
+        return []
+    if isinstance(result, EventSpec):
+        return [result]
+    if isinstance(result, (tuple, list)):
+        return [event for event in result if isinstance(event, EventSpec)]
+    return []
+
+
+def _event_args_map(event: EventSpec) -> dict[str, object]:
+    """Build a dict from Reflex event args."""
+    args_map: dict[str, object] = {}
+    for key_var, value in event.args:
+        key = getattr(key_var, "_js_expr", "")
+        if isinstance(key, str) and key:
+            args_map[key] = value
+    return args_map
+
+
+def _is_download_event(event: EventSpec, filename: str) -> bool:
+    """Return True when event triggers a download for filename."""
+    args_map = _event_args_map(event)
+    url_arg = args_map.get("url")
+    filename_arg = args_map.get("filename")
+    return bool(
+        str(getattr(url_arg, "_var_value", "")).startswith(
+            "data:application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet;base64,"
+        )
+        and getattr(filename_arg, "_var_value", None) == filename
+    )
+
+
+def _is_redirect_event(event: object, path: str) -> bool:
+    """Return True when event is a redirect to path."""
+    if not isinstance(event, EventSpec):
+        return False
+    args_map = _event_args_map(event)
+    path_arg = args_map.get("path")
+    return getattr(path_arg, "_var_value", None) == path
+
+
+class StubUploadFile:
+    """Simple upload file stub for state handler tests."""
+
+    def __init__(self, filename: str, content: bytes) -> None:
+        self.filename = filename
+        self._content = content
+
+    async def read(self) -> bytes:
+        """Return stubbed file contents."""
+        return self._content
 
 
 def test_crud_mixin_search_and_pagination_helpers_reset_page() -> None:
@@ -482,13 +545,13 @@ async def test_athlete_state_import_export_are_active(
     del sample_athlete
     state = AthleteState()
     state.import_content = "dummy"
-    state.import_file_type = "csv"
+    state.import_file_type = "xlsx"
 
     called = {"import": False, "export": False}
 
-    def _fake_import(csv_content: str) -> tuple[int, int, list[str]]:
+    def _fake_import(workbook_bytes: bytes) -> tuple[int, int, list[str]]:
         called["import"] = True
-        assert csv_content == "dummy"
+        assert workbook_bytes == b"dummy"
         with rx.session() as session:
             session.add(
                 Athlete(
@@ -501,18 +564,26 @@ async def test_athlete_state_import_export_are_active(
             session.commit()
         return 1, 0, []
 
-    def _fake_export() -> str:
+    def _fake_export() -> bytes:
         called["export"] = True
-        return "id,name\n1,Demo\n"
+        return build_athletes_workbook(
+            [
+                {
+                    "name": "Demo",
+                    "date_of_birth": "2000-01-01",
+                    "gender": "MALE",
+                }
+            ]
+        )
 
     monkeypatch.setattr(
         ImportService,
-        "import_athletes_csv",
+        "import_athletes_xlsx",
         staticmethod(_fake_import),
     )
     monkeypatch.setattr(
         ExportService,
-        "export_athletes_csv",
+        "export_athletes_xlsx",
         staticmethod(_fake_export),
     )
 
@@ -524,7 +595,102 @@ async def test_athlete_state_import_export_are_active(
 
     AthleteState.export_athletes.fn(state)
     assert called["export"] is True
-    assert "id,name" in state.export_content
+    assert state.export_content
+
+
+@pytest.mark.anyio
+async def test_athlete_state_handle_import_upload_uses_real_file_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Athlete import must process uploaded file contents instead of pasted text."""
+    state = AthleteState()
+    payload = build_athletes_workbook(
+        [{"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMALE"}]
+    )
+    calls: dict[str, bytes | None] = {"content": None}
+
+    def _fake_import(workbook_bytes: bytes) -> tuple[int, int, list[str]]:
+        calls["content"] = workbook_bytes
+        return 1, 0, []
+
+    monkeypatch.setattr(
+        ImportService,
+        "import_athletes_xlsx",
+        staticmethod(_fake_import),
+    )
+
+    result = await AthleteState.handle_import_upload.fn(
+        state,
+        [StubUploadFile("athletes.xlsx", payload)],
+    )
+
+    assert calls["content"] == payload
+    assert state.import_file_name == "athletes.xlsx"
+    assert state.import_file_type == "xlsx"
+    assert state.import_content
+    assert state.import_success_count == 1
+    assert state.import_error_count == 0
+    assert state.show_import_panel is False
+    assert _as_event_list(result)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("state_cls", "service_method"),
+    [
+        (AthleteState, "import_athletes_xlsx"),
+        (RefereeState, "import_referees_xlsx"),
+    ],
+)
+async def test_registry_state_upload_rejects_legacy_xls_files(
+    monkeypatch: pytest.MonkeyPatch,
+    state_cls: type[AthleteState] | type[RefereeState],
+    service_method: str,
+) -> None:
+    """Registry upload flow must reject `.xls` files before import service runs."""
+    state = state_cls()
+    calls = {"import": False}
+    expected_error = "Formato no soportado. Usá .xlsx; .xls no está soportado."
+
+    def _unexpected_import(_: bytes) -> tuple[int, int, list[str]]:
+        calls["import"] = True
+        return 0, 0, []
+
+    monkeypatch.setattr(ImportService, service_method, staticmethod(_unexpected_import))
+    monkeypatch.setattr(rx.toast, "error", lambda message: message)
+
+    result = await state_cls.handle_import_upload.fn(
+        state,
+        [StubUploadFile("legacy.xls", bytes.fromhex("D0CF11E0A1B11AE1"))],
+    )
+
+    assert calls["import"] is False
+    assert state.import_file_name == "legacy.xls"
+    assert state.import_content == ""
+    assert state.error_message == expected_error
+    assert result == expected_error
+
+
+def test_athlete_export_returns_download_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Athlete export must trigger a browser download event."""
+    state = AthleteState()
+    workbook_bytes = build_athletes_workbook(
+        [{"name": "Demo", "date_of_birth": "2000-01-01", "gender": "MALE"}]
+    )
+    monkeypatch.setattr(
+        ExportService,
+        "export_athletes_xlsx",
+        staticmethod(lambda: workbook_bytes),
+    )
+
+    result = AthleteState.export_athletes.fn(state)
+    events = _as_event_list(result)
+
+    assert events
+    assert any(_is_download_event(event, "athletes.xlsx") for event in events)
+    assert state.export_content
 
 
 @pytest.mark.anyio
@@ -536,13 +702,13 @@ async def test_referee_state_import_export_are_active(
     del sample_referee
     state = RefereeState()
     state.import_content = "dummy"
-    state.import_file_type = "csv"
+    state.import_file_type = "xlsx"
 
     called = {"import": False, "export": False}
 
-    def _fake_import(csv_content: str) -> tuple[int, int, list[str]]:
+    def _fake_import(workbook_bytes: bytes) -> tuple[int, int, list[str]]:
         called["import"] = True
-        assert csv_content == "dummy"
+        assert workbook_bytes == b"dummy"
         with rx.session() as session:
             session.add(
                 Referee(
@@ -556,18 +722,28 @@ async def test_referee_state_import_export_are_active(
             session.commit()
         return 1, 0, []
 
-    def _fake_export() -> str:
+    def _fake_export() -> bytes:
         called["export"] = True
-        return "id,name\n1,Ref\n"
+        return build_referees_workbook(
+            [
+                {
+                    "name": "Ref",
+                    "license_number": "REF-EXP",
+                    "license_level": "NATIONAL",
+                    "role": "REFEREE",
+                    "is_available": True,
+                }
+            ]
+        )
 
     monkeypatch.setattr(
         ImportService,
-        "import_referees_csv",
+        "import_referees_xlsx",
         staticmethod(_fake_import),
     )
     monkeypatch.setattr(
         ExportService,
-        "export_referees_csv",
+        "export_referees_xlsx",
         staticmethod(_fake_export),
     )
 
@@ -579,41 +755,123 @@ async def test_referee_state_import_export_are_active(
 
     RefereeState.export_referees.fn(state)
     assert called["export"] is True
-    assert "id,name" in state.export_content
+    assert state.export_content
 
 
-def test_import_referees_csv_and_json_and_export_referees_csv() -> None:
-    """Referee service IO should be fully implemented and non-placeholder."""
-    csv_payload = io.StringIO()
-    writer = csv_payload.write
-    writer("name,license_number,license_level,role,is_available,dojo,email,phone\n")
-    writer("Ref Uno,REF-100,NATIONAL,REFEREE,true,Dojo A,uno@test.dev,123\n")
-
-    imported, errors, messages = ImportService.import_referees_csv(
-        csv_payload.getvalue()
+@pytest.mark.anyio
+async def test_referee_state_handle_import_upload_uses_real_file_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Referee import must process uploaded file contents instead of pasted text."""
+    state = RefereeState()
+    payload = build_referees_workbook(
+        [
+            {
+                "name": "Ref Uno",
+                "license_number": "REF-1",
+                "license_level": "NATIONAL",
+                "role": "REFEREE",
+                "is_available": "true",
+            }
+        ]
     )
-    assert imported == 1
+    calls: dict[str, bytes | None] = {"content": None}
+
+    def _fake_import(workbook_bytes: bytes) -> tuple[int, int, list[str]]:
+        calls["content"] = workbook_bytes
+        return 1, 0, []
+
+    monkeypatch.setattr(
+        ImportService,
+        "import_referees_xlsx",
+        staticmethod(_fake_import),
+    )
+
+    result = await RefereeState.handle_import_upload.fn(
+        state,
+        [StubUploadFile("referees.xlsx", payload)],
+    )
+
+    assert calls["content"] == payload
+    assert state.import_file_name == "referees.xlsx"
+    assert state.import_file_type == "xlsx"
+    assert state.import_content
+    assert state.import_success_count == 1
+    assert state.import_error_count == 0
+    assert state.show_import_panel is False
+    assert _as_event_list(result)
+
+
+def test_referee_export_returns_download_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Referee export must trigger a browser download event."""
+    state = RefereeState()
+    workbook_bytes = build_referees_workbook(
+        [
+            {
+                "name": "Ref",
+                "license_number": "REF-1",
+                "license_level": "NATIONAL",
+                "role": "REFEREE",
+                "is_available": True,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        ExportService,
+        "export_referees_xlsx",
+        staticmethod(lambda: workbook_bytes),
+    )
+
+    result = RefereeState.export_referees.fn(state)
+    events = _as_event_list(result)
+
+    assert events
+    assert any(_is_download_event(event, "referees.xlsx") for event in events)
+    assert state.export_content
+
+
+def test_import_referees_xlsx_and_export_referees_xlsx() -> None:
+    """Referee service XLSX IO should be fully implemented and non-placeholder."""
+    workbook_bytes = build_referees_workbook(
+        [
+            {
+                "name": "Ref Uno",
+                "license_number": "REF-100",
+                "license_level": "NATIONAL",
+                "role": "REFEREE",
+                "is_available": "true",
+                "dojo": "Dojo A",
+                "email": "uno@test.dev",
+                "phone": "123",
+            },
+            {
+                "name": "Ref Dos",
+                "license_number": "REF-101",
+                "license_level": "INTERNATIONAL",
+                "role": "JUDGE",
+                "is_available": "true",
+                "dojo": "Dojo B",
+                "email": "dos@test.dev",
+                "phone": "999",
+            },
+        ]
+    )
+
+    imported, errors, messages = ImportService.import_referees_xlsx(workbook_bytes)
+    assert imported == 2
     assert errors == 0
     assert messages == []
 
-    json_payload = (
-        '{"referees": ['
-        '{"name": "Ref Dos", "license_number": "REF-101", '
-        '"license_level": "INTERNATIONAL", "role": "JUDGE", '
-        '"is_available": true, "dojo": "Dojo B", '
-        '"email": "dos@test.dev", "phone": "999"}]}'
-    )
-    imported_json, errors_json, messages_json = ImportService.import_referees_json(
-        json_payload
-    )
-    assert imported_json == 1
-    assert errors_json == 0
-    assert messages_json == []
+    export_bytes = ExportService.export_referees_xlsx()
+    workbook = openpyxl.load_workbook(filename=BytesIO(export_bytes))
+    sheet = workbook.active
+    exported_rows = [row for row in sheet.iter_rows(min_row=2, values_only=True)]
 
-    csv_export = ExportService.export_referees_csv()
-    assert "license_number" in csv_export
-    assert "Ref Uno" in csv_export
-    assert "Ref Dos" in csv_export
+    assert [cell.value for cell in sheet[1]][1] == "Número de licencia"
+    assert any(row[0] == "Ref Uno" for row in exported_rows)
+    assert any(row[0] == "Ref Dos" for row in exported_rows)
 
 
 def test_registry_crud_module_exposes_screenshot_layout_primitives() -> None:
@@ -676,6 +934,78 @@ def test_registries_page_keeps_active_import_export_buttons_for_supported_entiti
     assert "state.export_referees" in file_content
 
 
+def test_registries_page_wires_upload_components_for_supported_entities() -> None:
+    """Registry pages must wire upload UI for athlete and referee imports."""
+    file_content = (
+        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
+    ).read_text(encoding="utf-8")
+    shared_content = (
+        Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
+    ).read_text(encoding="utf-8")
+
+    assert "athletes_registry_upload" in file_content
+    assert "referees_registry_upload" in file_content
+    assert "rx.upload(" in shared_content
+    assert "rx.selected_files(" in shared_content
+    assert "handle_import_upload(rx.upload_files(" in file_content
+
+
+def test_registry_import_panel_copy_is_spanish_and_xlsx_only() -> None:
+    """Shared registry import panel must advertise only .xlsx workflow in Spanish."""
+    file_content = (
+        Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
+    ).read_text(encoding="utf-8")
+
+    assert "Seleccioná un archivo .xlsx" in file_content
+    assert "encabezados en español" in file_content
+    assert "Formato soportado: .xlsx" in file_content
+    assert "CSV o JSON" not in file_content
+    assert "CSV, JSON" not in file_content
+
+
+def test_registries_page_uses_explicit_xlsx_labels_for_registry_actions() -> None:
+    """Athlete/referee registries must label import/export actions as .xlsx only."""
+    file_content = (
+        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'import_label="Importar .xlsx"' in file_content
+    assert 'export_label="Exportar .xlsx"' in file_content
+    assert "encabezados en español" in file_content
+
+
+def test_admin_import_route_redirects_to_shared_athlete_registry_flow() -> None:
+    """Legacy admin import page must redirect to shared registry import flow."""
+    page_module = importlib.import_module("reflex.page")
+    original_count = len(page_module.DECORATED_PAGES.get("kakumi_app", []))
+
+    sys.modules.pop("kakumi_app.pages.admin.import_page", None)
+    import_page_module = importlib.import_module("kakumi_app.pages.admin.import_page")
+
+    new_pages = page_module.DECORATED_PAGES.get("kakumi_app", [])[original_count:]
+    config = next(
+        cfg for _, cfg in new_pages if cfg.get("route") == "/admin/import"
+    )
+
+    assert _is_redirect_event(config.get("on_load"), "/registries/athletes")
+    assert isinstance(import_page_module.import_athletes(), rx.Component)
+    assert "Redirigiendo" in str(import_page_module.import_athletes())
+
+
+def test_admin_export_page_stays_scoped_to_tournament_results_only() -> None:
+    """Admin export page must stay focused on tournament results, not registries."""
+    file_content = (
+        Path(__file__).resolve().parents[1]
+        / "kakumi_app/pages/admin/export_page.py"
+    ).read_text(encoding="utf-8")
+
+    assert "Exportar Resultados de Torneo" in file_content
+    assert "ExportState.load_tournaments" in file_content
+    assert "export_athletes_xlsx" not in file_content
+    assert "export_referees_xlsx" not in file_content
+    assert "ImportState" not in file_content
+
+
 @pytest.mark.anyio
 async def test_tournament_crud_save_rolls_back_and_shows_toast_on_db_error(
     monkeypatch: pytest.MonkeyPatch,
@@ -717,19 +1047,19 @@ async def test_tournament_crud_save_rolls_back_and_shows_toast_on_db_error(
     assert "Error al guardar torneo" in result
 
 
-def test_import_athletes_csv_invalid_header_handles_missing_fieldnames() -> None:
-    """Athlete CSV import must handle None fieldnames (invalid CSV) safely."""
-    imported, errors, messages = ImportService.import_athletes_csv("")
+def test_import_athletes_xlsx_invalid_header_handles_missing_fieldnames() -> None:
+    """Athlete XLSX import must handle missing headers safely."""
+    imported, errors, messages = ImportService.import_athletes_xlsx(b"")
 
     assert imported == 0
     assert errors == 1
-    assert messages == ["CSV missing required fields: name, date_of_birth, gender"]
+    assert messages == ["XLSX workbook is empty"]
 
 
-def test_import_athletes_csv_commits_once_after_processing_rows(
+def test_import_athletes_xlsx_commits_once_after_processing_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Athlete CSV import should commit once after row processing."""
+    """Athlete XLSX import should commit once after row processing."""
     commit_calls = {"count": 0}
 
     original_commit = SQLModelSession.commit
@@ -742,12 +1072,23 @@ def test_import_athletes_csv_commits_once_after_processing_rows(
 
     suffix = uuid.uuid4().hex[:8]
 
-    csv_payload = (
-        "name,date_of_birth,gender,email\n"
-        f"Athlete One {suffix},2001-01-01,MALE,one-{suffix}@test.dev\n"
-        f"Athlete Two {suffix},2002-02-02,FEMALE,two-{suffix}@test.dev\n"
+    workbook_bytes = build_athletes_workbook(
+        [
+            {
+                "name": f"Athlete One {suffix}",
+                "date_of_birth": "2001-01-01",
+                "gender": "MALE",
+                "email": f"one-{suffix}@test.dev",
+            },
+            {
+                "name": f"Athlete Two {suffix}",
+                "date_of_birth": "2002-02-02",
+                "gender": "FEMALE",
+                "email": f"two-{suffix}@test.dev",
+            },
+        ]
     )
-    imported, errors, messages = ImportService.import_athletes_csv(csv_payload)
+    imported, errors, messages = ImportService.import_athletes_xlsx(workbook_bytes)
 
     assert imported == 2
     assert errors == 0
@@ -755,17 +1096,24 @@ def test_import_athletes_csv_commits_once_after_processing_rows(
     assert commit_calls["count"] == 1
 
 
-def test_import_referees_json_serializes_csv_fields_safely() -> None:
-    """Referee JSON import should preserve comma-containing values."""
-    json_payload = (
-        '{"referees": ['
-        '{"name": "Ref Tres", "license_number": "REF-JSON-3", '
-        '"license_level": "NATIONAL", "role": "REFEREE", '
-        '"is_available": true, "dojo": "Dojo, Norte", '
-        '"email": "tres@test.dev", "phone": "777"}]}'
+def test_import_referees_xlsx_preserves_comma_containing_fields() -> None:
+    """Referee XLSX import should preserve comma-containing values."""
+    workbook_bytes = build_referees_workbook(
+        [
+            {
+                "name": "Ref Tres",
+                "license_number": "REF-JSON-3",
+                "license_level": "NATIONAL",
+                "role": "REFEREE",
+                "is_available": "true",
+                "dojo": "Dojo, Norte",
+                "email": "tres@test.dev",
+                "phone": "777",
+            }
+        ]
     )
 
-    imported, errors, messages = ImportService.import_referees_json(json_payload)
+    imported, errors, messages = ImportService.import_referees_xlsx(workbook_bytes)
 
     assert imported == 1
     assert errors == 0

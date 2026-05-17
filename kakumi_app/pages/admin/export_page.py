@@ -1,7 +1,4 @@
-"""
-Export Results Page
-Allows exporting tournament results in JSON/CSV format.
-"""
+"""Tournament-results export page only."""
 
 import reflex as rx
 
@@ -19,7 +16,8 @@ def export_form() -> rx.Component:
             "Exportar Resultados de Torneo", font_size="2xl", margin_bottom="1em"
         ),
         rx.text(
-            "Selecciona un torneo y formato para exportar resultados.",
+            "Selecciona un torneo y formato para exportar resultados."
+            " Los registros de atletas y árbitros se exportan desde Registros.",
             font_size="md",
             color="gray",
             margin_bottom="2em",

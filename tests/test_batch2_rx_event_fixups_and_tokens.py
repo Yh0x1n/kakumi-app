@@ -114,7 +114,7 @@ def test_new_tokens_exist_for_batch2() -> None:
     assert tokens.BRAND_RED_HOVER_LIGHT == "#7a3838"
     assert tokens.BG_PAGE == "#f5f5f5"
     assert tokens.BG_CARD_ALT == "#f0f0f0"
-    assert tokens.BORDER_LIGHT == "#eeeeee"
+    assert tokens.BORDER_LIGHT == "#aaaaaa"
     assert tokens.BG_CODE_PREVIEW == "#f9f9f9"
 
 
