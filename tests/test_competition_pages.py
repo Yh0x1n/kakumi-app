@@ -295,8 +295,8 @@ def test_tournament_page_returns_workspace_shell_with_operator_sections() -> Non
     rendered = _rendered_string(component)
 
     assert isinstance(component, rx.Component)
-    assert "Workspace del torneo" in rendered
-    assert "Seleccioná torneo para gestionar ciclo competitivo" in rendered
+    assert "Torneo" in rendered
+    assert "Gestiona el ciclo competitivo, categorías y tatamis." in rendered
     assert "Torneos disponibles" in rendered
     assert "Controles de ciclo" in rendered
     assert "Categorías manuales" in rendered
@@ -394,4 +394,4 @@ def test_tournament_page_wires_tatami_workspace_to_dedicated_state() -> None:
         for cond in cond_states
     )
     assert "Tatamis del torneo seleccionado" in rendered
-    assert "Tatami rows son fuente de verdad" in rendered
+    assert "Áreas oficiales para el desarrollo del torneo" in rendered

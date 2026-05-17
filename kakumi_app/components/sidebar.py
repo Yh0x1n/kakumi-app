@@ -40,6 +40,7 @@ def sidebar_items() -> rx.Component:
     return rx.vstack(
         sidebar_item("Torneo", "trophy", "/tournament"),
         sidebar_item("Exhibición", "eye", "/exhibition"),
+        sidebar_item("Resultados", "medal", "/results"),
         sidebar_item("Registros", "square-library", "/registries"),
         spacing="3",
         width="100%",

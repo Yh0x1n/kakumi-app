@@ -12,27 +12,33 @@
 import reflex as rx
 
 from .components.sidebar import sidebar
-from .styles.tokens import HOVER_GRAY
 from .models.athlete_model import Athlete  # noqa [F401]
 from .models.referee_model import Referee  # noqa [F401]
 from .models.tournament_model import (  # noqa [F401]
-    TournamentCategory,
     Tournament,
+    TournamentCategory,
 )
-from .pages.exhibition import exhibition
 from .pages.competition import (
     bracket_page,
     category_page,
     kata_live_match_page,
     live_match_page,
 )
+from .pages.exhibition import exhibition
 from .pages.registries import registries
+from .pages.results import results
 from .pages.tournament import tournament
 from .states.bracket_state import BracketState
 from .states.competition_category_state import CompetitionCategoryState
 from .states.kata_match_state import KataMatchState
 from .states.kumite_match_state import KumiteMatchState
+from .states.results_state import ResultsState
 from .states.tournament_state import TournamentState
+from .styles.tokens import HOVER_GRAY
+
+
+class State(rx.State):
+    pass
 
 # Admin pages — imported for @rx.page side-effect route registration
 import kakumi_app.pages.admin.athletes_page  # noqa: F401
@@ -43,10 +49,6 @@ import kakumi_app.pages.admin.teams_page  # noqa: F401
 
 # Auth pages
 import kakumi_app.pages.auth.login  # noqa: F401
-
-
-class State(rx.State):
-    pass
 
 
 def index() -> rx.Component:
@@ -105,8 +107,13 @@ def index() -> rx.Component:
 app = rx.App()
 app.add_page(index, title="Kakumi Tournament Manager")
 app.add_page(registries, title="Kakumi | Registros")
-app.add_page(tournament, title="Kakumi | Torneo", on_load=TournamentState.load_workspace)
+app.add_page(
+    tournament, title="Kakumi | Torneo", on_load=TournamentState.load_workspace
+)
 app.add_page(exhibition, title="Kakumi | Exhibición")
+app.add_page(
+    results, title="Kakumi | Resultados", on_load=ResultsState.load_results_index
+)
 app.add_page(
     bracket_page,
     route="/tournaments/[id]/bracket",

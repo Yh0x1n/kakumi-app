@@ -5,6 +5,7 @@ Manages CRUD operations for referees.
 
 import base64
 import binascii
+import json
 from typing import Any, Optional
 
 import reflex as rx
