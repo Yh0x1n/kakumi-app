@@ -13,8 +13,8 @@ from kakumi_app.services.registry_excel_service import (
 def test_import_athletes_xlsx_reports_duplicate_name_in_payload() -> None:
     workbook_bytes = build_athletes_workbook(
         [
-            {"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMALE"},
-            {"name": "Ana", "date_of_birth": "2001-01-01", "gender": "FEMALE"},
+            {"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMENINO"},
+            {"name": "Ana", "date_of_birth": "2001-01-01", "gender": "FEMENINO"},
         ]
     )
 
@@ -34,7 +34,7 @@ def test_import_referees_xlsx_rejects_invalid_is_available_token() -> None:
             {
                 "name": "Ref Uno",
                 "license_number": "REF-CSV-001",
-                "license_level": "NATIONAL",
+                "license_level": "NACIONAL",
                 "role": "REFEREE",
                 "is_available": "maybe",
             }
@@ -57,15 +57,15 @@ def test_import_referees_xlsx_imports_valid_rows() -> None:
             {
                 "name": "Ref A",
                 "license_number": "REF-CSV-OK-1",
-                "license_level": "NATIONAL",
+                "license_level": "NACIONAL",
                 "role": "REFEREE",
                 "is_available": "true",
             },
             {
                 "name": "Ref B",
                 "license_number": "REF-CSV-OK-2",
-                "license_level": "INTERNATIONAL",
-                "role": "JUDGE",
+                "license_level": "INTERNACIONAL",
+                "role": "JUEZ",
                 "is_available": "false",
             },
         ]

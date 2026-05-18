@@ -14,6 +14,31 @@ class RegistryWorkbookError(ValueError):
     """Raised when a registry workbook does not match expected contract."""
 
 
+# ── Enum translation maps (DB → Español para export) ────────────────────
+
+GENDER_TRANSLATION: dict[str, str] = {
+    "MALE": "MASCULINO",
+    "FEMALE": "FEMENINO",
+}
+
+LICENSE_LEVEL_TRANSLATION: dict[str, str] = {
+    "NATIONAL": "NACIONAL",
+    "INTERNATIONAL": "INTERNACIONAL",
+}
+
+ROLE_TRANSLATION: dict[str, str] = {
+    "REFEREE": "REFEREE",
+    "JUDGE": "JUEZ",
+    "TABLE_OFFICIAL": "OFICIAL DE MESA",
+    "SUPERVISOR": "SUPERVISOR (KANSA)",
+}
+
+# Reverse maps (Español → DB para import)
+GENDER_REVERSE: dict[str, str] = {v: k for k, v in GENDER_TRANSLATION.items()}
+LICENSE_LEVEL_REVERSE: dict[str, str] = {v: k for k, v in LICENSE_LEVEL_TRANSLATION.items()}
+ROLE_REVERSE: dict[str, str] = {v: k for k, v in ROLE_TRANSLATION.items()}
+
+
 def _serialize_cell_value(value: Any) -> str:
     """Convert Python values to stable workbook cell strings."""
     if value is None:
@@ -81,13 +106,29 @@ def _text_serializer(field_name: str) -> CellSerializer:
     return _serializer
 
 
+def _translation_serializer(
+    translation_map: dict[str, str],
+    field_name: str,
+) -> CellSerializer:
+    """Create a serializer that translates DB values to Español for export."""
+
+    def _serializer(row: Mapping[str, Any]) -> str:
+        raw = row.get(field_name)
+        return translation_map.get(raw, _serialize_cell_value(raw))
+
+    return _serializer
+
+
 ATHLETE_WORKBOOK_ADAPTER = RegistryWorkbookAdapter(
     sheet_name="Atletas",
     columns=(
         RegistryColumn("name", "Nombre", required=True),
         RegistryColumn("email", "Correo electrónico"),
         RegistryColumn("date_of_birth", "Fecha de nacimiento", required=True),
-        RegistryColumn("gender", "Género", required=True),
+        RegistryColumn(
+            "gender", "Género", required=True,
+            serializer=_translation_serializer(GENDER_TRANSLATION, "gender"),
+        ),
         RegistryColumn("weight_kg", "Peso (kg)"),
         RegistryColumn("belt_rank", "Grado"),
         RegistryColumn("dojo", "Dojo"),
@@ -102,8 +143,14 @@ REFEREE_WORKBOOK_ADAPTER = RegistryWorkbookAdapter(
     columns=(
         RegistryColumn("name", "Nombre", required=True),
         RegistryColumn("license_number", "Número de licencia", required=True),
-        RegistryColumn("license_level", "Nivel de licencia", required=True),
-        RegistryColumn("role", "Rol", required=True),
+        RegistryColumn(
+            "license_level", "Nivel de licencia", required=True,
+            serializer=_translation_serializer(LICENSE_LEVEL_TRANSLATION, "license_level"),
+        ),
+        RegistryColumn(
+            "role", "Rol", required=True,
+            serializer=_translation_serializer(ROLE_TRANSLATION, "role"),
+        ),
         RegistryColumn("is_available", "Disponible", serializer=_text_serializer("is_available")),
         RegistryColumn("dojo", "Dojo"),
         RegistryColumn("email", "Correo electrónico"),

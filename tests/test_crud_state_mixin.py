@@ -97,7 +97,7 @@ def test_athlete_set_form_values_edit_populates_fields_and_flags() -> None:
     assert state.error_message == ""
     assert state.name == "Atleta Edit"
     assert state.date_of_birth == "2002-07-01"
-    assert state.gender == "FEMALE"
+    assert state.gender == "FEMENINO"
     assert state.weight_kg == "62.5"
     assert state.belt_rank == "Dan 2"
     assert state.dojo == "Dojo Sur"
@@ -124,7 +124,7 @@ def test_athlete_set_form_values_create_resets_fields() -> None:
     assert state.error_message == ""
     assert state.name == ""
     assert state.date_of_birth == ""
-    assert state.gender == "MALE"
+    assert state.gender == "MASCULINO"
     assert state.weight_kg == ""
 
 
@@ -152,8 +152,8 @@ def test_referee_set_form_values_edit_populates_fields_and_flags() -> None:
     assert state.error_message == ""
     assert state.name == "Ref Edit"
     assert state.license_number == "REF-009"
-    assert state.license_level == "INTERNATIONAL"
-    assert state.role == "JUDGE"
+    assert state.license_level == "INTERNACIONAL"
+    assert state.role == "JUEZ"
     assert state.tatami_certified == '["A", "B"]'
     assert state.is_available is False
     assert state.dojo == "Federación"
@@ -178,7 +178,7 @@ def test_referee_set_form_values_create_resets_fields() -> None:
     assert state.error_message == ""
     assert state.name == ""
     assert state.license_number == ""
-    assert state.license_level == "NATIONAL"
+    assert state.license_level == "NACIONAL"
     assert state.role == "REFEREE"
 
 

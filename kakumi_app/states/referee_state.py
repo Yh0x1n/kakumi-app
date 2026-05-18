@@ -35,7 +35,7 @@ class RefereeState(CrudStateMixin, rx.State):
     # Form fields
     name: str = ""
     license_number: str = ""
-    license_level: str = "NATIONAL"
+    license_level: str = "NACIONAL"
     role: str = "REFEREE"
     tatami_certified: str = ""  # JSON string
     is_available: bool = True
@@ -52,6 +52,54 @@ class RefereeState(CrudStateMixin, rx.State):
     import_error_count: int = 0
     import_error_messages: list[str] = []
     export_content: str = ""
+
+    # ── Translation helpers ──────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_license_level(level: str) -> str:
+        """Convert display Español license_level to DB English."""
+        normalized = (level or "").strip().upper()
+        if normalized == "NACIONAL":
+            return "NATIONAL"
+        if normalized == "INTERNACIONAL":
+            return "INTERNATIONAL"
+        return normalized
+
+    @staticmethod
+    def _display_license_level(level: str) -> str:
+        """Convert DB English license_level to display Español."""
+        normalized = (level or "").strip().upper()
+        if normalized == "NATIONAL":
+            return "NACIONAL"
+        if normalized == "INTERNATIONAL":
+            return "INTERNACIONAL"
+        return normalized
+
+    @staticmethod
+    def _normalize_role(role: str) -> str:
+        """Convert display Español role to DB English."""
+        normalized = (role or "").strip().upper()
+        if normalized == "JUEZ":
+            return "JUDGE"
+        if normalized == "OFICIAL DE MESA":
+            return "TABLE_OFFICIAL"
+        if normalized == "SUPERVISOR (KANSA)":
+            return "SUPERVISOR"
+        # REFEREE, JUDGE, TABLE_OFFICIAL, SUPERVISOR passthrough
+        return normalized
+
+    @staticmethod
+    def _display_role(role: str) -> str:
+        """Convert DB English role to display Español."""
+        normalized = (role or "").strip().upper()
+        if normalized == "JUDGE":
+            return "JUEZ"
+        if normalized == "TABLE_OFFICIAL":
+            return "OFICIAL DE MESA"
+        if normalized == "SUPERVISOR":
+            return "SUPERVISOR (KANSA)"
+        # REFEREE passthrough
+        return normalized
 
     def _build_export_filename(self) -> str:
         """Return the downloadable export filename."""
@@ -143,8 +191,12 @@ class RefereeState(CrudStateMixin, rx.State):
             self._set_form_open(editing=True)
             self.name = referee.get("name", "")
             self.license_number = referee.get("license_number", "")
-            self.license_level = referee.get("license_level", "NATIONAL")
-            self.role = referee.get("role", "REFEREE")
+            self.license_level = self._display_license_level(
+                referee.get("license_level", "NATIONAL")
+            )
+            self.role = self._display_role(
+                referee.get("role", "REFEREE")
+            )
             self.tatami_certified = referee.get("tatami_certified") or ""
             self.is_available = bool(referee.get("is_available", True))
             self.dojo = referee.get("dojo") or ""
@@ -159,7 +211,7 @@ class RefereeState(CrudStateMixin, rx.State):
         """Reset form fields."""
         self.name = ""
         self.license_number = ""
-        self.license_level = "NATIONAL"
+        self.license_level = "NACIONAL"
         self.role = "REFEREE"
         self.tatami_certified = ""
         self.is_available = True
@@ -177,11 +229,13 @@ class RefereeState(CrudStateMixin, rx.State):
             self.error_message = "License number is required (max 50 chars)"
             return False
 
-        if self.license_level not in ["NATIONAL", "INTERNATIONAL"]:
-            self.error_message = "License level must be NATIONAL or INTERNATIONAL"
+        normalized_level = self._normalize_license_level(self.license_level)
+        if normalized_level not in ["NATIONAL", "INTERNATIONAL"]:
+            self.error_message = "License level must be NACIONAL or INTERNACIONAL"
             return False
 
-        if self.role not in ["REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR"]:
+        normalized_role = self._normalize_role(self.role)
+        if normalized_role not in ["REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR"]:
             self.error_message = "Invalid role"
             return False
 
@@ -208,8 +262,8 @@ class RefereeState(CrudStateMixin, rx.State):
         referee_data = {
             "name": self.name,
             "license_number": self.license_number,
-            "license_level": self.license_level,
-            "role": self.role,
+            "license_level": self._normalize_license_level(self.license_level),
+            "role": self._normalize_role(self.role),
             "tatami_certified": self.tatami_certified or None,
             "is_available": self.is_available,
             "dojo": self.dojo or None,

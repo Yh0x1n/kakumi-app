@@ -63,7 +63,7 @@ def test_parse_referee_workbook_normalizes_rows() -> None:
         {
             "name": "Ref Uno",
             "license_number": "REF-10",
-            "license_level": "NATIONAL",
+            "license_level": "NACIONAL",
             "role": "REFEREE",
             "is_available": "true",
             "dojo": "Dojo Norte",

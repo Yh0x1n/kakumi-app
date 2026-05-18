@@ -262,7 +262,7 @@ def _referee_form() -> rx.Component:
                     rx.vstack(
                         rx.heading("Nivel de licencia", size="3", color="black"),
                         rx.select(
-                            ["NATIONAL", "INTERNATIONAL"],
+                            ["NACIONAL", "INTERNACIONAL"],
                             value=state.license_level,
                             on_change=state.set_license_level,
                             style={
@@ -275,7 +275,7 @@ def _referee_form() -> rx.Component:
                     rx.vstack(
                         rx.heading("Rol", size="3", color="black"),
                         rx.select(
-                            ["REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR"],
+                            ["REFEREE", "JUEZ", "OFICIAL DE MESA", "SUPERVISOR (KANSA)"],
                             value=state.role,
                             on_change=state.set_role,
                             style={

@@ -64,6 +64,16 @@ class AthleteState(CrudStateMixin, rx.State):
             return "FEMALE"
         return normalized or "MALE"
 
+    @staticmethod
+    def _display_gender(gender: str) -> str:
+        """Convert DB gender (MALE/FEMALE) to display Español."""
+        normalized = (gender or "").strip().upper()
+        if normalized == "MALE":
+            return "MASCULINO"
+        if normalized == "FEMALE":
+            return "FEMENINO"
+        return normalized
+
     def _build_export_filename(self) -> str:
         """Return the downloadable export filename."""
         return "athletes.xlsx"
@@ -154,7 +164,7 @@ class AthleteState(CrudStateMixin, rx.State):
             self.name = athlete.get("name", "")
             self.email = athlete.get("email") or ""
             self.date_of_birth = athlete.get("date_of_birth") or ""
-            self.gender = self._normalize_gender(athlete.get("gender", "MALE"))
+            self.gender = self._display_gender(athlete.get("gender", "MALE"))
             weight_kg = athlete.get("weight_kg")
             self.weight_kg = str(weight_kg) if weight_kg else ""
             self.belt_rank = athlete.get("belt_rank") or ""
@@ -172,7 +182,7 @@ class AthleteState(CrudStateMixin, rx.State):
         self.name = ""
         self.email = ""
         self.date_of_birth = ""
-        self.gender = "MALE"
+        self.gender = "MASCULINO"
         self.weight_kg = ""
         self.belt_rank = ""
         self.dojo = ""
@@ -223,7 +233,7 @@ class AthleteState(CrudStateMixin, rx.State):
         if normalized_gender not in ["MALE", "FEMALE"]:
             self.error_message = "Gender must be MALE or FEMALE"
             return False
-        self.gender = normalized_gender
+        # Keep display value (Español) in self.gender; normalize only for DB
         return True
 
     def _validate_weight(self) -> bool:

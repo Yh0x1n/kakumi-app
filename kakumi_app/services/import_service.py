@@ -66,8 +66,8 @@ class ImportService:
 
     @staticmethod
     def validate_gender(gender: str) -> bool:
-        """Validate gender field."""
-        return gender.upper() in ["MALE", "FEMALE"]
+        """Validate gender field (accepts English and Spanish values)."""
+        return gender.upper() in ["MALE", "FEMALE", "MASCULINO", "FEMENINO"]
 
     @staticmethod
     def validate_weight(weight: float) -> bool:
@@ -119,7 +119,9 @@ class ImportService:
 
         gender = ImportService._clean_str(row.get("gender", ""))
         if not ImportService.validate_gender(gender):
-            errors.append("gender must be MALE or FEMALE")
+            errors.append(
+                "gender must be MALE/FEMALE or MASCULINO/FEMENINO"
+            )
 
         weight_str = ImportService._clean_str(row.get("weight_kg", ""))
         weight_kg = None
@@ -151,11 +153,18 @@ class ImportService:
         if errors:
             return False, None, f"Row {row_num}: " + "; ".join(errors)
 
+        # Normalize gender: Spanish → English for DB storage
+        raw_gender = gender.upper()
+        if raw_gender == "MASCULINO":
+            raw_gender = "MALE"
+        elif raw_gender == "FEMENINO":
+            raw_gender = "FEMALE"
+
         data = {
             "name": name,
             "email": ImportService._clean_str(row.get("email", "")) or None,
             "date_of_birth": date_of_birth,
-            "gender": gender.upper(),
+            "gender": raw_gender,
             "weight_kg": weight_kg,
             "belt_rank": belt_rank or None,
             "dojo": dojo or None,
@@ -252,6 +261,28 @@ class ImportService:
         return existing is not None
 
     @staticmethod
+    def _normalize_license_level(level: str) -> str:
+        """Convert Spanish license_level to DB English."""
+        normalized = (level or "").strip().upper()
+        if normalized == "NACIONAL":
+            return "NATIONAL"
+        if normalized == "INTERNACIONAL":
+            return "INTERNATIONAL"
+        return normalized
+
+    @staticmethod
+    def _normalize_role(role: str) -> str:
+        """Convert Spanish role to DB English."""
+        normalized = (role or "").strip().upper()
+        if normalized == "JUEZ":
+            return "JUDGE"
+        if normalized == "OFICIAL DE MESA":
+            return "TABLE_OFFICIAL"
+        if normalized == "SUPERVISOR (KANSA)":
+            return "SUPERVISOR"
+        return normalized
+
+    @staticmethod
     def _parse_referee_row(
         row: Dict[str, str],
         row_number: int,
@@ -292,8 +323,8 @@ class ImportService:
         return {
             "name": name,
             "license_number": license_number,
-            "license_level": license_level,
-            "role": role,
+            "license_level": ImportService._normalize_license_level(license_level),
+            "role": ImportService._normalize_role(role),
             "is_available": available,
             "dojo": dojo,
             "email": email,
@@ -307,8 +338,11 @@ class ImportService:
         error_count = 0
         error_messages: list[str] = []
 
-        valid_levels = {"NATIONAL", "INTERNATIONAL"}
-        valid_roles = {"REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR"}
+        valid_levels = {"NATIONAL", "INTERNATIONAL", "NACIONAL", "INTERNACIONAL"}
+        valid_roles = {
+            "REFEREE", "JUDGE", "TABLE_OFFICIAL", "SUPERVISOR",
+            "JUEZ", "OFICIAL DE MESA", "SUPERVISOR (KANSA)",
+        }
 
         pending_rows: list[tuple[int, dict[str, Any]]] = []
         seen_licenses: set[str] = set()
