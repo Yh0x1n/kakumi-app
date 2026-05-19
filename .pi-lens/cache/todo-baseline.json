@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "type": "BUG",
+      "message": "duplicate downgrade",
+      "file": "alembic/versions/76ed8bac3e8b_add_tournament_fields_and_status_enum.py",
+      "line": 80,
+      "column": 2
+    }
+  ]
+}

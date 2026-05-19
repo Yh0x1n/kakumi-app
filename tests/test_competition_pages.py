@@ -14,8 +14,10 @@ from kakumi_app.pages.competition import (
 from kakumi_app.components.kata_informal_table import kata_informal_table
 from kakumi_app.pages.exhibition import kata_system
 from kakumi_app.pages.competition.category_page import _empty_category_state
+from kakumi_app.pages.public_display import public_display_page
 from kakumi_app.states.kata_match_state import KataMatchState
 from kakumi_app.states.kumite_match_state import KumiteMatchState
+from kakumi_app.states.secondary_display_state import SecondaryDisplayState
 
 
 def _flatten_render_strings(node: object) -> list[str]:
@@ -395,3 +397,41 @@ def test_tournament_page_wires_tatami_workspace_to_dedicated_state() -> None:
     )
     assert "Tatamis del torneo seleccionado" in rendered
     assert "Áreas oficiales para el desarrollo del torneo" in rendered
+
+
+def test_live_match_page_includes_launch_public_display_controls() -> None:
+    rendered = _rendered_string(live_match_page())
+
+    assert "Pantalla pública" in rendered
+    assert "Abrir pantalla pública" in rendered
+    assert (
+        "to:(\"/display/\"+reflex___state____state__kakumi_app___states___kumite_match_state____kumite_match_state.public_display_key_rx_state_)"
+        in rendered
+    )
+    assert "target:(true ? \"_blank\" : \"\")" in rendered
+
+
+def test_kata_live_match_page_includes_launch_public_display_controls() -> None:
+    rendered = _rendered_string(kata_live_match_page())
+
+    assert "Pantalla pública" in rendered
+    assert "Abrir pantalla pública" in rendered
+    assert (
+        "to:(\"/display/\"+reflex___state____state__kakumi_app___states___kata_match_state____kata_match_state.public_display_key_rx_state_)"
+        in rendered
+    )
+    assert "target:(true ? \"_blank\" : \"\")" in rendered
+
+
+def test_public_display_route_registered_once_without_duplicate_page_decorator() -> None:
+    app_module = importlib.import_module("kakumi_app.kakumi_app")
+
+    keys = list(app_module.app._unevaluated_pages.keys())  # noqa: SLF001
+    assert keys.count("display/[display_key]") == 1
+
+    route = app_module.app._unevaluated_pages["display/[display_key]"]  # noqa: SLF001
+    assert route.component == public_display_page
+    assert route.on_load == [
+        SecondaryDisplayState.load_display,
+        SecondaryDisplayState.poll_snapshot_loop,
+    ]

@@ -321,6 +321,32 @@ def kata_scoreboard() -> rx.Component:
                     variant="outline",
                     on_click=KataMatchState.reset_entries,
                 ),
+                rx.cond(
+                    KataMatchState.public_display_key != "",
+                    rx.link(
+                        rx.button("Abrir pantalla pública", variant="soft"),
+                        href=f"/display/{KataMatchState.public_display_key}",
+                        is_external=True,
+                    ),
+                    rx.button("Preparar pantalla pública", is_disabled=True, variant="soft"),
+                ),
+                spacing="2",
+            ),
+            rx.hstack(
+                rx.badge("Pantalla pública", size="2", color_scheme="blue"),
+                rx.badge(
+                    rx.cond(
+                        KataMatchState.public_display_key != "",
+                        "Lista",
+                        "Sin sesión",
+                    ),
+                    size="2",
+                    color_scheme=rx.cond(
+                        KataMatchState.public_display_key != "",
+                        "green",
+                        "gray",
+                    ),
+                ),
                 spacing="2",
             ),
             rx.cond(
