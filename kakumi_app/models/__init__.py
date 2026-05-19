@@ -39,6 +39,7 @@ from .login_attempt import LoginAttempt
 from .token_blacklist import TokenBlacklist
 from .audit_log import AuditLog
 from .tournament_event_log import TournamentEventLog
+from .display_model import DisplaySession
 
 # Lista de exports públicos
 __all__ = [
@@ -60,6 +61,7 @@ __all__ = [
     "TokenBlacklist",
     "AuditLog",
     "TournamentEventLog",
+    "DisplaySession",
     # Enums de competencia
     "Modality",
     "CategoryGender",

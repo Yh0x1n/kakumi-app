@@ -20,6 +20,7 @@ from kakumi_app.models.tournament_model import (
 )
 from kakumi_app.services.kata_informal_service import KataInformalService
 from kakumi_app.services.kata_scoring_service import KataScoringService
+from kakumi_app.services.secondary_display_service import SecondaryDisplayService
 
 
 class KataMatchState(rx.State):
@@ -45,6 +46,8 @@ class KataMatchState(rx.State):
     winner_participant: str = ""
     result_message: str = ""
     error_message: str = ""
+    public_display_key: str = ""
+    display_status: str = ""
 
     _judge_ids_by_slot: dict[str, int] = {}
     _allowed_decision_rules: tuple[str, str] = (
@@ -143,6 +146,185 @@ class KataMatchState(rx.State):
 
     def _build_informal_judge_entries(self) -> dict[str, str]:
         return {f"J{index}": "" for index in range(1, self.judge_panel_size + 1)}
+
+    def _display_source_kind(self) -> str:
+        return "EXHIBITION" if self.is_exhibition_mode else "TOURNAMENT"
+
+    def _ensure_display_session(self) -> str:
+        match_id = None if self.is_exhibition_mode else self.match_id
+        display_session = SecondaryDisplayService.ensure_display_session(
+            modality="KATA",
+            source_kind=self._display_source_kind(),
+            match_id=match_id,
+        )
+        self.public_display_key = display_session.display_key
+        return self.public_display_key
+
+    def _resolve_display_total(self, participant: str) -> str:
+        if self.is_flag_mode:
+            votes = 0
+            for slot in self._panel_slots():
+                if self.judge_entries[slot].get("vote") == participant:
+                    votes += 1
+            return str(votes)
+
+        if self.kata_mode == "STANDARD":
+            if self.decision_rule == KataDecisionRule.MAJORITY_BY_JUDGE.value:
+                return "—"
+            scores_sum = 0.0
+            for slot in self._panel_slots():
+                raw = self.judge_entries[slot].get(participant, "")
+                if raw == "":
+                    return "—"
+                try:
+                    scores_sum += float(raw)
+                except ValueError:
+                    return "—"
+            return f"{scores_sum:.3f}"
+
+        scores: list[float] = []
+        for slot in self._panel_slots():
+            raw = self.judge_entries[slot].get(participant, "")
+            if raw == "":
+                return "—"
+            try:
+                scores.append(float(raw))
+            except ValueError:
+                return "—"
+        if len(scores) == 0:
+            return "—"
+        average = KataScoringService._average_with_optional_discard(scores)
+        return f"{average:.3f}"
+
+    def _resolve_majority_tally(self) -> str:
+        if self.kata_mode != "STANDARD":
+            return ""
+        if self.is_flag_mode:
+            return ""
+        if self.decision_rule != KataDecisionRule.MAJORITY_BY_JUDGE.value:
+            return ""
+        if not self._resolve_panel_complete():
+            return ""
+
+        aka_votes, ao_votes, _, _ = self._count_numerical_votes()
+        return f"AKA {aka_votes} - AO {ao_votes}"
+
+    def _resolve_majority_vote_counts(self) -> tuple[int | None, int | None]:
+        if self.kata_mode != "STANDARD":
+            return None, None
+        if self.is_flag_mode:
+            return None, None
+        if self.decision_rule != KataDecisionRule.MAJORITY_BY_JUDGE.value:
+            return None, None
+        if not self._resolve_panel_complete():
+            return None, None
+
+        aka_votes, ao_votes, _, _ = self._count_numerical_votes()
+        return aka_votes, ao_votes
+
+    def _build_informal_public_results(self) -> list[str]:
+        return [
+            (
+                f"{int(row['rank'])}. {str(row['athlete_name'])} — "
+                f"{str(row['final_score'])}"
+            )
+            for row in self.informal_standings
+            if "rank" in row and "athlete_name" in row and "final_score" in row
+        ]
+
+    def _has_public_judge_input(self) -> bool:
+        if self.kata_mode == "INFORMAL":
+            return any(
+                str(self.informal_judge_entries.get(slot, "")).strip() != ""
+                for slot in self.judge_slots
+            )
+
+        if self.is_flag_mode:
+            return any(
+                self.judge_entries[slot].get("vote", "")
+                in {Participant.AKA.value, Participant.AO.value}
+                for slot in self._panel_slots()
+            )
+
+        return any(
+            self.judge_entries[slot].get("AKA", "") != ""
+            or self.judge_entries[slot].get("AO", "") != ""
+            for slot in self._panel_slots()
+        )
+
+    def _build_public_judge_detail_lines(self) -> list[str]:
+        if self.kata_mode == "INFORMAL":
+            lines: list[str] = []
+            for slot in self.judge_slots:
+                score = str(self.informal_judge_entries.get(slot, "")).strip()
+                if score != "":
+                    lines.append(f"{slot}: {score}")
+            return lines
+
+        lines = []
+        if self.is_flag_mode:
+            for slot in self._panel_slots():
+                vote = str(self.judge_entries[slot].get("vote", "")).strip()
+                if vote != "":
+                    lines.append(f"{slot}: {vote}")
+            return lines
+
+        for slot in self._panel_slots():
+            aka = str(self.judge_entries[slot].get("AKA", "")).strip()
+            ao = str(self.judge_entries[slot].get("AO", "")).strip()
+            if aka == "" and ao == "":
+                continue
+            lines.append(f"{slot}: AKA {aka or '—'} / AO {ao or '—'}")
+        return lines
+
+    def _build_display_snapshot(self) -> dict[str, object]:
+        judge_detail_visible = self._has_public_judge_input()
+        majority_tally = self._resolve_majority_tally()
+        majority_aka_votes, majority_ao_votes = self._resolve_majority_vote_counts()
+        return {
+            "modality": "KATA",
+            "source_kind": self._display_source_kind(),
+            "title": "Kata en vivo",
+            "match_id": self.match_id if self.match_id > 0 else None,
+            "is_exhibition_mode": self.is_exhibition_mode,
+            "kata_mode": self.kata_mode,
+            "judge_panel_size": self.judge_panel_size,
+            "scoring_type": self.scoring_type,
+            "decision_rule": self.decision_rule,
+            "panel_complete": self.panel_complete,
+            "winner": self.winner_participant,
+            "result_message": self.result_message,
+            "judge_detail_visible": judge_detail_visible,
+            "judge_detail_lines": (
+                self._build_public_judge_detail_lines()
+                if judge_detail_visible
+                else []
+            ),
+            "majority_tally_visible": majority_tally != "",
+            "majority_tally": majority_tally,
+            "majority_aka_votes": majority_aka_votes,
+            "majority_ao_votes": majority_ao_votes,
+            "informal": {
+                "athlete_name": self.informal_current_athlete_label,
+                "results": self._build_informal_public_results(),
+            },
+            "aka": {
+                "name": self.aka_name,
+                "total": self._resolve_display_total(Participant.AKA.value),
+            },
+            "ao": {
+                "name": self.ao_name,
+                "total": self._resolve_display_total(Participant.AO.value),
+            },
+        }
+
+    def _publish_display_snapshot(self) -> None:
+        display_key = self.public_display_key or self._ensure_display_session()
+        result = SecondaryDisplayService.publish_snapshot(
+            display_key=display_key,
+            snapshot=self._build_display_snapshot(),
+        )
+        self.display_status = "sync" if result is not None else "error"
 
     def _refresh_informal_standings(self) -> None:
         if self.informal_category_id <= 0:
@@ -402,6 +584,7 @@ class KataMatchState(rx.State):
     @rx.event
     async def enable_exhibition_mode(self) -> None:
         self._reset_state(exhibition_mode=True)
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_kata_mode(self, mode: str) -> None:
@@ -422,6 +605,7 @@ class KataMatchState(rx.State):
                 self.informal_standings = []
             elif self.informal_category_id > 0:
                 self._load_informal_session(self.informal_category_id)
+        self._publish_display_snapshot()
 
     @rx.event
     async def load_match(self) -> None:
@@ -471,6 +655,7 @@ class KataMatchState(rx.State):
 
             if self.kata_mode == "INFORMAL":
                 self._load_informal_session(match.category_id)
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_panel_size(self, size: int) -> None:
@@ -480,6 +665,7 @@ class KataMatchState(rx.State):
         self.panel_complete = False
         self.winner_participant = ""
         self.result_message = ""
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_judge_score(
@@ -490,6 +676,7 @@ class KataMatchState(rx.State):
     ) -> None:
         self.error_message = ""
         self._set_numerical_entry(judge_slot, participant, value)
+        self._publish_display_snapshot()
 
     @rx.event
     def set_decision_rule(self, decision_rule: str) -> None:
@@ -501,6 +688,7 @@ class KataMatchState(rx.State):
         self.winner_participant = ""
         self.result_message = ""
         self.error_message = ""
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_flag_vote(self, judge_slot: str, vote: str) -> None:
@@ -515,6 +703,7 @@ class KataMatchState(rx.State):
         next_entries[judge_slot]["vote"] = vote
         self.judge_entries = next_entries
         self.panel_complete = self._resolve_panel_complete()
+        self._publish_display_snapshot()
 
     @rx.event
     async def reset_entries(self) -> None:
@@ -528,6 +717,7 @@ class KataMatchState(rx.State):
         self.winner_participant = ""
         self.result_message = ""
         self.error_message = ""
+        self._publish_display_snapshot()
 
     @rx.event
     async def select_informal_athlete_from_label(self, label: str) -> None:
@@ -536,6 +726,7 @@ class KataMatchState(rx.State):
         self.informal_selected_athlete_id = int(athlete_id)
         self.informal_judge_entries = self._build_informal_judge_entries()
         self.error_message = ""
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_informal_judge_score(self, judge_slot: str, value: str) -> None:
@@ -545,11 +736,13 @@ class KataMatchState(rx.State):
         updated = dict(self.informal_judge_entries)
         updated[judge_slot] = value.strip()
         self.informal_judge_entries = updated
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_informal_exhibition_participant_name(self, value: str) -> None:
         """Set optional participant label for free exhibition informal run."""
         self.informal_exhibition_participant_name = value
+        self._publish_display_snapshot()
 
     def _finalize_informal_exhibition_free(self) -> None:
         """Persist one free-sequence exhibition informal run in-memory."""
@@ -622,6 +815,7 @@ class KataMatchState(rx.State):
             except ValueError as error:
                 self.error_message = str(error)
                 yield rx.toast.error(str(error))
+            self._publish_display_snapshot()
             return
 
         self.panel_complete = self._resolve_panel_complete()
@@ -634,6 +828,7 @@ class KataMatchState(rx.State):
             winner, message = self._resolve_exhibition_result()
             self.winner_participant = winner
             self.result_message = message
+            self._publish_display_snapshot()
             return
 
         if self.match_id <= 0:
@@ -651,3 +846,4 @@ class KataMatchState(rx.State):
         except Exception as error:
             self.error_message = str(error)
             yield rx.toast.error(str(error))
+        self._publish_display_snapshot()

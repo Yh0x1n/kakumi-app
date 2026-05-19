@@ -25,6 +25,7 @@ from kakumi_app.models.tournament_model import (
 )
 from kakumi_app.services import kumite_scoring_service
 from kakumi_app.services.kumite_scoring_service import KumiteScoringService
+from kakumi_app.services.secondary_display_service import SecondaryDisplayService
 from kakumi_app.services.exceptions import (
     AthleteSchedulingConflictError,
     PenaltyEscalationError,
@@ -81,6 +82,8 @@ class KumiteMatchState(rx.State):
 
     last_penalty_aka: str = ""
     last_penalty_ao: str = ""
+    public_display_key: str = ""
+    display_status: str = ""
 
     # Backend-only vars
     _processing: bool = False
@@ -111,6 +114,69 @@ class KumiteMatchState(rx.State):
         self.match_winner_participant = ""
         self.disqualification_dialog_open = False
         self.disqualification_target_participant = ""
+
+    def _display_source_kind(self) -> str:
+        return "EXHIBITION" if self.is_exhibition_mode else "TOURNAMENT"
+
+    def _ensure_display_session(self) -> str:
+        match_id = None if self.is_exhibition_mode else self.match_id
+        display_session = SecondaryDisplayService.ensure_display_session(
+            modality="KUMITE",
+            source_kind=self._display_source_kind(),
+            match_id=match_id,
+        )
+        self.public_display_key = display_session.display_key
+        return self.public_display_key
+
+    def _build_display_snapshot(self) -> dict[str, Any]:
+        return {
+            "modality": "KUMITE",
+            "source_kind": self._display_source_kind(),
+            "title": "Combate en vivo",
+            "match_id": self.match_id if self.match_id > 0 else None,
+            "is_exhibition_mode": self.is_exhibition_mode,
+            "timer_seconds": self.timer_seconds,
+            "timer_formatted": self.timer_formatted,
+            "timer_running": self.timer_running,
+            "aka": {
+                "name": self.aka_name,
+                "score": self.aka_score,
+                "senshu": self.aka_senshu,
+                "penalties": dict(self.aka_penalty_slots),
+            },
+            "ao": {
+                "name": self.ao_name,
+                "score": self.ao_score,
+                "senshu": self.ao_senshu,
+                "penalties": dict(self.ao_penalty_slots),
+            },
+            "status": {
+                "end_reason": self.match_end_reason,
+                "hantei_required": self.hantei_required,
+                "winner": self.match_winner_participant,
+                "message": self.match_end_message,
+            },
+        }
+
+    def _publish_display_snapshot(self) -> None:
+        display_key = self.public_display_key or self._ensure_display_session()
+        result = SecondaryDisplayService.publish_snapshot(
+            display_key=display_key,
+            snapshot=self._build_display_snapshot(),
+        )
+        self.display_status = "sync" if result is not None else "error"
+
+    def _publish_display_snapshot_background_safe(
+        self,
+        *,
+        display_key: str,
+        snapshot: dict[str, Any],
+    ) -> bool:
+        result = SecondaryDisplayService.publish_snapshot(
+            display_key=display_key,
+            snapshot=snapshot,
+        )
+        return result is not None
 
     def _end_reason_message(self, end_reason: str | None) -> str:
         """Map backend end reason to operator-facing message."""
@@ -456,11 +522,21 @@ class KumiteMatchState(rx.State):
             return 180
         return int(category.match_duration_seconds or 180)
 
+    def _is_viewer_connected(self) -> bool:
+        try:
+            app = rx.State._get_app()  # type: ignore[attr-defined]
+            token = self.router.session.client_token
+            socket_record = app._token_manager.token_to_socket.get(token)
+            return socket_record is not None
+        except Exception:
+            return True
+
     @rx.event
     async def enable_exhibition_mode(self) -> None:
         """Switch scoreboard to free exhibition mode without active match."""
         self.match_id = 0
         self._reset_scoreboard()
+        self._publish_display_snapshot()
 
     @rx.event
     async def load_match(self) -> None:
@@ -492,6 +568,7 @@ class KumiteMatchState(rx.State):
         self.timer_seconds = base_seconds
         self.timer_running = False
         self._timer_loop_active = False
+        self._publish_display_snapshot()
 
     @rx.event
     async def start_timer(self) -> None:
@@ -523,6 +600,7 @@ class KumiteMatchState(rx.State):
         self.timer_running = False
         self._timer_loop_active = False
         self.timer_seconds = self.timer_base_seconds
+        self._publish_display_snapshot()
 
     @rx.event
     async def set_timer(self, seconds: int) -> None:
@@ -536,6 +614,7 @@ class KumiteMatchState(rx.State):
         self._timer_loop_active = False
         self.timer_base_seconds = next_seconds
         self.timer_seconds = next_seconds
+        self._publish_display_snapshot()
 
     @rx.event
     async def add_or_substract_timer(self, seconds: int) -> None:
@@ -547,16 +626,26 @@ class KumiteMatchState(rx.State):
         self.timer_running = False
         self._timer_loop_active = False
         self.timer_seconds = max(self.timer_seconds + int(seconds), 0)
+        self._publish_display_snapshot()
 
     @rx.event(background=True)
     async def run_timer_loop(self) -> None:
         """Drive countdown in background while timer_running is true."""
         while True:
+            if not self._is_viewer_connected():
+                async with self:
+                    self.timer_running = False
+                    self._timer_loop_active = False
+                break
+
             await asyncio.sleep(1)
 
             toast_message = None
             resolve_time_expired = False
             match_id_to_resolve = 0
+            publish_tick_update = False
+            snapshot_for_publish: dict[str, Any] | None = None
+            display_key_for_publish = ""
             async with self:
                 if not self.timer_running:
                     self._timer_loop_active = False
@@ -578,6 +667,16 @@ class KumiteMatchState(rx.State):
                     else:
                         resolve_time_expired = True
                         match_id_to_resolve = self.match_id
+                    display_key_for_publish = (
+                        self.public_display_key or self._ensure_display_session()
+                    )
+                    snapshot_for_publish = self._build_display_snapshot()
+                else:
+                    publish_tick_update = True
+                    display_key_for_publish = (
+                        self.public_display_key or self._ensure_display_session()
+                    )
+                    snapshot_for_publish = self._build_display_snapshot()
 
             if resolve_time_expired:
                 result = KumiteScoringService.resolve_time_expired(match_id_to_resolve)
@@ -592,11 +691,36 @@ class KumiteMatchState(rx.State):
                         )
                 if winner in (Participant.AKA.value, Participant.AO.value):
                     yield rx.toast.success(self._winner_toast_message(winner))
+                async with self:
+                    display_key = self.public_display_key or self._ensure_display_session()
+                    snapshot = self._build_display_snapshot()
+                published = self._publish_display_snapshot_background_safe(
+                    display_key=display_key,
+                    snapshot=snapshot,
+                )
+                async with self:
+                    self.display_status = "sync" if published else "error"
                 break
 
             if toast_message is not None:
                 yield rx.toast.success(toast_message)
+                if snapshot_for_publish is not None and display_key_for_publish != "":
+                    published = self._publish_display_snapshot_background_safe(
+                        display_key=display_key_for_publish,
+                        snapshot=snapshot_for_publish,
+                    )
+                    async with self:
+                        self.display_status = "sync" if published else "error"
                 break
+
+            if publish_tick_update:
+                if snapshot_for_publish is not None and display_key_for_publish != "":
+                    published = self._publish_display_snapshot_background_safe(
+                        display_key=display_key_for_publish,
+                        snapshot=snapshot_for_publish,
+                    )
+                    async with self:
+                        self.display_status = "sync" if published else "error"
 
     @rx.event
     async def tick_timer(self) -> None:
@@ -618,6 +742,7 @@ class KumiteMatchState(rx.State):
                 toast_message = self._resolve_local_timeout_and_toast_message()
                 if toast_message is not None:
                     yield rx.toast.success(toast_message)
+                self._publish_display_snapshot()
                 return
 
             result = KumiteScoringService.resolve_time_expired(self.match_id)
@@ -627,6 +752,7 @@ class KumiteMatchState(rx.State):
                 self._sync_from_match(session=session, match_id=self.match_id)
             if winner in (Participant.AKA.value, Participant.AO.value):
                 yield rx.toast.success(self._winner_toast_message(winner))
+            self._publish_display_snapshot()
 
     def _is_latest_action_shikkaku(self, session: Session) -> bool:
         """Detect whether latest action corresponds to SHIKKAKU penalty."""
@@ -716,6 +842,7 @@ class KumiteMatchState(rx.State):
                     winner=winner,
                 )
                 yield rx.toast.success(self._winner_toast_message(winner))
+            self._publish_display_snapshot()
             return
 
         warning_event = self._guard_active_match_event()
@@ -749,6 +876,7 @@ class KumiteMatchState(rx.State):
             self.match_end_modal_open = False
             self.match_winner_participant = winner
             yield rx.toast.success(self._winner_toast_message(winner))
+        self._publish_display_snapshot()
 
     @rx.event
     async def apply_penalty_direct(self, participant: str, penalty_type: str) -> None:
@@ -792,6 +920,7 @@ class KumiteMatchState(rx.State):
             self.match_end_modal_open = False
             self.match_winner_participant = winner
             yield rx.toast.success(self._winner_toast_message(winner))
+        self._publish_display_snapshot()
 
     @rx.event
     async def remove_last_penalty(self, participant: str) -> None:
@@ -811,6 +940,8 @@ class KumiteMatchState(rx.State):
         )
         if not success:
             yield rx.toast.error(message)
+            return
+        self._publish_display_snapshot()
 
     @rx.event
     async def apply_score(
@@ -833,6 +964,7 @@ class KumiteMatchState(rx.State):
                 winner = self._winner_from_scoreboard()
                 if winner is not None:
                     yield rx.toast.success(self._winner_toast_message(winner))
+            self._publish_display_snapshot()
             return
 
         if self.hantei_required:
@@ -868,6 +1000,7 @@ class KumiteMatchState(rx.State):
             with rx.session() as session:
                 self._sync_from_match(session=session, match_id=self.match_id)
             self.last_action_label = f"SCORE:{participant}:{score_type}"
+            self._publish_display_snapshot()
         finally:
             self.timer_paused = False
             self._processing = False
@@ -888,6 +1021,7 @@ class KumiteMatchState(rx.State):
             self.match_end_modal_open = False
             self.match_winner_participant = winner_participant
             yield rx.toast.success(self._winner_toast_message(winner_participant))
+            self._publish_display_snapshot()
             return
 
         warning_event = self._guard_active_match_event()
@@ -914,6 +1048,7 @@ class KumiteMatchState(rx.State):
 
         with rx.session() as session:
             self._sync_from_match(session=session, match_id=self.match_id)
+        self._publish_display_snapshot()
 
     @rx.event
     async def close_match_end_modal(self) -> None:
@@ -962,6 +1097,7 @@ class KumiteMatchState(rx.State):
             self.disqualification_dialog_open = False
             self.disqualification_target_participant = ""
             yield rx.toast.success(self._winner_toast_message(winner))
+            self._publish_display_snapshot()
             return
 
         warning_event = self._guard_active_match_event()
@@ -986,6 +1122,7 @@ class KumiteMatchState(rx.State):
             self._sync_from_match(session=session, match_id=self.match_id)
         if result.winner in (Participant.AKA.value, Participant.AO.value):
             yield rx.toast.success(self._winner_toast_message(str(result.winner)))
+        self._publish_display_snapshot()
 
     @rx.event
     async def reset_points(self) -> None:
@@ -1005,12 +1142,14 @@ class KumiteMatchState(rx.State):
         self.match_end_modal_open = False
         self.match_winner_participant = ""
         self.last_action_label = "EXH-RESET-POINTS"
+        self._publish_display_snapshot()
 
     @rx.event
     async def undo_last_action(self) -> None:
         """Undo latest action through persisted service path."""
         if self.is_exhibition_mode and self.match_id <= 0:
             self._undo_exhibition_action()
+            self._publish_display_snapshot()
             return
 
         warning_event = self._guard_active_match_event()
@@ -1038,6 +1177,7 @@ class KumiteMatchState(rx.State):
             with rx.session() as session:
                 self._sync_from_match(session=session, match_id=self.match_id)
             self.last_action_label = "UNDO"
+            self._publish_display_snapshot()
         finally:
             self.timer_paused = False
             self._processing = False
@@ -1047,6 +1187,7 @@ class KumiteMatchState(rx.State):
         """Apply manual senshu in exhibition or persisted real match."""
         if self.is_exhibition_mode and self.match_id <= 0:
             self._apply_exhibition_manual_senshu(participant=participant)
+            self._publish_display_snapshot()
             return
 
         warning_event = self._guard_active_match_event()
@@ -1067,12 +1208,14 @@ class KumiteMatchState(rx.State):
         with rx.session() as session:
             self._sync_from_match(session=session, match_id=self.match_id)
         self.last_action_label = f"SENSHU-SET:{participant}"
+        self._publish_display_snapshot()
 
     @rx.event
     async def revoke_manual_senshu(self, participant: str) -> None:
         """Revoke manual senshu in exhibition or persisted real match."""
         if self.is_exhibition_mode and self.match_id <= 0:
             self._revoke_exhibition_manual_senshu(participant=participant)
+            self._publish_display_snapshot()
             return
 
         warning_event = self._guard_active_match_event()
@@ -1090,6 +1233,7 @@ class KumiteMatchState(rx.State):
         with rx.session() as session:
             self._sync_from_match(session=session, match_id=self.match_id)
         self.last_action_label = f"SENSHU-REVOKE:{participant}"
+        self._publish_display_snapshot()
 
     def _apply_penalty(
         self,

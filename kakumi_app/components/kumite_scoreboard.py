@@ -178,6 +178,19 @@ def kumite_scoreboard() -> rx.Component:
                 justify="center",
                 width="100%",
             ),
+            rx.hstack(
+                rx.badge("Pantalla pública", size="2", color_scheme="blue"),
+                rx.cond(
+                    KumiteMatchState.public_display_key != "",
+                    rx.link(
+                        rx.button("Abrir pantalla pública", variant="soft"),
+                        href=f"/display/{KumiteMatchState.public_display_key}",
+                        is_external=True,
+                    ),
+                    rx.button("Preparar pantalla pública", variant="soft", is_disabled=True),
+                ),
+                spacing="2",
+            ),
             rx.cond(
                 KumiteMatchState.disqualification_dialog_open,
                 rx.dialog.root(

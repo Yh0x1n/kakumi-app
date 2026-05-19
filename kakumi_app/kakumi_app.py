@@ -9,6 +9,8 @@
 """
 
 # Imports
+import importlib
+
 import reflex as rx
 
 from .components.sidebar import sidebar
@@ -18,6 +20,7 @@ from .models.tournament_model import (  # noqa [F401]
     Tournament,
     TournamentCategory,
 )
+from .models.display_model import DisplaySession  # noqa [F401]
 from .pages.competition import (
     bracket_page,
     category_page,
@@ -25,6 +28,7 @@ from .pages.competition import (
     live_match_page,
 )
 from .pages.exhibition import exhibition
+from .pages.public_display import public_display_page
 from .pages.registries import registries
 from .pages.results import results
 from .pages.tournament import tournament
@@ -33,6 +37,7 @@ from .states.competition_category_state import CompetitionCategoryState
 from .states.kata_match_state import KataMatchState
 from .states.kumite_match_state import KumiteMatchState
 from .states.results_state import ResultsState
+from .states.secondary_display_state import SecondaryDisplayState
 from .states.tournament_state import TournamentState
 from .styles.tokens import HOVER_GRAY
 
@@ -40,15 +45,15 @@ from .styles.tokens import HOVER_GRAY
 class State(rx.State):
     pass
 
-# Admin pages — imported for @rx.page side-effect route registration
-import kakumi_app.pages.admin.athletes_page  # noqa: F401
-import kakumi_app.pages.admin.export_page  # noqa: F401
-import kakumi_app.pages.admin.import_page  # noqa: F401
-import kakumi_app.pages.admin.referees_page  # noqa: F401
-import kakumi_app.pages.admin.teams_page  # noqa: F401
 
-# Auth pages
-import kakumi_app.pages.auth.login  # noqa: F401
+def _register_side_effect_pages() -> None:
+    """Import side-effect page modules that self-register via @rx.page."""
+    importlib.import_module("kakumi_app.pages.admin.athletes_page")
+    importlib.import_module("kakumi_app.pages.admin.export_page")
+    importlib.import_module("kakumi_app.pages.admin.import_page")
+    importlib.import_module("kakumi_app.pages.admin.referees_page")
+    importlib.import_module("kakumi_app.pages.admin.teams_page")
+    importlib.import_module("kakumi_app.pages.auth.login")
 
 
 def index() -> rx.Component:
@@ -105,6 +110,7 @@ def index() -> rx.Component:
 
 
 app = rx.App()
+_register_side_effect_pages()
 app.add_page(index, title="Kakumi Tournament Manager")
 app.add_page(registries, title="Kakumi | Registros")
 app.add_page(
@@ -137,4 +143,13 @@ app.add_page(
     route="/competition/match/[id]/kata",
     title="Kakumi | Kata en vivo",
     on_load=KataMatchState.load_match,
+)
+app.add_page(
+    public_display_page,
+    route="/display/[display_key]",
+    title="Kakumi | Pantalla pública",
+    on_load=[
+        SecondaryDisplayState.load_display,
+        SecondaryDisplayState.poll_snapshot_loop,
+    ],
 )

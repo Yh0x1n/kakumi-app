@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -53,6 +54,51 @@ def _collect_public_state_vars(state: KumiteMatchState) -> dict[str, object]:
         if not key.startswith("_")
     }
     return {name: getattr(state, name) for name in public_annotations}
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_enable_exhibition_mode_publishes_exhibition_secondary_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+
+    calls: dict[str, object] = {}
+
+    class _FakeDisplaySession:
+        display_key = "kumite-exh-key"
+
+    def _ensure(**kwargs):
+        calls["ensure"] = kwargs
+        return _FakeDisplaySession()
+
+    def _publish(*, display_key: str, snapshot: dict[str, object]):
+        calls["publish"] = {
+            "display_key": display_key,
+            "snapshot": snapshot,
+        }
+        return _FakeDisplaySession()
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.ensure_display_session",
+        _ensure,
+    )
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        _publish,
+    )
+
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    assert calls["ensure"] == {
+        "modality": "KUMITE",
+        "source_kind": "EXHIBITION",
+        "match_id": None,
+    }
+    assert state.public_display_key == "kumite-exh-key"
+    snapshot = calls["publish"]["snapshot"]  # type: ignore[index]
+    assert snapshot["source_kind"] == "EXHIBITION"
+    assert snapshot["match_id"] is None
 
 
 @pytest.mark.asyncio
@@ -1584,3 +1630,232 @@ async def test_apply_penalty_hansoku_emits_winner_toast_no_modal(
     assert state.match_end_modal_open is False
     assert state.match_end_reason == "HANSOKU"
     toast_success.assert_called_once_with("¡Combate terminado!\nGanador: AO")
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_load_match_publishes_secondary_display_snapshot(
+    sample_match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+
+    calls: dict[str, object] = {}
+
+    class _FakeDisplaySession:
+        display_key = "kumite-key"
+
+    def _ensure(**kwargs):
+        calls["ensure"] = kwargs
+        return _FakeDisplaySession()
+
+    def _publish(*, display_key: str, snapshot: dict[str, object]):
+        calls["publish"] = {
+            "display_key": display_key,
+            "snapshot": snapshot,
+        }
+        return _FakeDisplaySession()
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.ensure_display_session",
+        _ensure,
+    )
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        _publish,
+    )
+
+    await KumiteMatchState.load_match.fn(state)
+
+    assert state.public_display_key == "kumite-key"
+    assert calls["ensure"] == {
+        "modality": "KUMITE",
+        "source_kind": "TOURNAMENT",
+        "match_id": sample_match.id,
+    }
+    snapshot = calls["publish"]["snapshot"]  # type: ignore[index]
+    assert snapshot["modality"] == "KUMITE"
+    assert snapshot["source_kind"] == "TOURNAMENT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_reset_points_repulishes_secondary_display_snapshot_in_exhibition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda *, display_key, snapshot: calls.append(
+            {"display_key": display_key, "snapshot": snapshot}
+        ),
+    )
+
+    await KumiteMatchState.reset_points.fn(state)
+
+    assert calls
+    assert state.public_display_key != ""
+    assert calls[-1]["display_key"] == state.public_display_key
+    snapshot = calls[-1]["snapshot"]
+    assert isinstance(snapshot, dict)
+    assert snapshot["source_kind"] == "EXHIBITION"
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_load_match_snapshot_includes_senshu_and_penalties_shape(
+    sample_match,
+    sample_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with rx.session() as session:
+        match = session.get(Match, sample_match.id)
+        assert match is not None
+        match.status = MatchStatus.IN_PROGRESS.value
+        match.aka_senshu = True
+        session.add(match)
+        session.commit()
+
+    KumiteScoringService.apply_score(
+        match_id=sample_match.id,
+        participant=Participant.AKA.value,
+        score_type=ScoreType.YUKO.value,
+        applied_by_id=sample_user.id,
+    )
+    KumiteScoringService.apply_penalty(
+        match_id=sample_match.id,
+        participant=Participant.AO.value,
+        penalty_type=PenaltyType.CHUI,
+        reason="foul",
+        applied_by_id=sample_user.id,
+    )
+
+    state = KumiteMatchState()
+    _set_match_route_param(state, sample_match.id)
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda *, display_key, snapshot: calls.append(snapshot),
+    )
+
+    await KumiteMatchState.load_match.fn(state)
+
+    assert calls
+    snapshot = calls[-1]
+    assert snapshot["aka"]["senshu"] is True
+    assert snapshot["ao"]["senshu"] is False
+    assert snapshot["aka"]["penalties"] == {
+        "C1": False,
+        "C2": False,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+    assert snapshot["ao"]["penalties"] == {
+        "C1": True,
+        "C2": False,
+        "C3": False,
+        "HC": False,
+        "H": False,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_run_timer_loop_publishes_snapshot_on_each_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_seconds = 2
+    state.timer_running = True
+    state._timer_loop_active = True
+
+    async def _fast_sleep(_: float) -> None:
+        return None
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr("asyncio.sleep", _fast_sleep)
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda *, display_key, snapshot: calls.append(snapshot),
+    )
+
+    _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+
+    assert len(calls) >= 1
+    assert calls[0]["timer_seconds"] == 1
+    assert calls[0]["timer_running"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_run_timer_loop_first_tick_avoids_sync_state_mutation_publisher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Background first tick must not use sync publisher mutating self directly."""
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_seconds = 2
+    state.timer_running = True
+    state._timer_loop_active = True
+
+    sleep_calls = {"count": 0}
+
+    async def _stop_after_first_tick(_: float) -> None:
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr("asyncio.sleep", _stop_after_first_tick)
+    monkeypatch.setattr(
+        KumiteMatchState,
+        "_publish_display_snapshot",
+        lambda self: (_ for _ in ()).throw(RuntimeError("ImmutableStateError")),
+    )
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda *, display_key, snapshot: object(),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+
+    assert state.timer_seconds == 1
+    assert state.timer_running is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_run_timer_loop_stops_without_publish_for_disconnected_viewer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    state.timer_seconds = 9
+    state.timer_running = True
+    state._timer_loop_active = True
+
+    monkeypatch.setattr(
+        KumiteMatchState,
+        "_is_viewer_connected",
+        lambda self: False,
+    )
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda *, display_key, snapshot: calls.append(snapshot),
+    )
+
+    _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+
+    assert calls == []
+    assert state.timer_running is False
+    assert state._timer_loop_active is False
