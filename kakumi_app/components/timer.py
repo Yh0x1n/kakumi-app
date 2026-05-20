@@ -15,8 +15,7 @@ def timer() -> rx.Component:
                     rx.cond(~KumiteMatchState.timer_running, "Comenzar", "Detener"),
                     on_click=rx.cond(
                         ~KumiteMatchState.timer_running,
-                        KumiteMatchState.start_live_match(KumiteMatchState.match_id)
-                        >> KumiteMatchState.start_timer,
+                        KumiteMatchState.start_live_and_timer(KumiteMatchState.match_id),
                         KumiteMatchState.stop_timer,
                     ),
                 ),

@@ -605,6 +605,12 @@ class KumiteMatchState(rx.State):
                 session.commit()
 
     @rx.event
+    async def start_live_and_timer(self, match_id: int) -> None:
+        """Start live match then timer in one composed handler."""
+        await self.start_live_match(match_id)
+        await self.start_timer()
+
+    @rx.event
     async def start_timer(self) -> None:
         """Start live timer when mode permits."""
         warning_event = self._guard_real_mode_or_exhibition_event()
