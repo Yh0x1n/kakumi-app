@@ -318,17 +318,16 @@ class TestRefereeCRUD:
             result = session.get(Referee, referee_id)
             assert result is None
 
-    def test_referee_unique_license(self, sample_referee):
-        """No se puede crear un árbitro con licencia duplicada (unique)."""
+    def test_referee_duplicate_license_allowed(self, sample_referee):
+        """Se permite crear árbitros con el mismo número de licencia."""
         with rx.session() as session:
             duplicate = Referee(
                 name="Otro Juez",
                 license_number="REF-001",
             )
             session.add(duplicate)
-            with pytest.raises(Exception):
-                session.commit()
-            session.rollback()
+            session.commit()
+            assert duplicate.id is not None
 
 
 class TestRefereeEnums:

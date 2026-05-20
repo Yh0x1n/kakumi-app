@@ -10,7 +10,7 @@ def test_athlete_has_is_disqualified() -> None:
     """Athlete should expose disqualification flag with False default."""
     athlete = Athlete(
         name="Foundation Athlete",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
     )
 

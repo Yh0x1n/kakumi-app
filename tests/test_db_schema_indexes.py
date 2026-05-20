@@ -64,9 +64,9 @@ def test_fk_index_migration_round_trip(
 def test_fk_index_target_list_has_exactly_20_items(
     fk_target_indexes: dict[str, set[str]],
 ) -> None:
-    """Target FK index list must remain exactly 20 explicit names."""
+    """Target FK index list must remain exactly 18 explicit names."""
     total = sum(len(indexes) for indexes in fk_target_indexes.values())
-    assert total == 20
+    assert total == 18
 
 
 def test_alembic_round_trip_upgrade_downgrade_upgrade(

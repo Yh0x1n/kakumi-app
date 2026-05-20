@@ -38,8 +38,6 @@ class TournamentCrudState(CrudStateMixin, rx.State):
     status: str = TournamentStatus.PLANIFICADO.value
     created_by_id: str = ""
 
-    status_options: list[str] = [status.value for status in TournamentStatus]
-
     def _serialize_tournament(self, tournament: Tournament) -> dict[str, Any]:
         """Return JSON-safe tournament row for CRUD list and edit flow."""
         return {
@@ -103,7 +101,6 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             self.start_date = tournament.get("start_date", "")
             self.end_date = tournament.get("end_date") or self.start_date
             self.tatami_count = str(tournament.get("tatami_count") or "1")
-            self.status = tournament.get("status", TournamentStatus.PLANIFICADO.value)
             created_by_id = tournament.get("created_by_id")
             self.created_by_id = str(created_by_id) if created_by_id else ""
             return
@@ -119,7 +116,6 @@ class TournamentCrudState(CrudStateMixin, rx.State):
         self.start_date = ""
         self.end_date = ""
         self.tatami_count = "1"
-        self.status = TournamentStatus.PLANIFICADO.value
         self.created_by_id = ""
 
     def _validate_form(self) -> bool:
@@ -134,10 +130,6 @@ class TournamentCrudState(CrudStateMixin, rx.State):
 
         if not self.start_date or not self.end_date:
             self.error_message = "Start and end dates are required"
-            return False
-
-        if self.status not in self.status_options:
-            self.error_message = "Invalid tournament status"
             return False
 
         return True
@@ -239,7 +231,10 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             if not tournament:
                 return rx.toast.error("Tournament not found")
 
-            if tournament.status != TournamentStatus.PLANIFICADO.value:
+            if tournament.status not in {
+                TournamentStatus.PLANIFICADO.value,
+                TournamentStatus.ARCHIVADO.value,
+            }:
                 self.error_message = (
                     f"No se puede eliminar torneo en estado {tournament.status}"
                 )

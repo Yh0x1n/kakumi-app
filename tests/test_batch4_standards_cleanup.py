@@ -58,7 +58,7 @@ def test_athlete_helper_validators_have_docstrings() -> None:
 
     expected_helpers = [
         "_validate_name",
-        "_validate_date_of_birth",
+        "_validate_age",
         "_validate_gender",
         "_validate_weight",
         "_validate_belt_rank",

@@ -45,10 +45,7 @@ from kakumi_app.models.user_model import User, UserRole
 
 
 FK_TARGET_INDEXES: dict[str, set[str]] = {
-    "athletes": {
-        "ix_athletes_kata_category_id",
-        "ix_athletes_kumite_category_id",
-    },
+    "athletes": set(),
     "matches": {
         "ix_matches_aka_id",
         "ix_matches_ao_id",
@@ -283,11 +280,11 @@ def sample_athlete() -> Athlete:
     with rx.session() as session:
         athlete = Athlete(
             name="Carlos Martinez",
-            date_of_birth=datetime.date(1998, 5, 15),
+            age=28,
             gender="MALE",
             email="carlos@dojo.test",
             weight_kg=72.5,
-            belt_rank="Dan 2",
+            belt_rank="Negro",
             dojo="Dojo Shoto",
             nationality="ARG",
             license_number="LIC-001",
@@ -305,11 +302,11 @@ def sample_athlete_2() -> Athlete:
     with rx.session() as session:
         athlete = Athlete(
             name="Ana Rodriguez",
-            date_of_birth=datetime.date(2000, 8, 22),
+            age=25,
             gender="FEMALE",
             email="ana@dojo.test",
             weight_kg=58.0,
-            belt_rank="Dan 1",
+            belt_rank="Marrón",
             dojo="Dojo Shoto",
             nationality="ARG",
             license_number="LIC-002",
@@ -372,6 +369,7 @@ def sample_match(
             position=0,
             match_type=MatchType.ELIMINATION.value,
             category_id=sample_category.id,
+            tournament_id=sample_category.tournament_id,
             aka_id=sample_athlete.id,
             ao_id=sample_athlete_2.id,
             aka_score=0,
@@ -575,26 +573,26 @@ def rr_pool_fixture(
 
     athlete_a = Athlete(
         name="RR Athlete A",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email="rr-athlete-a@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     athlete_b = Athlete(
         name="RR Athlete B",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email="rr-athlete-b@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     athlete_c = Athlete(
         name="RR Athlete C",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email="rr-athlete-c@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     in_memory_session.add(athlete_a)
@@ -761,18 +759,18 @@ def team_match_fixture(
     for index in range(3):
         aka_athlete = Athlete(
             name=f"Team AKA Athlete {index + 1}",
-            date_of_birth=datetime.date(2000, 1, 1),
+            age=26,
             gender="MALE",
             email=f"team-aka-{index + 1}@test.dev",
-            belt_rank="Dan 1",
+            belt_rank="Negro",
             is_active=True,
         )
         ao_athlete = Athlete(
             name=f"Team AO Athlete {index + 1}",
-            date_of_birth=datetime.date(2000, 1, 1),
+            age=26,
             gender="MALE",
             email=f"team-ao-{index + 1}@test.dev",
-            belt_rank="Dan 1",
+            belt_rank="Negro",
             is_active=True,
         )
         in_memory_session.add(aka_athlete)
@@ -876,26 +874,26 @@ def tatami_fixture(
 
     shared_athlete = Athlete(
         name="Tatami Shared Athlete",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email="tatami-shared@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     opponent_a = Athlete(
         name="Tatami Opponent A",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email="tatami-opponent-a@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     opponent_b = Athlete(
         name="Tatami Opponent B",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email="tatami-opponent-b@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     in_memory_session.add(shared_athlete)

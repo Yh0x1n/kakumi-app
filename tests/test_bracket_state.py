@@ -1,7 +1,5 @@
 """Tests for Slice 1 bracket state loading."""
 
-import datetime
-
 import pytest
 import reflex as rx
 from reflex.istate.data import PageData
@@ -26,19 +24,17 @@ def _create_match_with_participants(
     with rx.session() as session:
         aka = Athlete(
             name=aka_name,
-            date_of_birth=datetime.date(2000, 1, 1),
+            age=26,
             gender="MALE",
             email=f"{aka_name.lower().replace(' ', '-')}-bracket@test.local",
             license_number=f"LIC-{aka_name.lower().replace(' ', '-')}",
-            kata_category_id=category_id,
         )
         ao = Athlete(
             name=ao_name,
-            date_of_birth=datetime.date(2001, 2, 2),
+            age=25,
             gender="FEMALE",
             email=f"{ao_name.lower().replace(' ', '-')}-bracket@test.local",
             license_number=f"LIC-{ao_name.lower().replace(' ', '-')}",
-            kata_category_id=category_id,
         )
         session.add(aka)
         session.add(ao)

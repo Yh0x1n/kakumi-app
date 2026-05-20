@@ -90,7 +90,7 @@ class TestRefereeRoleTranslation:
         assert RefereeState._normalize_role("SUPERVISOR") == "SUPERVISOR"
 
     def test_display_role_referee(self) -> None:
-        assert RefereeState._display_role("REFEREE") == "REFEREE"
+        assert RefereeState._display_role("REFEREE") == "ÁRBITRO"
 
     def test_display_role_judge(self) -> None:
         assert RefereeState._display_role("JUDGE") == "JUEZ"
@@ -129,7 +129,7 @@ class TestImportServiceParseAthleteRowGender:
         success, data, _ = ImportService.parse_athlete_row(
             {
                 "name": "Test Athlete",
-                "date_of_birth": "2000-01-01",
+                "age": "26",
                 "gender": "MASCULINO",
             },
             2,
@@ -142,7 +142,7 @@ class TestImportServiceParseAthleteRowGender:
         success, data, _ = ImportService.parse_athlete_row(
             {
                 "name": "Test Female",
-                "date_of_birth": "2000-01-01",
+                "age": "26",
                 "gender": "FEMENINO",
             },
             3,
@@ -155,7 +155,7 @@ class TestImportServiceParseAthleteRowGender:
         success, data, _ = ImportService.parse_athlete_row(
             {
                 "name": "Test EN",
-                "date_of_birth": "2000-01-01",
+                "age": "26",
                 "gender": "MALE",
             },
             4,
@@ -168,7 +168,7 @@ class TestImportServiceParseAthleteRowGender:
         success, data, error = ImportService.parse_athlete_row(
             {
                 "name": "Test Bad",
-                "date_of_birth": "2000-01-01",
+                "age": "26",
                 "gender": "OTHER",
             },
             5,

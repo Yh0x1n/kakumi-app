@@ -12,6 +12,18 @@ import reflex as rx
 from kakumi_app.services.auth_service import AuthService
 from kakumi_app.models.user_model import User
 
+# Dev auth bypass — NEVER enable in production.
+# When active, every session is treated as an authenticated OPERATOR.
+DEV_AUTH_BYPASS: bool = os.getenv("DEV_AUTH_BYPASS", "").strip() in (
+    "1",
+    "true",
+    "True",
+    "yes",
+    "Yes",
+)
+if DEV_AUTH_BYPASS:
+    print("[DEV] DEV_AUTH_BYPASS=1 — auth bypass active, defaulting to OPERATOR role")
+
 
 class AuthState(rx.State):
     """State for authentication management."""
@@ -49,6 +61,10 @@ class AuthState(rx.State):
         self.is_authenticated = False
         self.user_role = ""
         self.login_error = ""
+
+    def refresh_auth(self) -> None:
+        """Re-evaluate auth state (idempotent, safe to call from other states)."""
+        self._load_user_from_token()
 
     def update_last_activity(self) -> None:
         """Update the last activity timestamp."""
@@ -118,6 +134,20 @@ class AuthState(rx.State):
 
     def _load_user_from_token(self) -> None:
         """Load user information from stored access token."""
+        # DEV AUTH BYPASS: skip real auth when env flag is set
+        if DEV_AUTH_BYPASS:
+            self.is_authenticated = True
+            self.user_role = "OPERATOR"
+            self.current_user = {
+                "id": 0,
+                "username": "dev-bypass",
+                "email": "dev@kakumi.local",
+                "role": "OPERATOR",
+                "is_active": True,
+            }
+            self.update_last_activity()
+            return
+
         if not self.access_token:
             self.is_authenticated = False
             self.current_user = None

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
-
 import pytest
 import reflex as rx
 from reflex.istate.data import PageData
@@ -48,11 +46,10 @@ def _create_athlete(name: str, email: str, category_id: int) -> Athlete:
     with rx.session() as session:
         athlete = Athlete(
             name=name,
-            date_of_birth=datetime.date(2000, 1, 1),
+            age=26,
             gender="MALE",
             email=email,
-            belt_rank="Dan 1",
-            kata_category_id=category_id,
+            belt_rank="Negro",
             is_active=True,
         )
         session.add(athlete)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-from datetime import date
 
 import pytest
 import reflex as rx
@@ -77,11 +76,11 @@ def test_athlete_set_form_values_edit_populates_fields_and_flags() -> None:
     athlete = {
         "id": 17,
         "name": "Atleta Edit",
-        "date_of_birth": "2002-07-01",
+        "age": 24,
         "gender": "FEMALE",
         "email": "athlete@test.dev",
         "weight_kg": 62.5,
-        "belt_rank": "Dan 2",
+        "belt_rank": "Negro",
         "dojo": "Dojo Sur",
         "nationality": "ARG",
         "license_number": "A-001",
@@ -96,10 +95,10 @@ def test_athlete_set_form_values_edit_populates_fields_and_flags() -> None:
     assert state.show_form is True
     assert state.error_message == ""
     assert state.name == "Atleta Edit"
-    assert state.date_of_birth == "2002-07-01"
+    assert state.age == "24"
     assert state.gender == "FEMENINO"
     assert state.weight_kg == "62.5"
-    assert state.belt_rank == "Dan 2"
+    assert state.belt_rank == "Negro"
     assert state.dojo == "Dojo Sur"
     assert state.nationality == "ARG"
     assert state.license_number == "A-001"
@@ -111,7 +110,7 @@ def test_athlete_set_form_values_create_resets_fields() -> None:
     state = AthleteState()
     state.current_athlete = {"id": 8, "name": "Old"}
     state.name = "Dirty"
-    state.date_of_birth = "2020-01-01"
+    state.age = "10"
     state.gender = "FEMALE"
     state.weight_kg = "80"
     state.error_message = "old"
@@ -123,7 +122,7 @@ def test_athlete_set_form_values_create_resets_fields() -> None:
     assert state.show_form is True
     assert state.error_message == ""
     assert state.name == ""
-    assert state.date_of_birth == ""
+    assert state.age == ""
     assert state.gender == "MASCULINO"
     assert state.weight_kg == ""
 
@@ -179,7 +178,7 @@ def test_referee_set_form_values_create_resets_fields() -> None:
     assert state.name == ""
     assert state.license_number == ""
     assert state.license_level == "NACIONAL"
-    assert state.role == "REFEREE"
+    assert state.role == "ÁRBITRO"
 
 
 def test_team_set_form_values_edit_populates_fields_and_flags() -> None:
@@ -234,14 +233,14 @@ async def test_filter_athletes_applies_case_insensitive_name_email_dojo_match(
     with rx.session() as session:
         athlete_match = Athlete(
             name="Luna Karate",
-            date_of_birth=date(2001, 5, 1),
+            age=25,
             gender="FEMALE",
             email="luna.filter@test.dev",
             dojo="Dojo Norte",
         )
         athlete_non_match = Athlete(
             name="Pedro Sur",
-            date_of_birth=date(2000, 2, 2),
+            age=26,
             gender="MALE",
             email="pedro@test.dev",
             dojo="Dojo Sur",
@@ -269,7 +268,7 @@ async def test_filter_athletes_without_query_reloads_all_rows(
     with rx.session() as session:
         second = Athlete(
             name="Atleta Dos",
-            date_of_birth=date(2002, 1, 10),
+            age=24,
             gender="MALE",
             email="atleta2@test.dev",
         )
@@ -444,10 +443,10 @@ async def test_save_athlete_update_rehydrates_by_current_athlete_id(
     state.current_athlete = {"id": str(sample_athlete.id), "name": "snapshot-stale"}
     state.name = "Carlos Actualizado"
     state.email = "carlos.updated@test.dev"
-    state.date_of_birth = "1998-05-15"
+    state.age = "28"
     state.gender = "MALE"
     state.weight_kg = "73"
-    state.belt_rank = "Dan 3"
+    state.belt_rank = "Negro"
     state.dojo = "Dojo Norte"
     state.nationality = "ARG"
     state.license_number = "LIC-001-UPD"
@@ -460,7 +459,7 @@ async def test_save_athlete_update_rehydrates_by_current_athlete_id(
         assert updated is not None
         assert updated.name == "Carlos Actualizado"
         assert updated.email == "carlos.updated@test.dev"
-        assert updated.belt_rank == "Dan 3"
+        assert updated.belt_rank == "Negro"
         assert updated.license_number == "LIC-001-UPD"
         assert session.exec(select(Athlete)).all()
         assert len(session.exec(select(Athlete)).all()) == 1
@@ -544,7 +543,7 @@ def test_batch5_scope_contract_keeps_target_table_columns_stable() -> None:
     assert {column.name for column in Athlete.__table__.columns} == {
         "id",
         "name",
-        "date_of_birth",
+        "age",
         "gender",
         "email",
         "weight_kg",
@@ -554,8 +553,6 @@ def test_batch5_scope_contract_keeps_target_table_columns_stable() -> None:
         "license_number",
         "is_active",
         "is_disqualified",
-        "kata_category_id",
-        "kumite_category_id",
         "created_at",
         "updated_at",
     }
@@ -626,7 +623,7 @@ async def test_save_athlete_rolls_back_and_surfaces_toast_on_db_error(
 
     state = AthleteState()
     state.name = "Atleta DB Error"
-    state.date_of_birth = "2001-06-01"
+    state.age = "25"
     state.gender = "MALE"
 
     result = await AthleteState.save_athlete.fn(state)

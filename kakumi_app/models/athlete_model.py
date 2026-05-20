@@ -14,7 +14,7 @@ from sqlmodel import Field, Relationship
 
 if TYPE_CHECKING:
     from .team_model import TeamMember
-    from .tournament_model import Match, TournamentCategory
+    from .tournament_model import Match
 
 
 class AthleteGender(str, Enum):
@@ -36,7 +36,7 @@ class Athlete(rx.Model, table=True):
 
     # Campos obligatorios
     name: str = Field(unique=True, index=True, max_length=255)
-    date_of_birth: datetime.date = Field(index=True)
+    age: int = Field(default=0)
     gender: str = Field(max_length=10)  # MALE, FEMALE
 
     # Campos opcionales según spec 2.1
@@ -51,14 +51,6 @@ class Athlete(rx.Model, table=True):
     is_active: bool = Field(default=True)
     is_disqualified: bool = Field(default=False)
 
-    # Foreign Keys para categorías (relación opcional)
-    kata_category_id: Optional[int] = Field(
-        default=None, foreign_key="tournament_categories.id"
-    )
-    kumite_category_id: Optional[int] = Field(
-        default=None, foreign_key="tournament_categories.id"
-    )
-
     # Timestamps
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
     updated_at: datetime.datetime = Field(
@@ -67,34 +59,33 @@ class Athlete(rx.Model, table=True):
     )
 
     # Relaciones
-    kata_category: Optional["TournamentCategory"] = Relationship(
-        back_populates="athletes",
-        sa_relationship_kwargs={"foreign_keys": "[Athlete.kata_category_id]"},
-    )
-    kumite_category: Optional["TournamentCategory"] = Relationship(
-        back_populates="kumite_athletes",
-        sa_relationship_kwargs={"foreign_keys": "[Athlete.kumite_category_id]"},
-    )
     team_memberships: List["TeamMember"] = Relationship(back_populates="athlete")
-
-    # Relaciones inversas con Match (navegación bidireccional)
     matches_as_aka: List["Match"] = Relationship(
         back_populates="aka",
-        sa_relationship_kwargs={"foreign_keys": "[Match.aka_id]"},
+        sa_relationship_kwargs={
+            "foreign_keys": "Match.aka_id",
+            "primaryjoin": "Athlete.id == Match.aka_id",
+        },
     )
     matches_as_ao: List["Match"] = Relationship(
         back_populates="ao",
-        sa_relationship_kwargs={"foreign_keys": "[Match.ao_id]"},
+        sa_relationship_kwargs={
+            "foreign_keys": "Match.ao_id",
+            "primaryjoin": "Athlete.id == Match.ao_id",
+        },
     )
     matches_won: List["Match"] = Relationship(
         back_populates="winner",
-        sa_relationship_kwargs={"foreign_keys": "[Match.winner_id]"},
+        sa_relationship_kwargs={
+            "foreign_keys": "Match.winner_id",
+            "primaryjoin": "Athlete.id == Match.winner_id",
+        },
     )
 
-    @validator("date_of_birth")
-    def date_of_birth_not_future(cls, v):
-        if v > datetime.date.today():
-            raise ValueError("date_of_birth cannot be in the future")
+    @validator("age")
+    def age_non_negative(cls, v):
+        if v < 0:
+            raise ValueError("age cannot be negative")
         return v
 
     @validator("weight_kg")

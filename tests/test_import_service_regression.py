@@ -13,8 +13,8 @@ from kakumi_app.services.registry_excel_service import (
 def test_import_athletes_xlsx_reports_duplicate_name_in_payload() -> None:
     workbook_bytes = build_athletes_workbook(
         [
-            {"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMENINO"},
-            {"name": "Ana", "date_of_birth": "2001-01-01", "gender": "FEMENINO"},
+            {"name": "Ana", "age": 26, "gender": "FEMENINO"},
+            {"name": "Ana", "age": 25, "gender": "FEMENINO"},
         ]
     )
 

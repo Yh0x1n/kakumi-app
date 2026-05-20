@@ -256,17 +256,42 @@ class KataInformalService:
     @staticmethod
     def finalize_category(category_id: int) -> TournamentCategory:
         """Finalize informal category and set podium from ranking table."""
+        from kakumi_app.models.tournament_model import CategoryGender
+        from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
+
         with rx.session() as session:
             category = session.get(TournamentCategory, category_id)
             if category is None:
                 raise ValueError("Categoría no encontrada")
 
-            roster = session.exec(
-                select(Athlete.id).where(Athlete.kata_category_id == category_id)
-            ).all()
+            query = select(Athlete.id).where(
+                Athlete.age.between(category.min_age, category.max_age)
+            )
+            if category.gender == CategoryGender.MALE.value:
+                query = query.where(Athlete.gender == "MALE")
+            elif category.gender == CategoryGender.FEMALE.value:
+                query = query.where(Athlete.gender == "FEMALE")
+
+            roster_rows = session.exec(query).all()
             roster_ids = {
-                int(row[0]) if isinstance(row, tuple) else int(row) for row in roster
+                int(row[0]) if isinstance(row, tuple) else int(row)
+                for row in roster_rows
             }
+
+            if category.min_belt_rank or category.max_belt_rank:
+                min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+                max_idx = BELT_RANK_ORDER.get(
+                    category.max_belt_rank, len(BELT_RANKS) - 1
+                )
+                full_athletes = session.exec(
+                    select(Athlete).where(Athlete.id.in_(roster_ids))
+                ).all()
+                roster_ids = {
+                    a.id
+                    for a in full_athletes
+                    if a.belt_rank
+                    and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+                }
 
             performances = session.exec(
                 select(KataInformalPerformance).where(

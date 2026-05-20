@@ -608,7 +608,10 @@ class KumiteMatchState(rx.State):
     async def start_live_and_timer(self, match_id: int) -> None:
         """Start live match then timer in one composed handler."""
         await self.start_live_match(match_id)
-        await self.start_timer()
+        # start_timer is an event that yields an async-generator (uses yield inside).
+        # Do not 'await' it (TypeError: async_generator not awaitable).
+        # Instead yield the event spec so Reflex schedules it properly.
+        yield KumiteMatchState.start_timer
 
     @rx.event
     async def start_timer(self) -> None:

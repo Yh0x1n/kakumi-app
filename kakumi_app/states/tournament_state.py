@@ -132,6 +132,9 @@ class TournamentState(rx.State):
             self._current_user_role = ""
             return
 
+        # Apply dev auth bypass if env flag is active
+        auth_state.refresh_auth()
+
         if not auth_state.is_authenticated or not auth_state.current_user:
             self._current_user_id = 0
             self._current_user_role = ""

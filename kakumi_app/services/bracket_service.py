@@ -10,10 +10,11 @@ from typing import Any
 import reflex as rx
 from sqlmodel import Session, select
 
-from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.athlete_model import Athlete, AthleteGender
 from kakumi_app.models.team_model import Team
 from kakumi_app.models.tournament_model import (
     BracketSide,
+    CategoryGender,
     CompetitionSystem,
     Match,
     MatchStatus,
@@ -21,7 +22,8 @@ from kakumi_app.models.tournament_model import (
     Modality,
     TournamentCategory,
 )
-from kakumi_app.services.tournament_service import ValidationError
+from kakumi_app.services.exceptions import ValidationError
+from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 
 
 BRACKET_ALREADY_EXISTS_MESSAGE = (
@@ -185,22 +187,47 @@ class BracketService:
     def _is_team_modality(self, modality: str) -> bool:
         return modality in {Modality.KATA_TEAM.value, Modality.KUMITE_TEAM.value}
 
+    def _matched_athlete_ids(
+        self,
+        category: TournamentCategory,
+        session: Session,
+    ) -> list[int]:
+        """Return athlete IDs whose age/gender/belt match category criteria."""
+        query = select(Athlete).where(
+            Athlete.age.between(category.min_age, category.max_age)
+        )
+        if category.gender == CategoryGender.MALE.value:
+            query = query.where(Athlete.gender == AthleteGender.MALE.value)
+        elif category.gender == CategoryGender.FEMALE.value:
+            query = query.where(Athlete.gender == AthleteGender.FEMALE.value)
+        # MIXED = no gender filter
+
+        athletes = session.exec(query).all()
+
+        if category.min_belt_rank or category.max_belt_rank:
+            min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+            max_idx = BELT_RANK_ORDER.get(
+                category.max_belt_rank, len(BELT_RANKS) - 1
+            )
+            athletes = [
+                a
+                for a in athletes
+                if a.belt_rank
+                and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+            ]
+
+        return [a.id for a in athletes]
+
     def _participant_ids(
         self,
         session: Session,
         category: TournamentCategory,
     ) -> tuple[list[int], bool]:
-        if category.modality == Modality.KATA_INDIVIDUAL.value:
-            athletes = session.exec(
-                select(Athlete.id).where(Athlete.kata_category_id == category.id)
-            ).all()
-            return athletes, False
-
-        if category.modality == Modality.KUMITE_INDIVIDUAL.value:
-            athletes = session.exec(
-                select(Athlete.id).where(Athlete.kumite_category_id == category.id)
-            ).all()
-            return athletes, False
+        if category.modality in {
+            Modality.KATA_INDIVIDUAL.value,
+            Modality.KUMITE_INDIVIDUAL.value,
+        }:
+            return self._matched_athlete_ids(category, session), False
 
         teams = session.exec(
             select(Team.id).where(Team.category_id == category.id)

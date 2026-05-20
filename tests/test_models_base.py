@@ -35,11 +35,11 @@ class TestAthleteCRUD:
         """Un atleta creado tiene los campos correctos y un ID asignado."""
         assert sample_athlete.id is not None
         assert sample_athlete.name == "Carlos Martinez"
-        assert sample_athlete.date_of_birth == datetime.date(1998, 5, 15)
+        assert sample_athlete.age == 28
         assert sample_athlete.gender == "MALE"
         assert sample_athlete.email == "carlos@dojo.test"
         assert sample_athlete.weight_kg == 72.5
-        assert sample_athlete.belt_rank == "Dan 2"
+        assert sample_athlete.belt_rank == "Negro"
         assert sample_athlete.dojo == "Dojo Shoto"
         assert sample_athlete.nationality == "ARG"
         assert sample_athlete.license_number == "LIC-001"
@@ -50,7 +50,7 @@ class TestAthleteCRUD:
         with rx.session() as session:
             athlete = Athlete(
                 name="Atleta Minimo",
-                date_of_birth=datetime.date(2005, 1, 1),
+                age=19,
                 gender="MALE",
             )
             session.add(athlete)
@@ -84,20 +84,20 @@ class TestAthleteCRUD:
         with rx.session() as session:
             athlete = session.get(Athlete, sample_athlete.id)
             athlete.weight_kg = 75.0
-            athlete.belt_rank = "Dan 3"
+            athlete.belt_rank = "Negro"
             session.add(athlete)
             session.commit()
             session.refresh(athlete)
 
             assert athlete.weight_kg == 75.0
-            assert athlete.belt_rank == "Dan 3"
+            assert athlete.belt_rank == "Negro"
 
     def test_delete_athlete(self):
         """Se puede eliminar un atleta de la base de datos."""
         with rx.session() as session:
             athlete = Athlete(
                 name="Atleta Eliminable",
-                date_of_birth=datetime.date(2000, 1, 1),
+                age=24,
                 gender="FEMALE",
             )
             session.add(athlete)
@@ -115,7 +115,7 @@ class TestAthleteCRUD:
         with rx.session() as session:
             duplicate = Athlete(
                 name="Carlos Martinez",
-                date_of_birth=datetime.date(2000, 1, 1),
+                age=24,
                 gender="MALE",
             )
             session.add(duplicate)
@@ -128,7 +128,7 @@ class TestAthleteCRUD:
         with rx.session() as session:
             duplicate = Athlete(
                 name="Otro Atleta",
-                date_of_birth=datetime.date(2000, 1, 1),
+                age=24,
                 gender="MALE",
                 email="carlos@dojo.test",
             )
@@ -146,7 +146,7 @@ class TestAthleteFields:
         with rx.session() as session:
             athlete = Athlete(
                 name="Activo Default",
-                date_of_birth=datetime.date(2000, 1, 1),
+                age=24,
                 gender="MALE",
             )
             session.add(athlete)
@@ -159,7 +159,7 @@ class TestAthleteFields:
         with rx.session() as session:
             athlete = Athlete(
                 name="Timestamp Test",
-                date_of_birth=datetime.date(2000, 1, 1),
+                age=24,
                 gender="MALE",
             )
             session.add(athlete)
@@ -177,31 +177,6 @@ class TestAthleteFields:
         assert isinstance(sample_athlete.gender, str)
         assert sample_athlete.gender == "MALE"
 
-
-class TestAthleteRelationships:
-    """Tests de relaciones del modelo Athlete."""
-
-    def test_athlete_kata_category_fk(self, sample_athlete, sample_category):
-        """Un atleta puede tener una kata_category_id vinculada."""
-        with rx.session() as session:
-            athlete = session.get(Athlete, sample_athlete.id)
-            athlete.kata_category_id = sample_category.id
-            session.add(athlete)
-            session.commit()
-            session.refresh(athlete)
-
-            assert athlete.kata_category_id == sample_category.id
-
-    def test_athlete_kumite_category_fk(self, sample_athlete, sample_category):
-        """Un atleta puede tener una kumite_category_id vinculada."""
-        with rx.session() as session:
-            athlete = session.get(Athlete, sample_athlete.id)
-            athlete.kumite_category_id = sample_category.id
-            session.add(athlete)
-            session.commit()
-            session.refresh(athlete)
-
-            assert athlete.kumite_category_id == sample_category.id
 
 
 # =============================================================================

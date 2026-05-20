@@ -256,18 +256,6 @@ class TournamentCategory(rx.Model, table=True):
         sa_relationship_kwargs={"foreign_keys": "[TournamentCategory.tournament_id]"},
     )
 
-    # Atletas inscritos (Kata)
-    athletes: List["Athlete"] = Relationship(
-        back_populates="kata_category",
-        sa_relationship_kwargs={"foreign_keys": "[Athlete.kata_category_id]"},
-    )
-
-    # Atletas inscritos (Kumite)
-    kumite_athletes: List["Athlete"] = Relationship(
-        back_populates="kumite_category",
-        sa_relationship_kwargs={"foreign_keys": "[Athlete.kumite_category_id]"},
-    )
-
     # Equipos (para Kata/Kumite por equipos)
     teams: List["Team"] = Relationship(
         back_populates="category",

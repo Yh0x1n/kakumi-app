@@ -69,6 +69,15 @@ def _selection_summary() -> rx.Component:
                 f"Tatamis declarados: {state.current_tournament['tatami_count']}",
                 color="black",
             ),
+            rx.link(
+                rx.button(
+                    "Ver bracket / Pantalla de competencia",
+                    variant="surface",
+                    size="2",
+                ),
+                href=f"/tournaments/{state.current_tournament['id']}/bracket",
+                underline="none",
+            ),
             spacing="2",
             align="start",
             width="100%",
@@ -269,15 +278,17 @@ def _categories_card() -> rx.Component:
                                     width="100%",
                                 ),
                                 rx.hstack(
-                                    rx.input(
-                                        placeholder="Grado mínimo",
+                                    rx.select(
+                                        state.belt_rank_options,
                                         value=state.min_belt_rank,
                                         on_change=state.set_min_belt_rank,
+                                        placeholder="Grado mínimo",
                                     ),
-                                    rx.input(
-                                        placeholder="Grado máximo",
+                                    rx.select(
+                                        state.belt_rank_options,
                                         value=state.max_belt_rank,
                                         on_change=state.set_max_belt_rank,
+                                        placeholder="Grado máximo",
                                     ),
                                     width="100%",
                                 ),

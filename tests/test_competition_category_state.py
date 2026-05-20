@@ -1,7 +1,5 @@
 """Tests for Slice 1 competition category state loading."""
 
-import datetime
-
 import pytest
 import reflex as rx
 from reflex.istate.data import PageData
@@ -32,19 +30,17 @@ def _create_category_match_bundle(category_id: int, tournament_id: int) -> None:
     with rx.session() as session:
         aka = Athlete(
             name="Operador Aka",
-            date_of_birth=datetime.date(2001, 3, 1),
+            age=25,
             gender="MALE",
             email="operador-aka@test.local",
             license_number="OPERADOR-AKA-1",
-            kata_category_id=category_id,
         )
         ao = Athlete(
             name="Operador Ao",
-            date_of_birth=datetime.date(2002, 4, 2),
+            age=24,
             gender="FEMALE",
             email="operador-ao@test.local",
             license_number="OPERADOR-AO-1",
-            kata_category_id=category_id,
         )
         session.add(aka)
         session.add(ao)
@@ -293,11 +289,10 @@ async def test_load_category_informal_mode_exposes_table_data(
 
         athlete = Athlete(
             name="Informal State Athlete",
-            date_of_birth=datetime.date(2000, 1, 1),
+            age=26,
             gender="MALE",
             email="informal-state-athlete@test.local",
-            belt_rank="Dan 1",
-            kata_category_id=category.id,
+            belt_rank="Negro",
         )
         session.add(athlete)
         session.commit()

@@ -8,13 +8,24 @@ from typing import Any
 import reflex as rx
 from sqlmodel import select
 
-from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.athlete_model import Athlete, AthleteGender
 from kakumi_app.models.referee_model import Referee
 from kakumi_app.models.team_model import Team
-from kakumi_app.models.tournament_model import Match, Tatami, TournamentCategory
+from kakumi_app.models.tournament_model import (
+    CategoryGender,
+    Match,
+    Tatami,
+    TournamentCategory,
+)
 from kakumi_app.services.kata_informal_service import KataInformalService
 from kakumi_app.states.kata_informal_state import KataInformalState
-from kakumi_app.utils import CompetitionCategoryData, MatchCardData, build_match_cards
+from kakumi_app.utils import (
+    BELT_RANKS,
+    BELT_RANK_ORDER,
+    CompetitionCategoryData,
+    MatchCardData,
+    build_match_cards,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -102,9 +113,35 @@ class CompetitionCategoryState(rx.State):
                     for match in matches
                     if match.referee_id is not None
                 }
-                roster_athlete_ids = {
-                    athlete.id for athlete in getattr(category, "athletes", [])
-                }
+                matched_query = select(Athlete).where(
+                    Athlete.age.between(category.min_age, category.max_age)
+                )
+                if category.gender == CategoryGender.MALE.value:
+                    matched_query = matched_query.where(
+                        Athlete.gender == AthleteGender.MALE.value
+                    )
+                elif category.gender == CategoryGender.FEMALE.value:
+                    matched_query = matched_query.where(
+                        Athlete.gender == AthleteGender.FEMALE.value
+                    )
+
+                matched_roster = session.exec(matched_query).all()
+
+                if category.min_belt_rank or category.max_belt_rank:
+                    min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+                    max_idx = BELT_RANK_ORDER.get(
+                        category.max_belt_rank, len(BELT_RANKS) - 1
+                    )
+                    matched_roster = [
+                        a
+                        for a in matched_roster
+                        if a.belt_rank
+                        and min_idx
+                        <= BELT_RANK_ORDER.get(a.belt_rank, -1)
+                        <= max_idx
+                    ]
+
+                roster_athlete_ids = {a.id for a in matched_roster}
 
                 athlete_names = self._name_lookup(
                     session,

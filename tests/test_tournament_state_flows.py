@@ -422,7 +422,7 @@ class TestValidationResultClasses:
 
     def test_validation_error_structure(self):
         """ValidationError tiene code, message y campos opcionales."""
-        from kakumi_app.services.tournament_service import ValidationError
+        from kakumi_app.services.exceptions import ValidationError
 
         error = ValidationError(
             code="NO_CATEGORIES",
@@ -435,7 +435,7 @@ class TestValidationResultClasses:
 
     def test_validation_error_with_category_name(self):
         """ValidationError puede incluir nombre de categoría específica."""
-        from kakumi_app.services.tournament_service import ValidationError
+        from kakumi_app.services.exceptions import ValidationError
 
         error = ValidationError(
             code="INSUFFICIENT_ATHLETES",
@@ -875,6 +875,9 @@ class TestTournamentWorkspaceState:
         auth_state.user_role = "OPERATOR"
         auth_state.current_user = {"id": 77, "role": "OPERATOR"}
 
+        # Prevent _load_user_from_token from resetting test-set values
+        monkeypatch.setattr(AuthState, "_load_user_from_token", lambda self: None)
+
         async def fake_get_state(self, state_cls):
             assert state_cls is AuthState
             return auth_state
@@ -1139,16 +1142,15 @@ class TestValidationPassesReadyToStart:
             for i in range(4):
                 athlete = Athlete(
                     name=f"Atleta {i}",
-                    date_of_birth=datetime.date(2000, 1, 1),
+                    age=26,
                     gender="MALE",
                     email=f"atleta{i}@test.test",
                     weight_kg=70.0,
-                    belt_rank="Dan 1",
+                    belt_rank="Negro",
                     dojo="Dojo Test",
                     nationality="ARG",
                     license_number=f"ATL-{i}",
                     is_active=True,
-                    kata_category_id=sample_category.id,
                 )
                 session.add(athlete)
             session.commit()
@@ -1248,22 +1250,20 @@ class TestInsufficientAthletesOneCategory:
                 )
                 session.add(ref)
 
-            # Crear solo 2 atletas en la categoría (insuficientes)
-            for i in range(2):
-                athlete = Athlete(
-                    name=f"Atleta Kata {i}",
-                    date_of_birth=datetime.date(2000, 1, 1),
-                    gender="MALE",
-                    email=f"kata{i}@test.test",
-                    weight_kg=70.0,
-                    belt_rank="Dan 1",
-                    dojo="Dojo Test",
-                    nationality="ARG",
-                    license_number=f"KATA-{i}",
-                    is_active=True,
-                    kata_category_id=sample_category.id,
-                )
-                session.add(athlete)
+            # Crear solo 1 atleta en la categoría (insuficiente, mínimo 2)
+            athlete = Athlete(
+                name="Atleta Kata 0",
+                age=26,
+                gender="MALE",
+                email="kata0@test.test",
+                weight_kg=70.0,
+                belt_rank="Negro",
+                dojo="Dojo Test",
+                nationality="ARG",
+                license_number="KATA-0",
+                is_active=True,
+            )
+            session.add(athlete)
             session.commit()
 
         result = TournamentService.validate_preconditions(
@@ -1281,8 +1281,8 @@ class TestInsufficientAthletesOneCategory:
         ]
         assert len(insufficient_errors) >= 1
         assert insufficient_errors[0].category_name == sample_category.name
-        assert insufficient_errors[0].current_value == 2
-        assert insufficient_errors[0].required_value == 4
+        assert insufficient_errors[0].current_value == 1
+        assert insufficient_errors[0].required_value == 2
 
 
 class TestMultipleValidationFailures:
@@ -1313,16 +1313,15 @@ class TestMultipleValidationFailures:
         with rx.session() as session:
             athlete = Athlete(
                 name="Atleta Solo",
-                date_of_birth=datetime.date(2000, 1, 1),
+                age=26,
                 gender="MALE",
                 email="solo@test.test",
                 weight_kg=70.0,
-                belt_rank="Dan 1",
+                belt_rank="Negro",
                 dojo="Dojo Test",
                 nationality="ARG",
                 license_number="ATL-SOLO",
                 is_active=True,
-                kata_category_id=sample_category.id,
             )
             session.add(athlete)
             session.commit()
@@ -1480,16 +1479,15 @@ class TestWarningOnlyValidation:
             for i in range(4):
                 athlete = Athlete(
                     name=f"Atleta Warn2 {i}",
-                    date_of_birth=datetime.date(2000, 1, 1),
+                    age=26,
                     gender="MALE",
                     email=f"warn2{i}@test.test",
                     weight_kg=70.0,
-                    belt_rank="Dan 1",
+                    belt_rank="Negro",
                     dojo="Dojo Test",
                     nationality="ARG",
                     license_number=f"WARN2-{i}",
                     is_active=True,
-                    kata_category_id=sample_category.id,
                 )
                 session.add(athlete)
             session.commit()
@@ -1602,16 +1600,15 @@ class TestStartCompetitionTransition:
             for i in range(4):
                 athlete = Athlete(
                     name=f"Atleta Start {i}",
-                    date_of_birth=datetime.date(2000, 1, 1),
+                    age=26,
                     gender="MALE",
                     email=f"start{i}@test.test",
                     weight_kg=70.0,
-                    belt_rank="Dan 1",
+                    belt_rank="Negro",
                     dojo="Dojo Test",
                     nationality="ARG",
                     license_number=f"START-{i}",
                     is_active=True,
-                    kata_category_id=sample_category.id,
                 )
                 session.add(athlete)
             session.commit()
@@ -1660,6 +1657,7 @@ class TestCompleteTournamentTransition:
     ):
         """Informal Kata category finalized should not require match rows."""
         from kakumi_app.services.tournament_service import TournamentService
+        from kakumi_app.models.athlete_model import Athlete
         from kakumi_app.models.tournament_model import (
             TournamentCategory,
             Modality,
@@ -1689,6 +1687,17 @@ class TestCompleteTournamentTransition:
                 third_place_ids="[3]",
             )
             session.add(category)
+            # Add matching athletes so bracket generation does not fail
+            for i in range(2):
+                athlete = Athlete(
+                    name=f"Informal Athlete {i}",
+                    age=20,
+                    gender="MALE",
+                    email=f"informal{i}@test.test",
+                    belt_rank="Negro",
+                    is_active=True,
+                )
+                session.add(athlete)
             session.commit()
 
         result = TournamentService.transition_to(
@@ -1706,6 +1715,7 @@ class TestCompleteTournamentTransition:
     ):
         """Informal category in progress blocks EN_CURSO -> FINALIZADO."""
         from kakumi_app.services.tournament_service import TournamentService
+        from kakumi_app.models.athlete_model import Athlete
         from kakumi_app.models.tournament_model import (
             TournamentCategory,
             Modality,
@@ -1732,6 +1742,17 @@ class TestCompleteTournamentTransition:
                 kata_flow_mode="INFORMAL",
             )
             session.add(category)
+            # Add matching athletes so bracket generation does not fail
+            for i in range(2):
+                athlete = Athlete(
+                    name=f"Pending Athlete {i}",
+                    age=20,
+                    gender="MALE",
+                    email=f"pending{i}@test.test",
+                    belt_rank="Negro",
+                    is_active=True,
+                )
+                session.add(athlete)
             session.commit()
 
         result = TournamentService.transition_to(

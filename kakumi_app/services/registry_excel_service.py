@@ -124,7 +124,7 @@ ATHLETE_WORKBOOK_ADAPTER = RegistryWorkbookAdapter(
     columns=(
         RegistryColumn("name", "Nombre", required=True),
         RegistryColumn("email", "Correo electrónico"),
-        RegistryColumn("date_of_birth", "Fecha de nacimiento", required=True),
+        RegistryColumn("age", "Edad", required=True),
         RegistryColumn(
             "gender", "Género", required=True,
             serializer=_translation_serializer(GENDER_TRANSLATION, "gender"),

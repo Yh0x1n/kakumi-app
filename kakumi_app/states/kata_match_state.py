@@ -12,6 +12,7 @@ from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.kata_model import KataDecisionRule
 from kakumi_app.models.referee_model import Referee, RefereeRole
 from kakumi_app.models.tournament_model import (
+    CategoryGender,
     Match,
     MatchStatus,
     Modality,
@@ -19,6 +20,7 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
 )
 from kakumi_app.services.kata_informal_service import KataInformalService
+from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 from kakumi_app.services.kata_scoring_service import KataScoringService
 from kakumi_app.services.secondary_display_service import SecondaryDisplayService
 
@@ -366,11 +368,35 @@ class KataMatchState(rx.State):
 
     def _load_informal_session(self, category_id: int) -> None:
         with rx.session() as session:
-            athletes = session.exec(
-                select(Athlete)
-                .where(Athlete.kata_category_id == category_id)
-                .order_by(Athlete.name)
-            ).all()
+            category = session.get(TournamentCategory, category_id)
+            if category is None:
+                self.informal_category_id = 0
+                self.informal_roster = []
+                self.informal_selected_athlete_id = 0
+                self.informal_judge_entries = []
+                return
+
+            query = select(Athlete).where(
+                Athlete.age.between(category.min_age, category.max_age)
+            )
+            if category.gender == CategoryGender.MALE.value:
+                query = query.where(Athlete.gender == "MALE")
+            elif category.gender == CategoryGender.FEMALE.value:
+                query = query.where(Athlete.gender == "FEMALE")
+
+            athletes = session.exec(query.order_by(Athlete.name)).all()
+
+            if category.min_belt_rank or category.max_belt_rank:
+                min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+                max_idx = BELT_RANK_ORDER.get(
+                    category.max_belt_rank, len(BELT_RANKS) - 1
+                )
+                athletes = [
+                    a
+                    for a in athletes
+                    if a.belt_rank
+                    and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+                ]
 
         self.informal_category_id = category_id
         self.informal_roster = [

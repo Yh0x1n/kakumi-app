@@ -3,7 +3,6 @@ Import Service
 Handles XLSX import of athletes, referees, and teams.
 """
 
-import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import reflex as rx
@@ -17,6 +16,7 @@ from kakumi_app.services.registry_excel_service import (
     parse_athletes_workbook,
     parse_referees_workbook,
 )
+from kakumi_app.utils import BELT_RANKS
 
 
 # NOTE: Team model not yet implemented
@@ -32,15 +32,7 @@ class ImportError(Exception):
 class ImportService:
     """Service for importing registry data from XLSX workbooks."""
 
-    BELT_COLORS = {
-        "BLANCO",
-        "AMARILLO",
-        "NARANJA",
-        "VERDE",
-        "AZUL",
-        "MARRON",
-        "NEGRO",
-    }
+    BELT_COLORS = {rank.upper() for rank in BELT_RANKS} | {"MARRON"}
 
     @staticmethod
     def _clean_str(value: Any) -> str:
@@ -48,15 +40,6 @@ class ImportService:
         if value is None:
             return ""
         return str(value).strip()
-
-    @staticmethod
-    def validate_date_iso8601(date_str: str) -> bool:
-        """Validate date string in ISO 8601 format (YYYY-MM-DD)."""
-        try:
-            datetime.datetime.strptime(date_str, "%Y-%m-%d")
-            return True
-        except ValueError:
-            return False
 
     @staticmethod
     def validate_country_code(code: str) -> bool:
@@ -75,26 +58,24 @@ class ImportService:
         return 40.0 <= weight <= 120.0
 
     @staticmethod
-    def validate_belt_rank(rank: str) -> bool:
-        """Validate belt rank format (Kyu/Dan or supported belt colors)."""
-        if not isinstance(rank, str):
-            return False
-        rank = rank.strip()
-        if rank.upper() in ImportService.BELT_COLORS:
-            return True
-        if rank.startswith("Kyu "):
+    def validate_age(value: Any) -> bool:
+        """Validate age (0-150), accepts int or string convertible to int."""
+        if isinstance(value, (int, float)):
+            return 0 <= int(value) <= 150
+        if isinstance(value, str):
             try:
-                num = int(rank.split()[1])
-                return 1 <= num <= 8
-            except (IndexError, ValueError):
-                return False
-        elif rank.startswith("Dan "):
-            try:
-                num = int(rank.split()[1])
-                return 1 <= num <= 10
-            except (IndexError, ValueError):
+                age = int(value.strip())
+                return 0 <= age <= 150
+            except ValueError:
                 return False
         return False
+
+    @staticmethod
+    def validate_belt_rank(rank: str) -> bool:
+        """Validate belt rank is a valid belt color (rejects Kyu/Dan numeric ranks)."""
+        if not isinstance(rank, str):
+            return False
+        return rank.strip().upper() in ImportService.BELT_COLORS
 
     @staticmethod
     def parse_athlete_row(  # noqa: C901
@@ -109,13 +90,11 @@ class ImportService:
         if not name or len(name) < 2 or len(name) > 255:
             errors.append("Name must be 2-255 characters")
 
-        date_of_birth = ImportService._clean_str(row.get("date_of_birth", ""))
-        if not ImportService.validate_date_iso8601(date_of_birth):
-            errors.append("Invalid date_of_birth format (YYYY-MM-DD)")
+        age_str = ImportService._clean_str(row.get("age", ""))
+        if not ImportService.validate_age(age_str):
+            errors.append("age must be a number between 0 and 150")
         else:
-            dob = datetime.datetime.strptime(date_of_birth, "%Y-%m-%d").date()
-            if dob > datetime.date.today():
-                errors.append("date_of_birth cannot be in the future")
+            age = int(age_str)
 
         gender = ImportService._clean_str(row.get("gender", ""))
         if not ImportService.validate_gender(gender):
@@ -136,8 +115,9 @@ class ImportService:
         belt_rank = ImportService._clean_str(row.get("belt_rank", ""))
         if belt_rank and not ImportService.validate_belt_rank(belt_rank):
             errors.append(
-                "belt_rank must be 'Kyu 1-8', 'Dan 1-10', "
-                "or belt colors from 'Blanco' to 'Negro'"
+                "belt_rank must be a valid belt color: "
+                "Blanco, Celeste, Amarillo, Naranja, Verde, "
+                "Azul, Morado, Marrón, or Negro"
             )
 
         dojo = ImportService._clean_str(row.get("dojo", ""))
@@ -163,7 +143,7 @@ class ImportService:
         data = {
             "name": name,
             "email": ImportService._clean_str(row.get("email", "")) or None,
-            "date_of_birth": date_of_birth,
+            "age": age,
             "gender": raw_gender,
             "weight_kg": weight_kg,
             "belt_rank": belt_rank or None,
@@ -218,9 +198,7 @@ class ImportService:
             try:
                 for _, athlete_data in pending_rows:
                     normalized_data = dict(athlete_data)
-                    normalized_data["date_of_birth"] = datetime.date.fromisoformat(
-                        str(normalized_data["date_of_birth"])
-                    )
+                    normalized_data["age"] = int(normalized_data["age"])
                     session.add(Athlete(**normalized_data))
                 if pending_rows:
                     session.commit()

@@ -232,7 +232,7 @@ def _create_athlete_for_test(*, name: str) -> Athlete:
     with rx.session() as session:
         athlete = Athlete(
             name=name,
-            date_of_birth=datetime.date(1995, 6, 15),
+            age=31,
             gender="MALE",
             email=f"{name.lower().replace(' ','')}@test.com",
         )

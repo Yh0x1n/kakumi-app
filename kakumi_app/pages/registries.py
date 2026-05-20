@@ -18,6 +18,7 @@ from kakumi_app.components.registry_crud import (
     registry_table_filters,
 )
 from kakumi_app.states.athlete_state import AthleteState
+from kakumi_app.utils import BELT_RANKS
 from kakumi_app.states.referee_state import RefereeState
 from kakumi_app.states.tournament_crud_state import TournamentCrudState
 
@@ -95,11 +96,12 @@ def _athlete_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Fecha Nac. (YYYY-MM-DD)", size="3", color="black"),
+                        rx.heading("Edad", size="3", color="black"),
                         rx.input(
-                            placeholder="Fecha Nac. (YYYY-MM-DD) *",
-                            value=state.date_of_birth,
-                            on_change=state.set_date_of_birth,
+                            placeholder="Edad *",
+                            value=state.age,
+                            on_change=state.set_age,
+                            type="number",
                             border="1px solid black",
                             background_color="white",
                             color="black",
@@ -134,13 +136,16 @@ def _athlete_form() -> rx.Component:
                     ),
                     rx.vstack(
                         rx.heading("Grado", size="3", color="black"),
-                        rx.input(
-                            placeholder="Grado",
+                        rx.select(
+                            BELT_RANKS,
                             value=state.belt_rank,
                             on_change=state.set_belt_rank,
-                            border="1px solid black",
-                            background_color="white",
-                            color="black",
+                            placeholder="Seleccioná un grado",
+                            style={
+                                "border": "1px solid black",
+                                "color": "black",
+                                "background_color": "white",
+                            },
                         ),
                     ),
                 ),
@@ -171,7 +176,8 @@ def _athlete_form() -> rx.Component:
                         ),
                     ),
                 ),
-                # Fila final (puedes dejarla a 1 columna si prefieres)
+                
+                # Fila final
                 rx.flex(
                     rx.box(
                         rx.vstack(
@@ -248,13 +254,16 @@ def _referee_form() -> rx.Component:
                     ),
                     rx.vstack(
                         rx.heading("Licencia *", size="3", color="black"),
-                        rx.input(
-                            placeholder="Licencia *",
+                        rx.select(
+                            state.license_number_options,
                             value=state.license_number,
                             on_change=state.set_license_number,
-                            border="1px solid black",
-                            background_color="white",
-                            color="black",
+                            placeholder="Seleccioná o escribí licencia",
+                            style={
+                                "border": "1px solid black",
+                                "color": "black",
+                                "background_color": "white",
+                            },
                         ),
                     ),
                 ),
@@ -275,7 +284,7 @@ def _referee_form() -> rx.Component:
                     rx.vstack(
                         rx.heading("Rol", size="3", color="black"),
                         rx.select(
-                            ["REFEREE", "JUEZ", "OFICIAL DE MESA", "SUPERVISOR (KANSA)"],
+                            ["ÁRBITRO", "JUEZ", "OFICIAL DE MESA", "SUPERVISOR (KANSA)"],
                             value=state.role,
                             on_change=state.set_role,
                             style={
@@ -434,32 +443,26 @@ def _tournament_form() -> rx.Component:
                         ),
                     ),
                 ),
-                row(
-                    rx.vstack(
-                        rx.heading("Tatamis", size="3", color="black"),
-                        rx.input(
-                            placeholder="Tatamis",
-                            value=state.tatami_count,
-                            on_change=state.set_tatami_count,
-                            type="number",
-                            border="1px solid black",
-                            background_color="white",
-                            color="black",
+                rx.flex(
+                    rx.box(
+                        rx.vstack(
+                            rx.heading("Tatamis", size="3", color="black"),
+                            rx.input(
+                                placeholder="Tatamis",
+                                value=state.tatami_count,
+                                on_change=state.set_tatami_count,
+                                type="number",
+                                border="1px solid black",
+                                background_color="white",
+                                color="black",
+                            ),
                         ),
+                        width=["100%", "100%", "50%"],
                     ),
-                    rx.vstack(
-                        rx.heading("Estado", size="3", color="black"),
-                        rx.select(
-                            state.status_options,
-                            value=state.status,
-                            on_change=state.set_status,
-                            style={
-                                "border": "1px solid black",
-                                "color": "black",
-                                "background_color": "white",
-                            },
-                        ),
-                    ),
+                    rx.box(width=["100%", "100%", "50%"]),
+                    width="100%",
+                    spacing="3",
+                    flex_direction=["column", "column", "row"],
                 ),
                 rx.flex(
                     rx.box(

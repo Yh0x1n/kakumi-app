@@ -37,10 +37,10 @@ def _create_athlete(session: Session, suffix: str) -> Athlete:
     """
     athlete = Athlete(
         name=f"Athlete {suffix}",
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email=f"athlete-{suffix}@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     session.add(athlete)

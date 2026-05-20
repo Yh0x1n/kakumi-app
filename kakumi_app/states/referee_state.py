@@ -36,7 +36,7 @@ class RefereeState(CrudStateMixin, rx.State):
     name: str = ""
     license_number: str = ""
     license_level: str = "NACIONAL"
-    role: str = "REFEREE"
+    role: str = "ÁRBITRO"
     tatami_certified: str = ""  # JSON string
     is_available: bool = True
     dojo: str = ""
@@ -79,6 +79,8 @@ class RefereeState(CrudStateMixin, rx.State):
     def _normalize_role(role: str) -> str:
         """Convert display Español role to DB English."""
         normalized = (role or "").strip().upper()
+        if normalized == "ÁRBITRO" or normalized == "REFEREE":
+            return "REFEREE"
         if normalized == "JUEZ":
             return "JUDGE"
         if normalized == "OFICIAL DE MESA":
@@ -92,6 +94,8 @@ class RefereeState(CrudStateMixin, rx.State):
     def _display_role(role: str) -> str:
         """Convert DB English role to display Español."""
         normalized = (role or "").strip().upper()
+        if normalized == "REFEREE":
+            return "ÁRBITRO"
         if normalized == "JUDGE":
             return "JUEZ"
         if normalized == "TABLE_OFFICIAL":
@@ -179,6 +183,8 @@ class RefereeState(CrudStateMixin, rx.State):
         """Return UI label for referee availability flag."""
         return "Disponible" if referee.get("is_available", True) else "No disponible"
 
+    license_number_options: list[str] = ['A', 'B', 'C']
+
     @rx.event
     def set_form_values(
         self,
@@ -212,7 +218,7 @@ class RefereeState(CrudStateMixin, rx.State):
         self.name = ""
         self.license_number = ""
         self.license_level = "NACIONAL"
-        self.role = "REFEREE"
+        self.role = "ÁRBITRO"
         self.tatami_certified = ""
         self.is_available = True
         self.dojo = ""

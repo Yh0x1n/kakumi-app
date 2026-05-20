@@ -121,12 +121,37 @@ class KataInformalState(rx.State):
             self.error_message = "ID de categoría inválido"
             return
 
+        from kakumi_app.models.tournament_model import TournamentCategory, CategoryGender, CategoryStatus
+        from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
+
         with rx.session() as session:
-            athletes = session.exec(
-                select(Athlete)
-                .where(Athlete.kata_category_id == self.category_id)
-                .order_by(Athlete.name)
-            ).all()
+            category = session.get(TournamentCategory, self.category_id)
+            if category is None:
+                self.error_message = "Categoría no encontrada"
+                return
+
+            query = select(Athlete).where(
+                Athlete.age.between(category.min_age, category.max_age)
+            )
+            if category.gender == CategoryGender.MALE.value:
+                query = query.where(Athlete.gender == "MALE")
+            elif category.gender == CategoryGender.FEMALE.value:
+                query = query.where(Athlete.gender == "FEMALE")
+            # MIXED = no gender filter
+
+            athletes = session.exec(query.order_by(Athlete.name)).all()
+
+            if category.min_belt_rank or category.max_belt_rank:
+                min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+                max_idx = BELT_RANK_ORDER.get(
+                    category.max_belt_rank, len(BELT_RANKS) - 1
+                )
+                athletes = [
+                    a
+                    for a in athletes
+                    if a.belt_rank
+                    and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+                ]
 
         self.roster = [{"id": athlete.id, "name": athlete.name} for athlete in athletes]
         self.standings = self._build_standings()

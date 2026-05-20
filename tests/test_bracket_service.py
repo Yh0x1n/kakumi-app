@@ -20,7 +20,7 @@ from kakumi_app.models.tournament_model import (
     TournamentStatus,
 )
 from kakumi_app.services.bracket_service import BracketService
-from kakumi_app.services.tournament_service import ValidationError
+from kakumi_app.services.exceptions import ValidationError
 
 
 def _create_tournament(name: str = "Bracket Service Tournament") -> Tournament:
@@ -74,21 +74,15 @@ def _create_athletes(
         for index in range(count):
             athlete = Athlete(
                 name=f"{prefix} Athlete {index}",
-                date_of_birth=datetime.date(2005, 1, index + 1),
+                age=19,
                 gender="MALE",
                 email=f"{prefix.lower()}-{index}@test.local",
                 weight_kg=70.0,
-                belt_rank="Dan 1",
+                belt_rank="Negro",
                 dojo="Dojo Test",
                 nationality="ARG",
                 license_number=f"{prefix.upper()}-{index}",
                 is_active=True,
-                kata_category_id=(
-                    category_id if modality == Modality.KATA_INDIVIDUAL else None
-                ),
-                kumite_category_id=(
-                    category_id if modality == Modality.KUMITE_INDIVIDUAL else None
-                ),
             )
             session.add(athlete)
             athletes.append(athlete)

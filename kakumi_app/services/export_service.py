@@ -32,7 +32,7 @@ class ExportService:
                 {
                     "name": athlete.name,
                     "email": athlete.email,
-                    "date_of_birth": athlete.date_of_birth,
+                    "age": athlete.age,
                     "gender": athlete.gender,
                     "weight_kg": athlete.weight_kg,
                     "belt_rank": athlete.belt_rank,

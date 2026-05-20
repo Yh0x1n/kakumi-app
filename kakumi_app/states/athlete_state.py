@@ -3,7 +3,6 @@ Athlete State
 Manages CRUD operations for athletes.
 """
 
-import datetime
 import base64
 import binascii
 from typing import Any, Optional
@@ -35,7 +34,7 @@ class AthleteState(CrudStateMixin, rx.State):
     # Form fields
     name: str = ""
     email: str = ""
-    date_of_birth: str = ""
+    age: str = ""
     gender: str = "MASCULINO"
     weight_kg: str = ""
     belt_rank: str = ""
@@ -163,7 +162,7 @@ class AthleteState(CrudStateMixin, rx.State):
             self._set_form_open(editing=True)
             self.name = athlete.get("name", "")
             self.email = athlete.get("email") or ""
-            self.date_of_birth = athlete.get("date_of_birth") or ""
+            self.age = str(athlete.get("age", 0))
             self.gender = self._display_gender(athlete.get("gender", "MALE"))
             weight_kg = athlete.get("weight_kg")
             self.weight_kg = str(weight_kg) if weight_kg else ""
@@ -181,7 +180,7 @@ class AthleteState(CrudStateMixin, rx.State):
         """Reset form fields."""
         self.name = ""
         self.email = ""
-        self.date_of_birth = ""
+        self.age = ""
         self.gender = "MASCULINO"
         self.weight_kg = ""
         self.belt_rank = ""
@@ -194,7 +193,7 @@ class AthleteState(CrudStateMixin, rx.State):
         """Validate form fields."""
         validators = (
             self._validate_name,
-            self._validate_date_of_birth,
+            self._validate_age,
             self._validate_gender,
             self._validate_weight,
             self._validate_belt_rank,
@@ -211,19 +210,18 @@ class AthleteState(CrudStateMixin, rx.State):
             return False
         return True
 
-    def _validate_date_of_birth(self) -> bool:
-        """Validate date input and prevent future birth dates."""
-        if not self.date_of_birth:
-            self.error_message = "Date of birth is required"
+    def _validate_age(self) -> bool:
+        """Validate age is a non-negative integer."""
+        if not self.age:
+            self.error_message = "Age is required"
             return False
-
         try:
-            dob = datetime.datetime.strptime(self.date_of_birth, "%Y-%m-%d").date()
-            if dob > datetime.date.today():
-                self.error_message = "Date of birth cannot be in the future"
+            age = int(self.age)
+            if age < 0 or age > 150:
+                self.error_message = "Age must be between 0 and 150"
                 return False
         except ValueError:
-            self.error_message = "Invalid date format (YYYY-MM-DD)"
+            self.error_message = "Age must be a number"
             return False
         return True
 
@@ -272,9 +270,7 @@ class AthleteState(CrudStateMixin, rx.State):
         athlete_data = {
             "name": self.name,
             "email": self.email or None,
-            "date_of_birth": datetime.datetime.strptime(
-                self.date_of_birth, "%Y-%m-%d"
-            ).date(),
+            "age": int(self.age) if self.age else 0,
             "gender": self._normalize_gender(self.gender),
             "weight_kg": weight_kg,
             "belt_rank": self.belt_rank or None,

@@ -137,10 +137,10 @@ def test_d_legacy_rbac_role_helpers_are_removed() -> None:
 def test_b2_athlete_validate_form_approval_valid_case() -> None:
     state = AthleteState()
     state.name = "Jane Doe"
-    state.date_of_birth = "2000-05-01"
+    state.age = "26"
     state.gender = "FEMALE"
     state.weight_kg = "55"
-    state.belt_rank = "Dan 1"
+    state.belt_rank = "Negro"
 
     assert state.validate_form() is True
     assert state.error_message == ""
@@ -149,8 +149,7 @@ def test_b2_athlete_validate_form_approval_valid_case() -> None:
 @pytest.mark.parametrize(
     "belt_rank",
     [
-        "Kyu 1",
-        "Dan 10",
+        "Negro",
         "Blanco",
         "Amarillo",
         "Naranja",
@@ -165,7 +164,7 @@ def test_b2_athlete_validate_form_accepts_kyu_dan_and_belt_colors(
 ) -> None:
     state = AthleteState()
     state.name = "Jane Doe"
-    state.date_of_birth = "2000-05-01"
+    state.age = "26"
     state.gender = "FEMALE"
     state.weight_kg = "55"
     state.belt_rank = belt_rank
@@ -177,7 +176,7 @@ def test_b2_athlete_validate_form_accepts_kyu_dan_and_belt_colors(
 def test_b2_athlete_validate_form_approval_invalid_weight_case() -> None:
     state = AthleteState()
     state.name = "Jane Doe"
-    state.date_of_birth = "2000-05-01"
+    state.age = "26"
     state.gender = "FEMALE"
     state.weight_kg = "39.9"
 

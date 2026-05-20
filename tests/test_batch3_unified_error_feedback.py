@@ -88,7 +88,7 @@ def test_state_classes_remove_transient_success_message(state_cls: type) -> None
 def test_athlete_validate_form_still_sets_inline_validation_error() -> None:
     state = AthleteState()
     state.name = ""
-    state.date_of_birth = "2000-05-01"
+    state.age = "26"
     state.gender = "FEMALE"
 
     assert state.validate_form() is False
@@ -118,7 +118,7 @@ async def test_save_athlete_duplicate_name_uses_toast_feedback(sample_athlete) -
     state = AthleteState()
     state.is_editing = False
     state.name = sample_athlete.name
-    state.date_of_birth = "2000-05-01"
+    state.age = "26"
     state.gender = "FEMALE"
     state.weight_kg = "55"
 
@@ -321,7 +321,7 @@ async def test_auth_session_timeout_returns_warning_toast_and_redirect() -> None
 async def test_save_athlete_success_returns_toast_and_persists_row() -> None:
     state = AthleteState()
     state.name = "Atleta Éxito"
-    state.date_of_birth = "2001-06-01"
+    state.age = "25"
     state.gender = "MALE"
     state.weight_kg = "68"
     state.show_form = True
@@ -352,7 +352,7 @@ async def test_athlete_import_file_flow_returns_success_toast(monkeypatch) -> No
                 [
                     {
                         "name": "Ana",
-                        "date_of_birth": "2000-01-01",
+                        "age": 26,
                         "gender": "FEMALE",
                     }
                 ]

@@ -80,10 +80,10 @@ def _create_athlete(session: Session, name: str, suffix: str) -> Athlete:
     """Create and persist one athlete."""
     athlete = Athlete(
         name=name,
-        date_of_birth=datetime.date(2000, 1, 1),
+        age=26,
         gender="MALE",
         email=f"{suffix}@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     session.add(athlete)

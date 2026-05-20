@@ -23,10 +23,10 @@ def _create_athlete(session: Session, name: str, suffix: str) -> Athlete:
     """Create one athlete for scheduling tests."""
     athlete = Athlete(
         name=name,
-        date_of_birth=datetime.date(2001, 1, 1),
+        age=25,
         gender="MALE",
         email=f"{suffix}@test.dev",
-        belt_rank="Dan 1",
+        belt_rank="Negro",
         is_active=True,
     )
     session.add(athlete)

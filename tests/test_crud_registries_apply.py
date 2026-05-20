@@ -556,7 +556,7 @@ async def test_athlete_state_import_export_are_active(
             session.add(
                 Athlete(
                     name="Importado",
-                    date_of_birth=datetime.date(2001, 1, 1),
+                    age=25,
                     gender="MALE",
                     is_active=True,
                 )
@@ -570,7 +570,7 @@ async def test_athlete_state_import_export_are_active(
             [
                 {
                     "name": "Demo",
-                    "date_of_birth": "2000-01-01",
+                    "age": 26,
                     "gender": "MALE",
                 }
             ]
@@ -605,7 +605,7 @@ async def test_athlete_state_handle_import_upload_uses_real_file_flow(
     """Athlete import must process uploaded file contents instead of pasted text."""
     state = AthleteState()
     payload = build_athletes_workbook(
-        [{"name": "Ana", "date_of_birth": "2000-01-01", "gender": "FEMALE"}]
+        [{"name": "Ana", "age": 26, "gender": "FEMALE"}]
     )
     calls: dict[str, bytes | None] = {"content": None}
 
@@ -677,7 +677,7 @@ def test_athlete_export_returns_download_event(
     """Athlete export must trigger a browser download event."""
     state = AthleteState()
     workbook_bytes = build_athletes_workbook(
-        [{"name": "Demo", "date_of_birth": "2000-01-01", "gender": "MALE"}]
+        [{"name": "Demo", "age": 26, "gender": "MALE"}]
     )
     monkeypatch.setattr(
         ExportService,
@@ -1076,13 +1076,13 @@ def test_import_athletes_xlsx_commits_once_after_processing_rows(
         [
             {
                 "name": f"Athlete One {suffix}",
-                "date_of_birth": "2001-01-01",
+                "age": 25,
                 "gender": "MALE",
                 "email": f"one-{suffix}@test.dev",
             },
             {
                 "name": f"Athlete Two {suffix}",
-                "date_of_birth": "2002-02-02",
+                "age": 24,
                 "gender": "FEMALE",
                 "email": f"two-{suffix}@test.dev",
             },
@@ -1133,7 +1133,7 @@ def test_parse_athlete_row_normalizes_nullable_fields_without_crashing() -> None
     success, data, error = ImportService.parse_athlete_row(
         {
             "name": None,
-            "date_of_birth": None,
+            "age": None,
             "gender": None,
             "weight_kg": None,
             "belt_rank": None,
@@ -1171,7 +1171,7 @@ def test_parse_athlete_row_accepts_belt_color() -> None:
     success, data, error = ImportService.parse_athlete_row(
         {
             "name": "Color Belt",
-            "date_of_birth": "2002-03-04",
+            "age": "24",
             "gender": "MALE",
             "weight_kg": "72",
             "belt_rank": "Verde",

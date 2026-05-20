@@ -14,17 +14,19 @@ from typing import Any, List, Optional
 import reflex as rx
 from sqlmodel import select
 
+from kakumi_app.models.referee_model import Referee
+from kakumi_app.models.tournament_event_log import TournamentEventLog
 from kakumi_app.models.tournament_model import (
     CategoryStatus,
+    CompetitionSystem,
     Match,
     MatchStatus,
     Tournament,
     TournamentCategory,
     TournamentStatus,
 )
-from kakumi_app.models.referee_model import Referee
-from kakumi_app.models.tournament_event_log import TournamentEventLog
-
+from kakumi_app.services.bracket_service import BracketService
+from kakumi_app.services.exceptions import ValidationError
 
 # =============================================================================
 # VALID TRANSITIONS TABLE
@@ -56,32 +58,12 @@ VALID_TRANSITIONS: dict[TournamentStatus, list[TournamentStatus]] = {
 # Mínimo de árbitros requeridos para iniciar competencia (WKF 2026)
 MIN_ARBITERS_REQUIRED = 3
 # Mínimo de atletas por categoría para bracket válida (WKF 2026)
-MIN_ATHLETES_PER_CATEGORY = 4
+MIN_ATHLETES_PER_CATEGORY = 2
 
 
 # =============================================================================
 # DATA CLASSES — Resultados expresivos
 # =============================================================================
-
-
-@dataclass
-class ValidationError(Exception):
-    """
-    Error de validación de pre-condición.
-
-    Incluye código de error, mensaje legible y contexto específico
-    de categoría cuando aplica.
-    """
-
-    code: str
-    message: str
-    category_name: Optional[str] = None
-    current_value: Any = None
-    required_value: Any = None
-
-    def __str__(self) -> str:
-        """Return the human-readable validation message."""
-        return self.message
 
 
 @dataclass
@@ -227,7 +209,9 @@ class TournamentService:
         tournament_id: int,
     ) -> tuple[List[ValidationError], List[Warning]]:
         """Valida pre-condiciones para VERIFICACION → EN_CURSO."""
-        from kakumi_app.models.athlete_model import Athlete
+        from kakumi_app.models.athlete_model import Athlete, AthleteGender
+        from kakumi_app.models.tournament_model import CategoryGender
+        from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 
         errors: List[ValidationError] = []
         warnings: List[Warning] = []
@@ -240,17 +224,35 @@ class TournamentService:
             ).all()
 
             for category in categories:
-                kata_count = len(
-                    session.exec(
-                        select(Athlete).where(Athlete.kata_category_id == category.id)
-                    ).all()
+                query = select(Athlete).where(
+                    Athlete.age.between(category.min_age, category.max_age)
                 )
-                kumite_count = len(
-                    session.exec(
-                        select(Athlete).where(Athlete.kumite_category_id == category.id)
-                    ).all()
-                )
-                total_athletes = kata_count + kumite_count
+                if category.gender == CategoryGender.MALE.value:
+                    query = query.where(
+                        Athlete.gender == AthleteGender.MALE.value
+                    )
+                elif category.gender == CategoryGender.FEMALE.value:
+                    query = query.where(
+                        Athlete.gender == AthleteGender.FEMALE.value
+                    )
+
+                athletes = session.exec(query).all()
+
+                if category.min_belt_rank or category.max_belt_rank:
+                    min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+                    max_idx = BELT_RANK_ORDER.get(
+                        category.max_belt_rank, len(BELT_RANKS) - 1
+                    )
+                    athletes = [
+                        a
+                        for a in athletes
+                        if a.belt_rank
+                        and min_idx
+                        <= BELT_RANK_ORDER.get(a.belt_rank, -1)
+                        <= max_idx
+                    ]
+
+                total_athletes = len(athletes)
 
                 if total_athletes < MIN_ATHLETES_PER_CATEGORY:
                     errors.append(
@@ -297,6 +299,31 @@ class TournamentService:
             )
 
         return errors, warnings
+
+    @staticmethod
+    def _generate_brackets_for_tournament(tournament_id: int) -> None:
+        with rx.session() as session:
+            categories = session.exec(
+                select(TournamentCategory).where(
+                    TournamentCategory.tournament_id == tournament_id
+                )
+            ).all()
+            for category in categories:
+                if category.competition_system not in {
+                    CompetitionSystem.ELIMINATION.value,
+                    CompetitionSystem.ROUND_ROBIN.value,
+                }:
+                    continue
+                try:
+                    BracketService(
+                        tournament_id=tournament_id,
+                        category_id=category.id,
+                        session=session,
+                    ).generate_bracket()
+                except ValidationError as exc:
+                    if exc.code == "BRACKET_ALREADY_EXISTS":
+                        continue
+                    raise
 
     @staticmethod
     def _validate_finalizado(
@@ -583,6 +610,7 @@ class TournamentService:
 
             try:
                 # Actualizar estado
+                TournamentService._generate_brackets_for_tournament(tournament_id)
                 tournament.status = new_status.value
                 tournament.is_transitioning = False
                 session.add(tournament)

@@ -24,10 +24,10 @@ def test_build_athlete_workbook_uses_spanish_headers() -> None:
             {
                 "name": "Ana Gómez",
                 "email": "ana@test.dev",
-                "date_of_birth": "2000-01-01",
+                "age": 26,
                 "gender": "FEMALE",
                 "weight_kg": 55.5,
-                "belt_rank": "Dan 1",
+                "belt_rank": "Negro",
                 "dojo": "Dojo Sur",
                 "nationality": "ARG",
                 "license_number": "ATH-1",
@@ -40,7 +40,7 @@ def test_build_athlete_workbook_uses_spanish_headers() -> None:
 
     assert [cell.value for cell in sheet[1]] == list(ATHLETE_WORKBOOK_ADAPTER.headers)
     assert [cell.value for cell in sheet[2]][0] == "Ana Gómez"
-    assert [cell.value for cell in sheet[2]][2] == "2000-01-01"
+    assert [cell.value for cell in sheet[2]][2] == "26"
 
 
 def test_parse_referee_workbook_normalizes_rows() -> None:

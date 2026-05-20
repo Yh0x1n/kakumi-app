@@ -97,13 +97,13 @@ async def test_save_category_creates_manual_category_with_age_and_belt_fields(
     state = TournamentCategoryState()
     await TournamentCategoryState.set_tournament_context.fn(state, sample_tournament.id)
     state.name = "Kumite Cadete Danes"
-    state.modality = Modality.KUMITE_INDIVIDUAL.value
-    state.gender = "FEMALE"
+    state.modality = "Kumite Individual"
+    state.gender = "Femenino"
     state.min_age = "14"
     state.max_age = "15"
-    state.min_belt_rank = "Dan 1"
-    state.max_belt_rank = "Dan 3"
-    state.competition_system = CompetitionSystem.ROUND_ROBIN.value
+    state.min_belt_rank = "Negro"
+    state.max_belt_rank = "Negro"
+    state.competition_system = "Liguilla"
     state.bracket_size = "4"
 
     result = await TournamentCategoryState.save_category.fn(state)
@@ -121,8 +121,8 @@ async def test_save_category_creates_manual_category_with_age_and_belt_fields(
     assert created.gender == "FEMALE"
     assert created.min_age == 14
     assert created.max_age == 15
-    assert created.min_belt_rank == "Dan 1"
-    assert created.max_belt_rank == "Dan 3"
+    assert created.min_belt_rank == "Negro"
+    assert created.max_belt_rank == "Negro"
     assert created.competition_system == CompetitionSystem.ROUND_ROBIN.value
     assert created.bracket_size == 4
     assert any(category["name"] == "Kumite Cadete Danes" for category in state.categories)
@@ -193,13 +193,13 @@ async def test_save_category_updates_existing_manual_category(
     state.is_editing = True
     state.current_category = {"id": sample_category.id}
     state.name = "Kata Senior Editada"
-    state.modality = sample_category.modality
-    state.gender = sample_category.gender
+    state.modality = "Kata Individual"
+    state.gender = "Masculino"
     state.min_age = "21"
     state.max_age = "39"
-    state.min_belt_rank = "Kyu 1"
-    state.max_belt_rank = "Dan 2"
-    state.competition_system = CompetitionSystem.ROUND_ROBIN.value
+    state.min_belt_rank = "Blanco"
+    state.max_belt_rank = "Negro"
+    state.competition_system = "Liguilla"
     state.bracket_size = "4"
 
     result = await TournamentCategoryState.save_category.fn(state)
@@ -212,8 +212,8 @@ async def test_save_category_updates_existing_manual_category(
     assert updated.name == "Kata Senior Editada"
     assert updated.min_age == 21
     assert updated.max_age == 39
-    assert updated.min_belt_rank == "Kyu 1"
-    assert updated.max_belt_rank == "Dan 2"
+    assert updated.min_belt_rank == "Blanco"
+    assert updated.max_belt_rank == "Negro"
     assert updated.competition_system == CompetitionSystem.ROUND_ROBIN.value
     assert updated.bracket_size == 4
 

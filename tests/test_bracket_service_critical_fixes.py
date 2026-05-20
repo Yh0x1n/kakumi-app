@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import command
 from sqlmodel import SQLModel, Session, create_engine
 
-from kakumi_app.services.tournament_service import ValidationError
+from kakumi_app.services.exceptions import ValidationError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -54,16 +54,15 @@ def _add_category_athletes(session: Session, category_id: int, count: int = 2) -
         session.add(
             Athlete(
                 name=f"Critical Athlete {category_id}-{index}",
-                date_of_birth=datetime.date(2014, 1, index + 1),
+                age=10,
                 gender="MALE",
                 email=f"critical-{category_id}-{index}@test.local",
                 weight_kg=42.0,
-                belt_rank="Kyu 1",
+                belt_rank="Negro",
                 dojo="Dojo Central",
                 nationality="ARG",
                 license_number=f"CRIT-{category_id}-{index}",
                 is_active=True,
-                kata_category_id=category_id,
             )
         )
 

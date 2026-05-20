@@ -1,7 +1,5 @@
 """Tests del servicio de scoring Kata bajo reglas WKF 2026."""
 
-import datetime
-
 import pytest
 import reflex as rx
 
@@ -15,10 +13,10 @@ def _create_athlete(name: str, email: str) -> Athlete:
     with rx.session() as session:
         athlete = Athlete(
             name=name,
-            date_of_birth=datetime.date(1999, 1, 1),
+            age=27,
             gender="MALE",
             email=email,
-            belt_rank="Dan 1",
+            belt_rank="Negro",
             dojo="Dojo Test",
             is_active=True,
         )

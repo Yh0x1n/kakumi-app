@@ -46,7 +46,7 @@ class Referee(rx.Model, table=True):
 
     # Campos obligatorios
     name: str = Field(max_length=255, index=True)
-    license_number: str = Field(max_length=50, unique=True, index=True)
+    license_number: str = Field(max_length=50, index=True)
     license_level: str = Field(default=LicenseLevel.NATIONAL.value)
     role: str = Field(default=RefereeRole.REFEREE.value)
     is_available: bool = Field(default=True)
