@@ -7,6 +7,7 @@ syncs with the backend scoring service.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 from collections.abc import Callable
 from typing import Any, Optional
@@ -18,6 +19,7 @@ from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.tournament_model import (
     Match,
     MatchActionLog,
+    MatchStatus,
     Participant,
     Penalty,
     PenaltyType,
@@ -569,6 +571,38 @@ class KumiteMatchState(rx.State):
         self.timer_running = False
         self._timer_loop_active = False
         self._publish_display_snapshot()
+
+    @rx.event
+    async def start_live_match(self, match_id: int) -> None:
+        """Transition match from PENDING to IN_PROGRESS on first start.
+
+        Only acts when match.status == PENDING. Safe to call multiple times
+        (no-op if already IN_PROGRESS or beyond). Requires both athletes
+        assigned (aka_id and ao_id present).
+
+        Args:
+            match_id: ID of the match to start.
+        """
+        if self.is_exhibition_mode or match_id <= 0:
+            return
+
+        with rx.session() as session:
+            match = session.get(Match, match_id)
+            if match is None:
+                self.error_message = "Encuentro no encontrado"
+                return
+
+            if match.status == MatchStatus.PENDING.value:
+                if match.aka_id is None or match.ao_id is None:
+                    self.error_message = (
+                        "Ambos atletas deben estar asignados para iniciar el combate"
+                    )
+                    return
+
+                match.status = MatchStatus.IN_PROGRESS.value
+                match.start_time = datetime.datetime.utcnow()
+                session.add(match)
+                session.commit()
 
     @rx.event
     async def start_timer(self) -> None:
