@@ -29,6 +29,7 @@ from kakumi_app.models.tournament_model import (
 from kakumi_app.services.exceptions import PenaltyEscalationError
 from kakumi_app.services.exceptions import PenaltyRemovalNotAllowedError
 from kakumi_app.services.exceptions import ShikkakuRevertError
+from kakumi_app.services.bracket_service import propagate_winner
 from kakumi_app.services.scheduling_service import check_athlete_scheduling_overlap
 
 MATCH_STATUS_CANCELLED = "CANCELLED"
@@ -687,6 +688,9 @@ def _apply_penalty_operation(
     )
 
     session.commit()
+    if match.winner_id is not None:
+        propagate_winner(session, match)
+        session.commit()
     session.refresh(penalty)
     return penalty
 
@@ -981,6 +985,10 @@ class KumiteScoringService:
             )
             session.commit()
 
+            if winner is not None:
+                propagate_winner(session, match)
+                session.commit()
+
             return MatchResult(
                 success=True,
                 match_ended=winner is not None,
@@ -1010,6 +1018,10 @@ class KumiteScoringService:
 
             session.add(match)
             session.commit()
+
+            if winner is not None:
+                propagate_winner(session, match)
+                session.commit()
 
             return MatchResult(
                 success=True,
@@ -1048,6 +1060,9 @@ class KumiteScoringService:
 
             KumiteScoringService._set_match_completed_for_winner(match, winner_value)
             session.add(match)
+            session.commit()
+
+            propagate_winner(session, match)
             session.commit()
 
             return MatchResult(
@@ -1098,6 +1113,9 @@ class KumiteScoringService:
             winner = KumiteScoringService._get_opponent(penalized_value)
             KumiteScoringService._set_match_completed_for_winner(match, winner)
             session.add(match)
+            session.commit()
+
+            propagate_winner(session, match)
             session.commit()
 
             return MatchResult(
@@ -1216,6 +1234,10 @@ class KumiteScoringService:
                 )
             )
             session.commit()
+
+            if winner is not None:
+                propagate_winner(session, match)
+                session.commit()
 
             return PenaltyResult(
                 success=True,

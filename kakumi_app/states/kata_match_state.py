@@ -23,6 +23,7 @@ from kakumi_app.services.kata_informal_service import KataInformalService
 from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 from kakumi_app.services.kata_scoring_service import KataScoringService
 from kakumi_app.services.secondary_display_service import SecondaryDisplayService
+from kakumi_app.services.bracket_service import propagate_winner
 
 
 class KataMatchState(rx.State):
@@ -585,6 +586,9 @@ class KataMatchState(rx.State):
             match.ao_score = int(result.ao_votes)
             match.status = MatchStatus.COMPLETED.value
             session.add(match)
+            session.commit()
+
+            propagate_winner(session, match)
             session.commit()
 
         self.winner_participant = str(result.winner or "")

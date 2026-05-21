@@ -298,3 +298,57 @@ class BracketService:
 
         with rx.session() as session:
             return self._generate_with_session(session)
+
+
+def propagate_winner(
+    session: Session,
+    completed_match: Match,
+) -> None:
+    """Propagate winner from a completed elimination match to the next round.
+
+    Uses positional math: a match at round R, position P maps to the next match
+    at round R+1, position ceil(P/2). Odd-position winners go to aka_id,
+    even-position winners go to ao_id in the next match.
+
+    Idempotent — does nothing if:
+    - completed_match has no winner_id
+    - match_type is not ELIMINATION
+    - the next match slot is already filled
+
+    Args:
+        session: Active SQLModel session.
+        completed_match: Completed match whose winner to propagate.
+    """
+    if completed_match.winner_id is None:
+        return
+
+    if completed_match.match_type != MatchType.ELIMINATION.value:
+        return
+
+    next_round = completed_match.round + 1
+    next_position = (completed_match.position + 1) // 2
+
+    next_match: Match | None = session.exec(
+        select(Match).where(
+            Match.tournament_id == completed_match.tournament_id,
+            Match.category_id == completed_match.category_id,
+            Match.round == next_round,
+            Match.position == next_position,
+        )
+    ).first()
+
+    if next_match is None:
+        return
+
+    is_odd = (completed_match.position % 2) == 1
+
+    if is_odd:
+        if next_match.aka_id is not None:
+            return
+        next_match.aka_id = completed_match.winner_id
+    else:
+        if next_match.ao_id is not None:
+            return
+        next_match.ao_id = completed_match.winner_id
+
+    session.add(next_match)
