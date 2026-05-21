@@ -114,3 +114,7 @@ sdd/
 CRUD Registros Kakumi/
 # Local Pi runtime state
 .atl/
+.pi/
+.pi-lens
+opencode.jsonc
+.codegraph
