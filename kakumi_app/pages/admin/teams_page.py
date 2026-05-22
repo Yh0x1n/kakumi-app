@@ -4,6 +4,7 @@ CRUD operations for teams.
 """
 
 import reflex as rx
+from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.team_state import TeamState
 from kakumi_app.components.sidebar import sidebar
 
@@ -163,39 +164,72 @@ def teams_page() -> rx.Component:
     """Main teams admin page."""
     state = TeamState
 
-    return rx.box(
-        rx.vstack(
-            rx.hstack(
-                sidebar(),
-                rx.vstack(
-                    rx.heading(
-                        "Gestión de Equipos",
-                        font_size="3xl",
-                        font_weight="bold",
-                        color="black",
-                        margin_bottom="0.5em",
-                    ),
-                    rx.text(
-                        "Administrar equipos registrados",
-                        font_size="md",
-                        color="gray",
-                        margin_bottom="1em",
-                    ),
-                    rx.cond(
-                        state.show_form,
-                        team_form(),
-                        teams_table(),
+    return rx.cond(
+        AuthState.is_operator,
+        # Has permission: show content
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    sidebar(),
+                    rx.vstack(
+                        rx.heading(
+                            "Gestión de Equipos",
+                            font_size="3xl",
+                            font_weight="bold",
+                            color="black",
+                            margin_bottom="0.5em",
+                        ),
+                        rx.text(
+                            "Administrar equipos registrados",
+                            font_size="md",
+                            color="gray",
+                            margin_bottom="1em",
+                        ),
+                        rx.cond(
+                            state.show_form,
+                            team_form(),
+                            teams_table(),
+                        ),
+                        width="100%",
+                        padding="2em",
                     ),
                     width="100%",
-                    padding="2em",
                 ),
                 width="100%",
+                background_color="white",
+                min_height="100vh",
             ),
             width="100%",
-            background_color="white",
-            min_height="100vh",
         ),
-        width="100%",
+        # Denied: show permission error
+        rx.box(
+            rx.vstack(
+                rx.heading(
+                    "Access Denied",
+                    font_size="3xl",
+                    font_weight="bold",
+                    color="red",
+                ),
+                rx.text(
+                    "You don't have permission to access this page.",
+                    font_size="lg",
+                    color="gray",
+                ),
+                rx.button(
+                    "Go Home",
+                    on_click=rx.redirect("/"),
+                    color_scheme="blue",
+                    margin_top="1em",
+                ),
+                spacing="4",
+                justify_content="center",
+                align_items="center",
+                min_height="50vh",
+            ),
+            width="100%",
+            padding="2em",
+            on_mount=rx.toast.error("Access denied"),
+        ),
     )
 
 

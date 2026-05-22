@@ -3,6 +3,32 @@
 from kakumi_app.states.auth_state import AuthState
 
 
+def test_admin_page_redirect_on_insufficient_role() -> None:
+    """GIVEN VIEWER navigating to admin page
+    WHEN _has_permission("OPERATOR") is called
+    THEN returns False (denied)
+    """
+    state = AuthState()
+    state.is_authenticated = True
+    state.user_role = "VIEWER"
+
+    # Verify the gate check that drives the redirect
+    assert state._has_permission("OPERATOR") is False
+    assert state._has_permission("ADMIN") is False
+
+    # For ADMIN role, the check passes
+    state_admin = AuthState()
+    state_admin.is_authenticated = True
+    state_admin.user_role = "ADMIN"
+    assert state_admin._has_permission("OPERATOR") is True
+
+    # For OPERATOR role, the check also passes
+    state_op = AuthState()
+    state_op.is_authenticated = True
+    state_op.user_role = "OPERATOR"
+    assert state_op._has_permission("OPERATOR") is True
+
+
 def test_permission_helper_admin_can_access_all() -> None:
     """ADMIN can access all lower/equal roles via helper path."""
     state = AuthState()

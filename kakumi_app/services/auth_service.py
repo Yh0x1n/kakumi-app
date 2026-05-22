@@ -311,10 +311,11 @@ class AuthService:
     @staticmethod
     def login_user(
         username: str, password: str
-    ) -> Tuple[Optional[str], Optional[str], str]:
+    ) -> Tuple[Optional[str], Optional[str], bool, str]:
         """Authenticate user and return tokens.
 
-        Returns: (access_token, refresh_token, error_message).
+        Returns: (access_token, refresh_token, force_password_change, error_message).
+        force_password_change is True when the user must change their password.
         """
         # Get user by username
         user = AuthService.get_user_by_username(username)
@@ -322,7 +323,7 @@ class AuthService:
             AuthService.record_login_attempt(
                 username, "", "", False, reason="USER_NOT_FOUND"
             )
-            return None, None, "Invalid username or password"
+            return None, None, False, "Invalid username or password"
 
         # Check if account is locked
         locked, unlock_at = AuthService.is_account_locked(user)
@@ -330,7 +331,7 @@ class AuthService:
             AuthService.record_login_attempt(
                 username, "", "", False, reason="ACCOUNT_LOCKED"
             )
-            return None, None, f"Account is locked. Try again after {unlock_at}"
+            return None, None, False, f"Account is locked. Try again after {unlock_at}"
 
         # Verify password
         if not bcrypt.checkpw(password.encode(), user.password_hash.encode()):
@@ -347,7 +348,7 @@ class AuthService:
                 )
                 db.add(audit_entry)
                 db.commit()
-            return None, None, "Invalid username or password"
+            return None, None, False, "Invalid username or password"
 
         # Success - reset failed attempts
         AuthService.record_login_attempt(username, "", "", True, reason="LOGIN_SUCCESS")
@@ -357,7 +358,47 @@ class AuthService:
         access_token = AuthService._generate_access_token(user)
         refresh_token = AuthService._generate_refresh_token(user)
 
-        return access_token, refresh_token, ""
+        # Re-fetch user to get fresh force_password_change flag
+        with rx.session() as db:
+            fresh_user = db.get(User, user.id)
+            force_change = fresh_user.force_password_change if fresh_user else False
+
+        return access_token, refresh_token, force_change, ""
+
+    @staticmethod
+    def change_password(
+        user_id: int, old_password: str, new_password: str
+    ) -> Tuple[bool, str]:
+        """Change user password.
+
+        Validates old password, strength-checks new password, updates hash,
+        and clears force_password_change flag.
+
+        Returns: (success, error_message). On success error_message is empty.
+        """
+        with rx.session() as db:
+            user = db.get(User, user_id)
+            if not user:
+                return False, "User not found"
+
+            # Verify old password
+            if not bcrypt.checkpw(
+                old_password.encode(), user.password_hash.encode()
+            ):
+                return False, "Current password is incorrect"
+
+            # Strength-check new password
+            is_valid, msg = AuthService.validate_password_strength(new_password)
+            if not is_valid:
+                return False, msg
+
+            # Update password hash
+            user.password_hash = AuthService.hash_password(new_password)
+            user.force_password_change = False
+            db.add(user)
+            db.commit()
+
+        return True, ""
 
     @staticmethod
     def logout_user(token: str) -> bool:

@@ -50,6 +50,8 @@ class User(rx.Model, table=True):
     failed_attempts: int = Field(default=0)
     locked_until: Optional[datetime.datetime] = Field(default=None)
     last_activity: Optional[datetime.datetime] = Field(default=None)
+    # Forzar cambio de contraseña (usado para admin inicial y resets)
+    force_password_change: bool = Field(default=False)
 
     # Timestamp
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)

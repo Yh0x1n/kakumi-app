@@ -180,7 +180,7 @@ async def test_auth_login_error_keeps_inline_error_and_returns_error_toast(
 
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: (None, None, "Invalid username or password"),
+        lambda username, password: (None, None, False, "Invalid username or password"),
     )
 
     result = await AuthState.login.fn(state)
@@ -203,7 +203,7 @@ async def test_auth_login_success_returns_success_toast_then_redirect(
 
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: ("access-token", "refresh-token", ""),
+        lambda username, password: ("access-token", "refresh-token", False, ""),
     )
 
     def fake_load_user_from_token(self) -> None:
@@ -236,7 +236,7 @@ async def test_auth_login_success_sets_serializable_current_user_dict(
 
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: ("access-token", "refresh-token", ""),
+        lambda username, password: ("access-token", "refresh-token", False, ""),
     )
 
     fake_user = SimpleNamespace(

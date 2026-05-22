@@ -4,6 +4,7 @@ Manages login/logout, token storage, user info, and role-based permissions.
 """
 
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -46,6 +47,15 @@ class AuthState(rx.State):
     username: str = ""
     password: str = ""
 
+    # Password change flow
+    needs_password_change: bool = False
+
+    # Change password form fields
+    cp_current_password: str = ""
+    cp_new_password: str = ""
+    cp_confirm_password: str = ""
+    cp_error: str = ""
+
     # UI state
     login_error: str = ""
     is_logging_in: bool = False
@@ -61,6 +71,11 @@ class AuthState(rx.State):
         self.is_authenticated = False
         self.user_role = ""
         self.login_error = ""
+        self.needs_password_change = False
+        self.cp_error = ""
+        self.cp_current_password = ""
+        self.cp_new_password = ""
+        self.cp_confirm_password = ""
 
     def refresh_auth(self) -> None:
         """Re-evaluate auth state (idempotent, safe to call from other states)."""
@@ -92,8 +107,8 @@ class AuthState(rx.State):
         self.is_logging_in = True
         self.login_error = ""
 
-        # Attempt authentication
-        access_token, refresh_token, error = AuthService.login_user(
+        # Attempt authentication — 4-tuple: (access, refresh, force_change, error)
+        access_token, refresh_token, force_change, error = AuthService.login_user(
             self.username, self.password
         )
 
@@ -108,6 +123,17 @@ class AuthState(rx.State):
 
         # Load user info
         self._load_user_from_token()
+
+        # Handle force password change
+        if force_change:
+            self.needs_password_change = True
+            self.is_logging_in = False
+            return [
+                rx.toast.warning(
+                    "First login: please change your password"
+                ),
+                rx.redirect("/change-password"),
+            ]
 
         # Update last activity on successful login
         self.update_last_activity()
@@ -184,6 +210,13 @@ class AuthState(rx.State):
             return rx.redirect("/")
 
     @rx.event
+    async def check_auth_redirect(self) -> Any:
+        """Redirect to /login if not authenticated (called on index on_load)."""
+        self._load_user_from_token()
+        if not self.is_authenticated:
+            return rx.redirect("/login")
+
+    @rx.event
     def set_username(self, value: str) -> None:
         """Set login username field value."""
         self.username = value
@@ -192,6 +225,85 @@ class AuthState(rx.State):
     def set_password(self, value: str) -> None:
         """Set login password field value."""
         self.password = value
+
+    @rx.event
+    async def handle_change_password(self) -> Any:
+        """Change user password.
+
+        Validates old password, new password strength, and confirmation match.
+        On success, re-issues tokens and redirects to /.
+        """
+        self.cp_error = ""
+
+        # Validate new password vs confirm
+        if self.cp_new_password != self.cp_confirm_password:
+            self.cp_error = "Passwords do not match"
+            return rx.toast.error("Passwords do not match")
+
+        if not self.is_authenticated or not self.current_user:
+            return rx.toast.error("Not authenticated")
+
+        user_id = self.current_user.get("id")
+        if not user_id:
+            return rx.toast.error("User not found")
+
+        # Call AuthService.change_password
+        success, error_msg = AuthService.change_password(
+            user_id=int(user_id),
+            old_password=self.cp_current_password,
+            new_password=self.cp_new_password,
+        )
+
+        if not success:
+            self.cp_error = error_msg
+            return rx.toast.error(error_msg)
+
+        # Clear the force change flag
+        self.needs_password_change = False
+
+        # Re-issue tokens by re-logging in internally
+        new_token, new_refresh, _, re_login_error = AuthService.login_user(
+            self.current_user["username"], self.cp_new_password
+        )
+        if not re_login_error and new_token:
+            self.access_token = new_token
+            self.refresh_token = new_refresh or ""
+
+        # Clear form fields
+        self.cp_current_password = ""
+        self.cp_new_password = ""
+        self.cp_confirm_password = ""
+
+        return [
+            rx.toast.success("Password changed successfully"),
+            rx.redirect("/"),
+        ]
+
+    @rx.event
+    async def set_cp_current_password(self, value: str) -> None:
+        """Set change-password current password field."""
+        self.cp_current_password = value
+
+    @rx.event
+    async def set_cp_new_password(self, value: str) -> None:
+        """Set change-password new password field."""
+        self.cp_new_password = value
+
+    @rx.event
+    async def set_cp_confirm_password(self, value: str) -> None:
+        """Set change-password confirm password field."""
+        self.cp_confirm_password = value
+
+    @rx.event
+    async def check_change_password_access(self) -> Any:
+        """Redirect to /login or / if user shouldn't be on this page."""
+        if DEV_AUTH_BYPASS:
+            return None
+        if not self.is_authenticated:
+            return [rx.redirect("/login")]
+        if not self.needs_password_change:
+            return [rx.redirect("/")]
+        return None
 
     @rx.event
     async def create_initial_admin(self) -> None:
@@ -214,25 +326,31 @@ class AuthState(rx.State):
 
         # Read from environment
         admin_username = os.getenv("ADMIN_USERNAME", "admin")
-        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin1234")
         admin_email = os.getenv("ADMIN_EMAIL", "admin@kakumi.com")
         admin_full_name = os.getenv("ADMIN_FULL_NAME", "System Administrator")
 
-        # Create admin user
-        user, error = AuthService.create_user(
+        # Create admin user — bypass password validation since this is a
+        # bootstrap password that MUST be changed immediately.
+        password_hash = AuthService.hash_password(admin_password)
+        user = User(
             username=admin_username,
             email=admin_email,
-            password=admin_password,
+            password_hash=password_hash,
             full_name=admin_full_name,
             role="ADMIN",
             is_active=True,
+            force_password_change=True,
         )
-        if error:
-            # Log error but don't break; user can be created manually
-            print(f"Failed to create initial admin: {error}")
-        else:
-            print(f"Initial admin user '{admin_username}' created.")
-            self.admin_created = True
+        with rx.session() as session:
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+        self.admin_created = True
+        print(
+            f"Initial admin user '{admin_username}' created. "
+            "force_password_change=True"
+        )
 
     def _has_permission(self, required_role: str) -> bool:
         """Check if current user has permission for required role."""
@@ -249,3 +367,23 @@ class AuthState(rx.State):
     def is_operator(self) -> bool:
         """Whether current user has operator-level permissions."""
         return self._has_permission("OPERATOR")
+
+    @rx.var
+    def cp_has_uppercase(self) -> bool:
+        """Whether new password contains at least one uppercase letter."""
+        return bool(re.search(r"[A-Z]", self.cp_new_password))
+
+    @rx.var
+    def cp_has_lowercase(self) -> bool:
+        """Whether new password contains at least one lowercase letter."""
+        return bool(re.search(r"[a-z]", self.cp_new_password))
+
+    @rx.var
+    def cp_has_digit(self) -> bool:
+        """Whether new password contains at least one digit."""
+        return bool(re.search(r"[0-9]", self.cp_new_password))
+
+    @rx.var
+    def cp_has_special(self) -> bool:
+        """Whether new password contains at least one special character."""
+        return bool(re.search(r"[^A-Za-z0-9]", self.cp_new_password))

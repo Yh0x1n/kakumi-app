@@ -56,7 +56,7 @@ def login_page() -> rx.Component:
                                 ),
                                 rx.button(
                                     "Ingresar",
-                                    on_click=AuthState.login,
+                                    type="submit",
                                     width="100%",
                                     is_loading=AuthState.is_logging_in,
                                 ),

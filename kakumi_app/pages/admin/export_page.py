@@ -2,6 +2,7 @@
 
 import reflex as rx
 
+from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.export_state import ExportState
 from kakumi_app.components.sidebar import sidebar
 from kakumi_app.styles.tokens import BG_CODE_PREVIEW, BORDER_LIGHT, BORDER_SUBTLE
@@ -108,22 +109,55 @@ def export_form() -> rx.Component:
 
 def export_page() -> rx.Component:
     """Main export page layout."""
-    return rx.box(
-        rx.vstack(
-            rx.hstack(
-                sidebar(),
-                rx.vstack(
-                    export_form(),
+    return rx.cond(
+        AuthState.is_operator,
+        # Has permission: show content
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    sidebar(),
+                    rx.vstack(
+                        export_form(),
+                        width="100%",
+                        padding="2em",
+                    ),
                     width="100%",
-                    padding="2em",
                 ),
                 width="100%",
+                background_color="white",
+                min_height="100vh",
             ),
             width="100%",
-            background_color="white",
-            min_height="100vh",
         ),
-        width="100%",
+        # Denied: show permission error
+        rx.box(
+            rx.vstack(
+                rx.heading(
+                    "Access Denied",
+                    font_size="3xl",
+                    font_weight="bold",
+                    color="red",
+                ),
+                rx.text(
+                    "You don't have permission to access this page.",
+                    font_size="lg",
+                    color="gray",
+                ),
+                rx.button(
+                    "Go Home",
+                    on_click=rx.redirect("/"),
+                    color_scheme="blue",
+                    margin_top="1em",
+                ),
+                spacing="4",
+                justify_content="center",
+                align_items="center",
+                min_height="50vh",
+            ),
+            width="100%",
+            padding="2em",
+            on_mount=rx.toast.error("Access denied"),
+        ),
     )
 
 

@@ -39,6 +39,7 @@ from .states.kumite_match_state import KumiteMatchState
 from .states.results_state import ResultsState
 from .states.secondary_display_state import SecondaryDisplayState
 from .states.tournament_state import TournamentState
+from .states.auth_state import AuthState, DEV_AUTH_BYPASS
 from .styles.tokens import HOVER_GRAY
 
 
@@ -53,11 +54,13 @@ def _register_side_effect_pages() -> None:
     importlib.import_module("kakumi_app.pages.admin.import_page")
     importlib.import_module("kakumi_app.pages.admin.referees_page")
     importlib.import_module("kakumi_app.pages.admin.teams_page")
+    importlib.import_module("kakumi_app.pages.admin.users_page")
     importlib.import_module("kakumi_app.pages.auth.login")
+    importlib.import_module("kakumi_app.pages.auth.change_password")
 
 
 def index() -> rx.Component:
-    return rx.box(
+    content = rx.box(
         rx.vstack(
             rx.hstack(
                 sidebar(),
@@ -108,10 +111,18 @@ def index() -> rx.Component:
         height="100vh",
     )
 
+    # Auth guard handled by on_load=AuthState.check_auth_redirect in app.add_page.
+    # DEV_AUTH_BYPASS skips the guard entirely (plain Python bool).
+    if DEV_AUTH_BYPASS:
+        return content
+    return content
+
 
 app = rx.App()
 _register_side_effect_pages()
-app.add_page(index, title="Kakumi Tournament Manager")
+app.add_page(
+    index, title="Kakumi Tournament Manager", on_load=AuthState.check_auth_redirect
+)
 app.add_page(registries, title="Kakumi | Registros")
 app.add_page(
     tournament, title="Kakumi | Torneo", on_load=TournamentState.load_workspace
