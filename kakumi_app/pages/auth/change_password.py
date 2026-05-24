@@ -7,7 +7,7 @@ import reflex as rx
 
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.auth_state import DEV_AUTH_BYPASS
-from kakumi_app.styles.tokens import BG_PAGE
+from kakumi_app.styles.tokens import BG_PAGE, CARD_BG, TEXT_TERTIARY
 
 
 def _strength_icon(is_valid) -> rx.Component:
@@ -33,7 +33,7 @@ def change_password_form() -> rx.Component:
                 "Your first login requires a password change. "
                 "Please choose a new strong password.",
                 font_size="sm",
-                color="gray",
+                color=TEXT_TERTIARY,
                 margin_bottom="1.5em",
             ),
             rx.form(
@@ -78,9 +78,7 @@ def change_password_form() -> rx.Component:
                         rx.heading("Password requirements:", font_size="sm"),
                         rx.vstack(
                             rx.hstack(
-                                _strength_icon(
-                                    AuthState.cp_new_password.length() >= 8
-                                ),
+                                _strength_icon(AuthState.cp_new_password.length() >= 8),
                                 rx.text("Minimum 8 characters", font_size="xs"),
                                 spacing="2",
                                 align="center",
@@ -105,8 +103,7 @@ def change_password_form() -> rx.Component:
                             ),
                             rx.hstack(
                                 _strength_icon(AuthState.cp_has_special),
-                                rx.text("Contains a special character",
-                                        font_size="xs"),
+                                rx.text("Contains a special character", font_size="xs"),
                                 spacing="2",
                                 align="center",
                             ),
@@ -135,7 +132,7 @@ def change_password_form() -> rx.Component:
         width="400px",
         box_shadow="lg",
         border_radius="lg",
-        bg="white",
+        bg=CARD_BG,
     )
 
 

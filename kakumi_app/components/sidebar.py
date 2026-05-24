@@ -8,6 +8,7 @@ from kakumi_app.styles.tokens import (
     BRAND_RED,
     BRAND_RED_HOVER,
     HOVER_GRAY,
+    TEXT_PRIMARY,
     TEXT_WHITE,
 )
 
@@ -96,7 +97,7 @@ def sidebar() -> rx.Component:
                 rx.icon(
                     "align-justify",
                     size=35,
-                    color="black",
+                    color=TEXT_PRIMARY,
                     style={
                         "_hover": {
                             "background-color": HOVER_GRAY,
@@ -145,9 +146,7 @@ def sidebar() -> rx.Component:
                                     underline="none",
                                 ),
                             ),
-                            rx.divider(
-                                border_color=ACCENT_GOLD, border_width="0.5px"
-                            ),
+                            rx.divider(border_color=ACCENT_GOLD, border_width="0.5px"),
                             width="100%",
                             spacing="0",
                         ),

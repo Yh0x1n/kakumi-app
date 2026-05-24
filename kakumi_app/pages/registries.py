@@ -6,7 +6,6 @@ import reflex as rx
 
 from kakumi_app.components.registries_items import reg_items
 from kakumi_app.components.registry_crud import (
-    MUTED_TEXT,
     registry_actions_header,
     registry_empty_state,
     registry_error,
@@ -21,11 +20,12 @@ from kakumi_app.states.athlete_state import AthleteState
 from kakumi_app.utils import BELT_RANKS
 from kakumi_app.states.referee_state import RefereeState
 from kakumi_app.states.tournament_crud_state import TournamentCrudState
+from kakumi_app.styles.tokens import MUTED_TEXT, TEXT_PRIMARY
 
 
 def _registry_form_heading(title: rx.Var | str) -> rx.Component:
     """Render shared form heading for registry modals/cards."""
-    return rx.heading(title, size="6", color="black")
+    return rx.heading(title, size="6", color=TEXT_PRIMARY)
 
 
 def registries() -> rx.Component:
@@ -33,7 +33,7 @@ def registries() -> rx.Component:
     return registry_page_shell(
         body=rx.vstack(
             rx.vstack(
-                rx.heading("Registros", size="8", color="black"),
+                rx.heading("Registros", size="8", color=TEXT_PRIMARY),
                 rx.text(
                     "Selecciona un módulo para gestionar atletas, árbitros y torneos.",
                     color=MUTED_TEXT,
@@ -71,18 +71,18 @@ def _athlete_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Nombre *", size="3", color="black"),
+                        rx.heading("Nombre *", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Nombre *",
                             value=state.name,
                             on_change=state.set_name,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Email", size="3", color="black"),
+                        rx.heading("Email", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Email",
                             value=state.email,
@@ -90,13 +90,13 @@ def _athlete_form() -> rx.Component:
                             type="email",
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Edad", size="3", color="black"),
+                        rx.heading("Edad", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Edad *",
                             value=state.age,
@@ -104,18 +104,18 @@ def _athlete_form() -> rx.Component:
                             type="number",
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Género", size="3", color="black"),
+                        rx.heading("Género", size="3", color=TEXT_PRIMARY),
                         rx.select(
                             ["MASCULINO", "FEMENINO"],
                             value=state.gender,
                             on_change=state.set_gender,
                             style={
                                 "border": "1px solid black",
-                                "color": "black",
+                                "color": TEXT_PRIMARY,
                                 "background_color": "black",
                             },
                         ),
@@ -123,7 +123,7 @@ def _athlete_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Peso (kg)", size="3", color="black"),
+                        rx.heading("Peso (kg)", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Peso (kg)",
                             value=state.weight_kg,
@@ -131,11 +131,11 @@ def _athlete_form() -> rx.Component:
                             type="number",
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Grado", size="3", color="black"),
+                        rx.heading("Grado", size="3", color=TEXT_PRIMARY),
                         rx.select(
                             BELT_RANKS,
                             value=state.belt_rank,
@@ -143,7 +143,7 @@ def _athlete_form() -> rx.Component:
                             placeholder="Seleccioná un grado",
                             style={
                                 "border": "1px solid black",
-                                "color": "black",
+                                "color": TEXT_PRIMARY,
                                 "background_color": "white",
                             },
                         ),
@@ -151,19 +151,19 @@ def _athlete_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Dojo", size="3", color="black"),
+                        rx.heading("Dojo", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Dojo",
                             value=state.dojo,
                             on_change=state.set_dojo,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
                         rx.heading(
-                            "Nacionalidad (ISO 3 letras)", size="3", color="black"
+                            "Nacionalidad (ISO 3 letras)", size="3", color=TEXT_PRIMARY
                         ),
                         rx.input(
                             placeholder="Nacionalidad (ISO 3 letras)",
@@ -172,30 +172,29 @@ def _athlete_form() -> rx.Component:
                             max_length=3,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                 ),
-                
                 # Fila final
                 rx.flex(
                     rx.box(
                         rx.vstack(
-                            rx.heading("Licencia", size="3", color="black"),
+                            rx.heading("Licencia", size="3", color=TEXT_PRIMARY),
                             rx.input(
                                 placeholder="Licencia",
                                 value=state.license_number,
                                 on_change=state.set_license_number,
                                 border="1px solid black",
                                 background_color="white",
-                                color="black",
+                                color=TEXT_PRIMARY,
                             ),
                         ),
                         width=["100%", "100%", "50%"],
                     ),
                     rx.box(
                         rx.checkbox(
-                            rx.text("Activo", color="black"),
+                            rx.text("Activo", color=TEXT_PRIMARY),
                             checked=state.is_active,
                             on_change=state.set_is_active,
                         ),
@@ -242,18 +241,18 @@ def _referee_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Nombre *", size="3", color="black"),
+                        rx.heading("Nombre *", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Nombre *",
                             value=state.name,
                             on_change=state.set_name,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Licencia *", size="3", color="black"),
+                        rx.heading("Licencia *", size="3", color=TEXT_PRIMARY),
                         rx.select(
                             state.license_number_options,
                             value=state.license_number,
@@ -261,7 +260,7 @@ def _referee_form() -> rx.Component:
                             placeholder="Seleccioná o escribí licencia",
                             style={
                                 "border": "1px solid black",
-                                "color": "black",
+                                "color": TEXT_PRIMARY,
                                 "background_color": "white",
                             },
                         ),
@@ -269,27 +268,32 @@ def _referee_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Nivel de licencia", size="3", color="black"),
+                        rx.heading("Nivel de licencia", size="3", color=TEXT_PRIMARY),
                         rx.select(
                             ["NACIONAL", "INTERNACIONAL"],
                             value=state.license_level,
                             on_change=state.set_license_level,
                             style={
                                 "border": "1px solid black",
-                                "color": "black",
+                                "color": TEXT_PRIMARY,
                                 "background_color": "white",
                             },
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Rol", size="3", color="black"),
+                        rx.heading("Rol", size="3", color=TEXT_PRIMARY),
                         rx.select(
-                            ["ÁRBITRO", "JUEZ", "OFICIAL DE MESA", "SUPERVISOR (KANSA)"],
+                            [
+                                "ÁRBITRO",
+                                "JUEZ",
+                                "OFICIAL DE MESA",
+                                "SUPERVISOR (KANSA)",
+                            ],
                             value=state.role,
                             on_change=state.set_role,
                             style={
                                 "border": "1px solid black",
-                                "color": "black",
+                                "color": TEXT_PRIMARY,
                                 "background_color": "white",
                             },
                         ),
@@ -298,7 +302,7 @@ def _referee_form() -> rx.Component:
                 row(
                     rx.vstack(
                         rx.heading(
-                            "Certificación tatami (JSON)", size="3", color="black"
+                            "Certificación tatami (JSON)", size="3", color=TEXT_PRIMARY
                         ),
                         rx.input(
                             placeholder="Certificación tatami (JSON)",
@@ -306,24 +310,24 @@ def _referee_form() -> rx.Component:
                             on_change=state.set_tatami_certified,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Dojo", size="3", color="black"),
+                        rx.heading("Dojo", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Dojo",
                             value=state.dojo,
                             on_change=state.set_dojo,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Email", size="3", color="black"),
+                        rx.heading("Email", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Email",
                             value=state.email,
@@ -331,25 +335,25 @@ def _referee_form() -> rx.Component:
                             type="email",
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Teléfono", size="3", color="black"),
+                        rx.heading("Teléfono", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Teléfono",
                             value=state.phone,
                             on_change=state.set_phone,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                 ),
                 rx.flex(
                     rx.box(
                         rx.checkbox(
-                            rx.text("Disponible", color="black"),
+                            rx.text("Disponible", color=TEXT_PRIMARY),
                             checked=state.is_available,
                             on_change=state.set_is_available,
                         ),
@@ -397,56 +401,56 @@ def _tournament_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Nombre *", size="3", color="black"),
+                        rx.heading("Nombre *", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Nombre *",
                             value=state.name,
                             on_change=state.set_name,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Sede *", size="3", color="black"),
+                        rx.heading("Sede *", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Sede *",
                             value=state.venue,
                             on_change=state.set_venue,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Inicio (YYYY-MM-DD)", size="3", color="black"),
+                        rx.heading("Inicio (YYYY-MM-DD)", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Inicio (YYYY-MM-DD)",
                             value=state.start_date,
                             on_change=state.set_start_date,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Fin (YYYY-MM-DD)", size="3", color="black"),
+                        rx.heading("Fin (YYYY-MM-DD)", size="3", color=TEXT_PRIMARY),
                         rx.input(
                             placeholder="Fin (YYYY-MM-DD)",
                             value=state.end_date,
                             on_change=state.set_end_date,
                             border="1px solid black",
                             background_color="white",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                 ),
                 rx.flex(
                     rx.box(
                         rx.vstack(
-                            rx.heading("Tatamis", size="3", color="black"),
+                            rx.heading("Tatamis", size="3", color=TEXT_PRIMARY),
                             rx.input(
                                 placeholder="Tatamis",
                                 value=state.tatami_count,
@@ -454,7 +458,7 @@ def _tournament_form() -> rx.Component:
                                 type="number",
                                 border="1px solid black",
                                 background_color="white",
-                                color="black",
+                                color=TEXT_PRIMARY,
                             ),
                         ),
                         width=["100%", "100%", "50%"],
@@ -467,14 +471,14 @@ def _tournament_form() -> rx.Component:
                 rx.flex(
                     rx.box(
                         rx.vstack(
-                            rx.heading("ID creador", size="3", color="black"),
+                            rx.heading("ID creador", size="3", color=TEXT_PRIMARY),
                             rx.input(
                                 placeholder="ID creador",
                                 value=state.created_by_id,
                                 on_change=state.set_created_by_id,
                                 border="1px solid black",
                                 background_color="white",
-                                color="black",
+                                color=TEXT_PRIMARY,
                             ),
                         ),
                         width=["100%", "100%", "50%"],
@@ -513,15 +517,16 @@ def _athletes_card() -> rx.Component:
             headers=["Nombre", "Email", "Dojo", "Estado", "Acciones"],
             rows_var=state.athletes,
             row_renderer=lambda athlete: rx.table.row(
-                rx.table.cell(athlete["name"], color="black"),
+                rx.table.cell(athlete["name"], color=TEXT_PRIMARY),
                 rx.table.cell(
-                    rx.cond(athlete["email"], athlete["email"], "-"), color="black"
+                    rx.cond(athlete["email"], athlete["email"], "-"), color=TEXT_PRIMARY
                 ),
                 rx.table.cell(
-                    rx.cond(athlete["dojo"], athlete["dojo"], "-"), color="black"
+                    rx.cond(athlete["dojo"], athlete["dojo"], "-"), color=TEXT_PRIMARY
                 ),
                 rx.table.cell(
-                    rx.cond(athlete["is_active"], "Activo", "Inactivo"), color="black"
+                    rx.cond(athlete["is_active"], "Activo", "Inactivo"),
+                    color=TEXT_PRIMARY,
                 ),
                 rx.table.cell(
                     rx.hstack(
@@ -562,7 +567,9 @@ def _athletes_import_panel() -> rx.Component:
     return registry_import_panel(
         upload_id=upload_id,
         selected_file_name=state.import_file_name,
-        on_upload_click=state.handle_import_upload(rx.upload_files(upload_id=upload_id)),
+        on_upload_click=state.handle_import_upload(
+            rx.upload_files(upload_id=upload_id)
+        ),
         on_cancel_click=[state.close_import_panel, rx.clear_selected_files(upload_id)],
     )
 
@@ -581,14 +588,14 @@ def _referees_card() -> rx.Component:
             headers=["Nombre", "Licencia", "Dojo", "Estado", "Acciones"],
             rows_var=state.referees,
             row_renderer=lambda referee: rx.table.row(
-                rx.table.cell(referee["name"], color="black"),
-                rx.table.cell(referee["license_number"], color="black"),
+                rx.table.cell(referee["name"], color=TEXT_PRIMARY),
+                rx.table.cell(referee["license_number"], color=TEXT_PRIMARY),
                 rx.table.cell(
-                    rx.cond(referee["dojo"], referee["dojo"], "-"), color="black"
+                    rx.cond(referee["dojo"], referee["dojo"], "-"), color=TEXT_PRIMARY
                 ),
                 rx.table.cell(
                     rx.cond(referee["is_available"], "Disponible", "No disponible"),
-                    color="black",
+                    color=TEXT_PRIMARY,
                 ),
                 rx.table.cell(
                     rx.hstack(
@@ -629,7 +636,9 @@ def _referees_import_panel() -> rx.Component:
     return registry_import_panel(
         upload_id=upload_id,
         selected_file_name=state.import_file_name,
-        on_upload_click=state.handle_import_upload(rx.upload_files(upload_id=upload_id)),
+        on_upload_click=state.handle_import_upload(
+            rx.upload_files(upload_id=upload_id)
+        ),
         on_cancel_click=[state.close_import_panel, rx.clear_selected_files(upload_id)],
     )
 
@@ -648,10 +657,10 @@ def _tournaments_card() -> rx.Component:
             headers=["Nombre", "Sede", "Estado", "Inicio", "Acciones"],
             rows_var=state.tournaments,
             row_renderer=lambda tournament: rx.table.row(
-                rx.table.cell(tournament["name"], color="black"),
-                rx.table.cell(tournament["venue"], color="black"),
-                rx.table.cell(tournament["status"], color="black"),
-                rx.table.cell(tournament["start_date"], color="black"),
+                rx.table.cell(tournament["name"], color=TEXT_PRIMARY),
+                rx.table.cell(tournament["venue"], color=TEXT_PRIMARY),
+                rx.table.cell(tournament["status"], color=TEXT_PRIMARY),
+                rx.table.cell(tournament["start_date"], color=TEXT_PRIMARY),
                 rx.table.cell(
                     rx.hstack(
                         rx.button(
@@ -702,7 +711,9 @@ def athletes() -> rx.Component:
         rx.cond(
             state.show_form,
             _athlete_form(),
-            rx.cond(state.show_import_panel, _athletes_import_panel(), _athletes_card()),
+            rx.cond(
+                state.show_import_panel, _athletes_import_panel(), _athletes_card()
+            ),
         ),
         spacing="4",
         width="100%",

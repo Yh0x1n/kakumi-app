@@ -3,6 +3,7 @@
 import reflex as rx
 
 from kakumi_app.components.registry_crud import registry_page_shell
+from kakumi_app.styles.tokens import TEXT_PRIMARY, TEXT_TERTIARY
 from kakumi_app.states.tournament_category_state import TournamentCategoryState
 from kakumi_app.states.tournament_state import TournamentState
 from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
@@ -11,8 +12,10 @@ from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
 def _workspace_header() -> rx.Component:
     """Render workspace page heading."""
     return rx.vstack(
-        rx.heading("Torneo", size="8", color="black"),
-        rx.text("Gestiona el ciclo competitivo, categorías y tatamis.", color="black"),
+        rx.heading("Torneo", size="8", color=TEXT_PRIMARY),
+        rx.text(
+            "Gestiona el ciclo competitivo, categorías y tatamis.", color=TEXT_PRIMARY
+        ),
         spacing="1",
         align="start",
         width="100%",
@@ -24,10 +27,10 @@ def _selector_card() -> rx.Component:
     state = TournamentState
     return rx.card(
         rx.vstack(
-            rx.heading("Torneos disponibles", size="5", color="black"),
+            rx.heading("Torneos disponibles", size="5", color=TEXT_PRIMARY),
             rx.cond(
                 state.tournaments.length() == 0,
-                rx.text("No hay torneos cargados todavía.", color="black"),
+                rx.text("No hay torneos cargados todavía.", color=TEXT_PRIMARY),
                 rx.foreach(
                     state.tournaments,
                     lambda tournament: rx.button(
@@ -60,14 +63,15 @@ def _selection_summary() -> rx.Component:
     return rx.cond(
         state.current_tournament,
         rx.vstack(
-            rx.heading(state.current_tournament["name"], size="5", color="black"),
+            rx.heading(state.current_tournament["name"], size="5", color=TEXT_PRIMARY),
             rx.text(
-                f"Estado actual: {state.current_tournament['status']}", color="black"
+                f"Estado actual: {state.current_tournament['status']}",
+                color=TEXT_PRIMARY,
             ),
-            rx.text(f"Sede: {state.current_tournament['venue']}", color="black"),
+            rx.text(f"Sede: {state.current_tournament['venue']}", color=TEXT_PRIMARY),
             rx.text(
                 f"Tatamis declarados: {state.current_tournament['tatami_count']}",
-                color="black",
+                color=TEXT_PRIMARY,
             ),
             rx.link(
                 rx.button(
@@ -83,7 +87,7 @@ def _selection_summary() -> rx.Component:
             width="100%",
         ),
         rx.text(
-            "Selecciona un torneo para ver sus detalles operativos.", color="black"
+            "Selecciona un torneo para ver sus detalles operativos.", color=TEXT_PRIMARY
         ),
     )
 
@@ -93,11 +97,11 @@ def _lifecycle_card() -> rx.Component:
     state = TournamentState
     return rx.card(
         rx.vstack(
-            rx.heading("Controles de ciclo", size="5", color="black"),
+            rx.heading("Controles de ciclo", size="5", color=TEXT_PRIMARY),
             _selection_summary(),
             rx.text(
                 "Solo operadores autorizados pueden ejecutar transiciones.",
-                color="gray",
+                color=TEXT_TERTIARY,
             ),
             rx.cond(
                 state.transition_error,
@@ -189,7 +193,7 @@ def _lifecycle_card() -> rx.Component:
                 ),
                 rx.text(
                     "No tienes permisos para operar ciclo de torneo.",
-                    color="gray",
+                    color=TEXT_TERTIARY,
                 ),
             ),
             spacing="3",
@@ -205,8 +209,8 @@ def _categories_card() -> rx.Component:
     state = TournamentCategoryState
     return rx.card(
         rx.vstack(
-            rx.heading("Categorías manuales", size="5", color="black"),
-            rx.text("Administra categorías creadas manualmente.", color="black"),
+            rx.heading("Categorías manuales", size="5", color=TEXT_PRIMARY),
+            rx.text("Administra categorías creadas manualmente.", color=TEXT_PRIMARY),
             rx.cond(
                 state.error_message,
                 rx.callout(
@@ -223,7 +227,7 @@ def _categories_card() -> rx.Component:
                         rx.heading(
                             "Categorías del torneo seleccionado",
                             size="4",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                         rx.button(
                             "Nueva categoría",
@@ -233,7 +237,7 @@ def _categories_card() -> rx.Component:
                         width="100%",
                         align="center",
                     ),
-                    rx.text(state.current_tournament_name, color="black"),
+                    rx.text(state.current_tournament_name, color=TEXT_PRIMARY),
                     rx.cond(
                         state.show_form,
                         rx.form(
@@ -245,7 +249,7 @@ def _categories_card() -> rx.Component:
                                         "Nueva categoría",
                                     ),
                                     size="4",
-                                    color="black",
+                                    color=TEXT_PRIMARY,
                                 ),
                                 rx.input(
                                     placeholder="Nombre categoría",
@@ -331,39 +335,57 @@ def _categories_card() -> rx.Component:
                         rx.table.root(
                             rx.table.header(
                                 rx.table.row(
-                                    rx.table.column_header_cell("Nombre"),
-                                    rx.table.column_header_cell("Clasificación"),
-                                    rx.table.column_header_cell("Sistema"),
-                                    rx.table.column_header_cell("Acciones"),
+                                    rx.table.column_header_cell(
+                                        "Nombre", color=TEXT_PRIMARY
+                                    ),
+                                    rx.table.column_header_cell(
+                                        "Clasificación", color=TEXT_PRIMARY
+                                    ),
+                                    rx.table.column_header_cell(
+                                        "Sistema", color=TEXT_PRIMARY
+                                    ),
+                                    rx.table.column_header_cell(
+                                        "Acciones", color=TEXT_PRIMARY
+                                    ),
                                 )
                             ),
                             rx.table.body(
                                 rx.foreach(
                                     state.categories,
                                     lambda category: rx.table.row(
-                                        rx.table.cell(category["name"]),
+                                        rx.table.cell(
+                                            category["name"], color=TEXT_PRIMARY
+                                        ),
                                         rx.table.cell(
                                             rx.fragment(
                                                 f"{category['gender']} · {category['min_age']}-{category['max_age']}"  # noqa
-                                            )
+                                            ),
+                                            color=TEXT_PRIMARY,
                                         ),
-                                        rx.table.cell(category["competition_system"]),
+                                        rx.table.cell(
+                                            category["competition_system"],
+                                            color=TEXT_PRIMARY,
+                                        ),
                                         rx.table.cell(
                                             rx.hstack(
                                                 rx.button(
                                                     "Editar",
                                                     size="2",
-                                                    on_click=lambda event: state.set_form_values(
-                                                        event,
-                                                        category,
+                                                    on_click=lambda event: (
+                                                        state.set_form_values(
+                                                            event,
+                                                            category,
+                                                        )
                                                     ),
                                                 ),
                                                 rx.button(
                                                     "Eliminar categoría",
                                                     size="2",
                                                     variant="outline",
-                                                    on_click=lambda: state.delete_category(
-                                                        category["id"]
+                                                    on_click=lambda: (
+                                                        state.delete_category(
+                                                            category["id"]
+                                                        )
                                                     ),
                                                 ),
                                                 spacing="2",
@@ -376,7 +398,7 @@ def _categories_card() -> rx.Component:
                         ),
                         rx.text(
                             "No hay categorías manuales cargadas todavía.",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                     ),
                     width="100%",
@@ -385,7 +407,7 @@ def _categories_card() -> rx.Component:
                 ),
                 rx.text(
                     "Selecciona un torneo para administrar sus categorías.",
-                    color="gray",
+                    color=TEXT_TERTIARY,
                 ),
             ),
             spacing="3",
@@ -404,11 +426,11 @@ def _tatami_card() -> rx.Component:
             rx.heading(
                 "Tatamis",
                 size="5",
-                color="black",
+                color=TEXT_PRIMARY,
             ),
             rx.text(
                 "Áreas oficiales para el desarrollo del torneo",
-                color="black",
+                color=TEXT_PRIMARY,
             ),
             rx.cond(
                 state.error_message,
@@ -426,7 +448,7 @@ def _tatami_card() -> rx.Component:
                         rx.heading(
                             "Tatamis del torneo seleccionado",
                             size="4",
-                            color="black",
+                            color=TEXT_PRIMARY,
                         ),
                         rx.button(
                             "Nuevo tatami",
@@ -438,7 +460,7 @@ def _tatami_card() -> rx.Component:
                     ),
                     rx.text(
                         state.current_tournament_name,
-                        color="black",
+                        color=TEXT_PRIMARY,
                     ),
                     rx.hstack(
                         rx.badge(
@@ -463,7 +485,7 @@ def _tatami_card() -> rx.Component:
                                         "Nuevo tatami",
                                     ),
                                     size="4",
-                                    color="black",
+                                    color=TEXT_PRIMARY,
                                 ),
                                 rx.input(
                                     placeholder="Nombre tatami",
@@ -498,23 +520,34 @@ def _tatami_card() -> rx.Component:
                         rx.table.root(
                             rx.table.header(
                                 rx.table.row(
-                                    rx.table.column_header_cell("Tatami"),
-                                    rx.table.column_header_cell("Ubicación"),
-                                    rx.table.column_header_cell("Estado"),
-                                    rx.table.column_header_cell("Acciones"),
+                                    rx.table.column_header_cell(
+                                        "Tatami", color=TEXT_PRIMARY
+                                    ),
+                                    rx.table.column_header_cell(
+                                        "Ubicación", color=TEXT_PRIMARY
+                                    ),
+                                    rx.table.column_header_cell(
+                                        "Estado", color=TEXT_PRIMARY
+                                    ),
+                                    rx.table.column_header_cell(
+                                        "Acciones", color=TEXT_PRIMARY
+                                    ),
                                 )
                             ),
                             rx.table.body(
                                 rx.foreach(
                                     state.tatamis,
                                     lambda tatami: rx.table.row(
-                                        rx.table.cell(tatami["name"]),
+                                        rx.table.cell(
+                                            tatami["name"], color=TEXT_PRIMARY
+                                        ),
                                         rx.table.cell(
                                             rx.cond(
                                                 tatami["location"],
                                                 tatami["location"],
                                                 "Sin referencia",
-                                            )
+                                            ),
+                                            color=TEXT_PRIMARY,
                                         ),
                                         rx.table.cell(
                                             rx.badge(
@@ -528,16 +561,19 @@ def _tatami_card() -> rx.Component:
                                                     "green",
                                                     "gray",
                                                 ),
-                                            )
+                                            ),
+                                            color=TEXT_PRIMARY,
                                         ),
                                         rx.table.cell(
                                             rx.hstack(
                                                 rx.button(
                                                     "Editar",
                                                     size="2",
-                                                    on_click=lambda event: state.set_form_values(
-                                                        event,
-                                                        tatami,
+                                                    on_click=lambda event: (
+                                                        state.set_form_values(
+                                                            event,
+                                                            tatami,
+                                                        )
                                                     ),
                                                 ),
                                                 rx.button(
@@ -548,16 +584,20 @@ def _tatami_card() -> rx.Component:
                                                     ),
                                                     size="2",
                                                     variant="outline",
-                                                    on_click=lambda: state.toggle_tatami_active(
-                                                        tatami["id"]
+                                                    on_click=lambda: (
+                                                        state.toggle_tatami_active(
+                                                            tatami["id"]
+                                                        )
                                                     ),
                                                 ),
                                                 rx.button(
                                                     "Eliminar tatami",
                                                     size="2",
                                                     variant="outline",
-                                                    on_click=lambda: state.delete_tatami(
-                                                        tatami["id"]
+                                                    on_click=lambda: (
+                                                        state.delete_tatami(
+                                                            tatami["id"]
+                                                        )
                                                     ),
                                                 ),
                                                 spacing="2",
@@ -569,14 +609,16 @@ def _tatami_card() -> rx.Component:
                             ),
                             width="100%",
                         ),
-                        rx.text("No hay tatamis configurados todavía.", color="gray"),
+                        rx.text(
+                            "No hay tatamis configurados todavía.", color=TEXT_TERTIARY
+                        ),
                     ),
                     width="100%",
                     spacing="3",
                     align="stretch",
                 ),
                 rx.text(
-                    "Selecciona un torneo para administrar tatamis.", color="black"
+                    "Selecciona un torneo para administrar tatamis.", color=TEXT_PRIMARY
                 ),
             ),
             spacing="3",

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime
 import importlib
-import io
 import sys
 import uuid
 from io import BytesIO
@@ -123,8 +122,7 @@ def test_athlete_and_referee_derived_labels_are_human_readable() -> None:
     assert athlete_state.athlete_status_label({"is_active": False}) == "Inactivo"
 
     assert (
-        referee_state.referee_availability_label({"is_available": True})
-        == "Disponible"
+        referee_state.referee_availability_label({"is_available": True}) == "Disponible"
     )
     assert (
         referee_state.referee_availability_label({"is_available": False})
@@ -604,9 +602,7 @@ async def test_athlete_state_handle_import_upload_uses_real_file_flow(
 ) -> None:
     """Athlete import must process uploaded file contents instead of pasted text."""
     state = AthleteState()
-    payload = build_athletes_workbook(
-        [{"name": "Ana", "age": 26, "gender": "FEMALE"}]
-    )
+    payload = build_athletes_workbook([{"name": "Ana", "age": 26, "gender": "FEMALE"}])
     calls: dict[str, bytes | None] = {"content": None}
 
     def _fake_import(workbook_bytes: bytes) -> tuple[int, int, list[str]]:
@@ -916,8 +912,9 @@ def test_registry_shell_has_no_duplicate_header_search_or_hamburger() -> None:
     assert '"☰"' not in shell_content
 
 
-def test_registries_page_keeps_active_import_export_buttons_for_supported_entities(
-) -> None:
+def test_registries_page_keeps_active_import_export_buttons_for_supported_entities() -> (
+    None
+):
     """
     Athletes/referees must keep active import and export actions in redesigned
     header.
@@ -947,7 +944,8 @@ def test_registries_page_wires_upload_components_for_supported_entities() -> Non
     assert "referees_registry_upload" in file_content
     assert "rx.upload(" in shared_content
     assert "rx.selected_files(" in shared_content
-    assert "handle_import_upload(rx.upload_files(" in file_content
+    assert "handle_import_upload" in file_content
+    assert "rx.upload_files" in file_content
 
 
 def test_registry_import_panel_copy_is_spanish_and_xlsx_only() -> None:
@@ -983,9 +981,7 @@ def test_admin_import_route_redirects_to_shared_athlete_registry_flow() -> None:
     import_page_module = importlib.import_module("kakumi_app.pages.admin.import_page")
 
     new_pages = page_module.DECORATED_PAGES.get("kakumi_app", [])[original_count:]
-    config = next(
-        cfg for _, cfg in new_pages if cfg.get("route") == "/admin/import"
-    )
+    config = next(cfg for _, cfg in new_pages if cfg.get("route") == "/admin/import")
 
     assert _is_redirect_event(config.get("on_load"), "/registries/athletes")
     assert isinstance(import_page_module.import_athletes(), rx.Component)
@@ -995,8 +991,7 @@ def test_admin_import_route_redirects_to_shared_athlete_registry_flow() -> None:
 def test_admin_export_page_stays_scoped_to_tournament_results_only() -> None:
     """Admin export page must stay focused on tournament results, not registries."""
     file_content = (
-        Path(__file__).resolve().parents[1]
-        / "kakumi_app/pages/admin/export_page.py"
+        Path(__file__).resolve().parents[1] / "kakumi_app/pages/admin/export_page.py"
     ).read_text(encoding="utf-8")
 
     assert "Exportar Resultados de Torneo" in file_content

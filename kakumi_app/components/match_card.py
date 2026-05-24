@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import reflex as rx
 
+from kakumi_app.styles.tokens import TEXT_TERTIARY
 from kakumi_app.utils import MatchCardData
 
 
@@ -27,7 +28,7 @@ def match_card(match: MatchCardData, show_future_action: bool = False) -> rx.Com
                 align="center",
             ),
             rx.text(match["aka_label"], font_weight="bold"),
-            rx.text("vs", color="gray"),
+            rx.text("vs", color=TEXT_TERTIARY),
             rx.text(match["ao_label"], font_weight="bold"),
             rx.hstack(
                 rx.text("Tatami:", font_weight="medium"),

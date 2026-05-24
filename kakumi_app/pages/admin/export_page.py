@@ -5,7 +5,14 @@ import reflex as rx
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.export_state import ExportState
 from kakumi_app.components.sidebar import sidebar
-from kakumi_app.styles.tokens import BG_CODE_PREVIEW, BORDER_LIGHT, BORDER_SUBTLE
+from kakumi_app.styles.tokens import (
+    BG_CODE_PREVIEW,
+    BORDER_LIGHT,
+    BORDER_SUBTLE,
+    TEXT_TERTIARY,
+    BG_PAGE,
+    TEXT_PRIMARY,
+)
 
 
 def export_form() -> rx.Component:
@@ -14,13 +21,16 @@ def export_form() -> rx.Component:
 
     return rx.vstack(
         rx.heading(
-            "Exportar Resultados de Torneo", font_size="2xl", margin_bottom="1em"
+            "Exportar Resultados de Torneo",
+            font_size="2xl",
+            margin_bottom="1em",
+            color=TEXT_PRIMARY,
         ),
         rx.text(
             "Selecciona un torneo y formato para exportar resultados."
             " Los registros de atletas y árbitros se exportan desde Registros.",
             font_size="md",
-            color="gray",
+            color=TEXT_TERTIARY,
             margin_bottom="2em",
         ),
         rx.form(
@@ -39,6 +49,7 @@ def export_form() -> rx.Component:
                     direction="row",
                     spacing="4",
                     margin_y="1em",
+                    color=TEXT_PRIMARY,
                 ),
                 rx.button(
                     "Exportar",
@@ -124,7 +135,7 @@ def export_page() -> rx.Component:
                     width="100%",
                 ),
                 width="100%",
-                background_color="white",
+                background_color=BG_PAGE,
                 min_height="100vh",
             ),
             width="100%",
@@ -141,7 +152,7 @@ def export_page() -> rx.Component:
                 rx.text(
                     "You don't have permission to access this page.",
                     font_size="lg",
-                    color="gray",
+                    color=TEXT_TERTIARY,
                 ),
                 rx.button(
                     "Go Home",

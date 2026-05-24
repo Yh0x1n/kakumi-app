@@ -12,6 +12,7 @@ from ..components.kumite_scoreboard import kumite_scoreboard
 from ..components.sidebar import sidebar
 from ..states.kata_match_state import KataMatchState
 from ..states.kumite_match_state import KumiteMatchState
+from ..styles.tokens import BG_PAGE, TEXT_PRIMARY
 
 
 # Subpágina del temporizador (Aquí irá todo el sistema de kumite)
@@ -49,14 +50,14 @@ def exhibition() -> rx.Component:
                         font_size=50,
                         align="left",
                         padding_y="0.5em",
-                        color="black",
+                        color=TEXT_PRIMARY,
                         font_weight="bold",
                     ),
                     rx.text(
                         "Aquí se mostrarán los detalles del modo de exhibición.",
                         font_size=16,
                         align="left",
-                        color="black",
+                        color=TEXT_PRIMARY,
                     ),
                     rx.hstack(
                         rx.link(rx.button("Ir a Kata"), href="/exhibition/kata_system"),
@@ -66,9 +67,9 @@ def exhibition() -> rx.Component:
                     ),
                 ),
             ),
-            background_color="white",
+            background_color=BG_PAGE,
         ),
         width="100%",
-        background_color="white",
+        background_color=BG_PAGE,
         height="100vh",
     )

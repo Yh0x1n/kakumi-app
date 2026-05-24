@@ -7,11 +7,16 @@ from typing import Any, Callable
 import reflex as rx
 
 from kakumi_app.components.sidebar import sidebar
-from kakumi_app.styles.tokens import BG_PAGE, BORDER_LIGHT, BRAND_RED, BRAND_RED_HOVER
-
-CARD_BG = "#ffffff"
-HEADER_BG = "#f2f2f2"
-MUTED_TEXT = "#534342"
+from kakumi_app.styles.tokens import (
+    BG_PAGE,
+    BORDER_LIGHT,
+    BRAND_RED,
+    BRAND_RED_HOVER,
+    CARD_BG,
+    HEADER_BG,
+    MUTED_TEXT,
+    TEXT_PRIMARY,
+)
 
 
 def registry_page_shell(*, body: rx.Component) -> rx.Component:
@@ -108,7 +113,7 @@ def registry_import_panel(
     """Shared import panel with upload picker for registry pages."""
     return rx.box(
         rx.vstack(
-            rx.heading("Importar archivo", size="5", color="black"),
+            rx.heading("Importar archivo", size="5", color=TEXT_PRIMARY),
             rx.text(
                 "Seleccioná un archivo .xlsx para importar registros con encabezados en español.",
                 color=MUTED_TEXT,
@@ -132,8 +137,12 @@ def registry_import_panel(
             rx.vstack(
                 rx.cond(
                     selected_file_name,
-                    rx.text(selected_file_name, color="black", font_weight="medium"),
-                    rx.foreach(rx.selected_files(upload_id), lambda file: rx.text(file)),
+                    rx.text(
+                        selected_file_name, color=TEXT_PRIMARY, font_weight="medium"
+                    ),
+                    rx.foreach(
+                        rx.selected_files(upload_id), lambda file: rx.text(file)
+                    ),
                 ),
                 width="100%",
                 align="start",
@@ -184,7 +193,7 @@ def registry_table_filters(
                         tag="search",
                         width="16",
                         heigth="12",
-                        color="black",
+                        color=TEXT_PRIMARY,
                     ),
                 ),
                 placeholder=search_placeholder,
@@ -192,7 +201,7 @@ def registry_table_filters(
                 width={"base": "100%", "md": "420px"},
                 background_color=BG_PAGE,
                 color_scheme="gold",
-                color="black",
+                color=TEXT_PRIMARY,
                 border=f"1px solid {BORDER_LIGHT}",
             ),
             rx.button(
@@ -245,7 +254,7 @@ def registry_empty_state(
             align_items="center",
             justify_content="center",
         ),
-        rx.heading(title, size="6", color="black"),
+        rx.heading(title, size="6", color=TEXT_PRIMARY),
         rx.text(subtitle, color=MUTED_TEXT, text_align="center", max_width="560px"),
         rx.button(
             cta_label,

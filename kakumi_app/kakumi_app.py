@@ -40,7 +40,7 @@ from .states.results_state import ResultsState
 from .states.secondary_display_state import SecondaryDisplayState
 from .states.tournament_state import TournamentState
 from .states.auth_state import AuthState, DEV_AUTH_BYPASS
-from .styles.tokens import HOVER_GRAY
+from .styles.tokens import HOVER_GRAY, TEXT_PRIMARY, BG_PAGE
 
 
 class State(rx.State):
@@ -69,7 +69,7 @@ def index() -> rx.Component:
                     font_size=50,
                     align="left",
                     padding_y="0.5em",
-                    color="black",
+                    color=TEXT_PRIMARY,
                     font_weight="bold",
                 ),
                 spacing="4",
@@ -85,7 +85,7 @@ def index() -> rx.Component:
                                 f"Resultado {i + 1}",
                                 weight="bold",
                                 font_size="10",
-                                color="black",
+                                color=TEXT_PRIMARY,
                             ),
                             underline="none",
                             height="100%",
@@ -107,7 +107,7 @@ def index() -> rx.Component:
                 padding="0.5em",
             ),
         ),
-        background_color="white",
+        background_color=BG_PAGE,
         height="100vh",
     )
 

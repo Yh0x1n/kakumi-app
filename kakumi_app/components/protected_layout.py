@@ -7,6 +7,7 @@ import reflex as rx
 
 from kakumi_app.states.auth_state import AuthState
 from .sidebar import sidebar
+from kakumi_app.styles.tokens import TEXT_TERTIARY, BG_PAGE
 
 
 def protected_layout(
@@ -41,7 +42,7 @@ def protected_layout(
                         spacing="4",
                     ),
                 ),
-                background_color="white",
+                background_color=BG_PAGE,
                 height="100vh",
             ),
             # Denied: show permission error
@@ -56,7 +57,7 @@ def protected_layout(
                     rx.text(
                         "You don't have permission to access this page.",
                         font_size="lg",
-                        color="gray",
+                        color=TEXT_TERTIARY,
                     ),
                     rx.button(
                         "Go Home",
