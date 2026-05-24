@@ -118,3 +118,6 @@ CRUD Registros Kakumi/
 .pi-lens
 opencode.jsonc
 .codegraph
+
+# Anti Gravity CLI — local dev tooling, not project code
+/.antigravitycli/
