@@ -8,6 +8,9 @@ token blacklisting with TTL, refresh rotation and password strength checks.
 import bcrypt
 import jwt
 import re
+import os
+import secrets
+import warnings
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
@@ -20,7 +23,14 @@ from kakumi_app.models.token_blacklist import TokenBlacklist
 from kakumi_app.models.audit_log import AuditLog
 
 # -- JWT Configuration --
-JWT_SECRET_KEY = "supersecretjwt"  # In production, load from env/config!
+# Load secret from environment or generate secure fallback (32+ bytes for HS256).
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or secrets.token_urlsafe(32)
+# Warn when a provided secret is shorter than recommended minimum
+if len(JWT_SECRET_KEY) < 32:
+    warnings.warn(
+        "JWT secret key length < 32 characters. Use at least 32 bytes for HS256.",
+        UserWarning,
+    )
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 15
 REFRESH_TOKEN_DAYS = 1
@@ -382,9 +392,7 @@ class AuthService:
                 return False, "User not found"
 
             # Verify old password
-            if not bcrypt.checkpw(
-                old_password.encode(), user.password_hash.encode()
-            ):
+            if not bcrypt.checkpw(old_password.encode(), user.password_hash.encode()):
                 return False, "Current password is incorrect"
 
             # Strength-check new password

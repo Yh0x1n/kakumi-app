@@ -319,3 +319,178 @@ async def test_poll_snapshot_loop_stops_for_disconnected_viewer(
     await SecondaryDisplayState.poll_snapshot_loop.fn(state)
 
     assert read_calls["count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_viewer_heartbeat_registers_presence_with_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "live-key"
+    state._viewer_client_token = "viewer-token"
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.register_viewer_heartbeat",
+        lambda *, display_key, client_token: calls.append((display_key, client_token)),
+    )
+
+    await SecondaryDisplayState.viewer_heartbeat.fn(state, "tick")
+
+    assert calls == [("live-key", "viewer-token")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_is_viewer_connected_uses_heartbeat_fallback_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "live-key"
+    state._viewer_client_token = "viewer-token"
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.has_recent_viewer_heartbeat",
+        lambda *, display_key, client_token, ttl_seconds: (
+            display_key == "live-key"
+            and client_token == "viewer-token"
+            and ttl_seconds >= 1
+        ),
+    )
+
+    assert state._is_viewer_connected() is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_poll_snapshot_loop_stops_after_heartbeat_expiration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "live-key"
+    state._viewer_client_token = "viewer-token"
+
+    heartbeat_checks = iter([True, False])
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.has_recent_viewer_heartbeat",
+        lambda *, display_key, client_token, ttl_seconds: (
+            display_key == "live-key"
+            and client_token == "viewer-token"
+            and ttl_seconds >= 1
+            and next(heartbeat_checks)
+        ),
+    )
+
+    read_calls = {"count": 0}
+
+    def _read_snapshot(display_key: str, stale_after_seconds: int) -> SimpleNamespace:
+        del display_key, stale_after_seconds
+        read_calls["count"] += 1
+        return SimpleNamespace(
+            status="ok", snapshot={"modality": "KATA"}, updated_at=None
+        )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.read_snapshot",
+        _read_snapshot,
+    )
+
+    async def _no_wait(_: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.asyncio.sleep",
+        _no_wait,
+    )
+
+    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+
+    assert read_calls["count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_poll_snapshot_loop_applies_idle_backoff_for_unchanged_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "stable-key"
+
+    connectivity_sequence = iter([True, True, True, False])
+    monkeypatch.setattr(
+        SecondaryDisplayState,
+        "_is_viewer_connected",
+        lambda self: next(connectivity_sequence),
+    )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.read_snapshot",
+        lambda display_key, stale_after_seconds: SimpleNamespace(
+            status="ok",
+            snapshot={"modality": "KATA", "title": "Stable"},
+            updated_at=None,
+        ),
+    )
+
+    sleep_calls: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.asyncio.sleep",
+        _record_sleep,
+    )
+
+    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+
+    assert sleep_calls == [1.0, 2.0, 4.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_poll_snapshot_loop_applies_error_backoff_after_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "unstable-key"
+
+    connectivity_sequence = iter([True, True, False])
+    monkeypatch.setattr(
+        SecondaryDisplayState,
+        "_is_viewer_connected",
+        lambda self: next(connectivity_sequence),
+    )
+
+    read_calls = {"count": 0}
+
+    def _read_snapshot(display_key: str, stale_after_seconds: int) -> SimpleNamespace:
+        del display_key, stale_after_seconds
+        read_calls["count"] += 1
+        if read_calls["count"] == 1:
+            raise RuntimeError("temporary DB hiccup")
+        return SimpleNamespace(
+            status="ok",
+            snapshot={"modality": "KUMITE", "title": "Recovered"},
+            updated_at=None,
+        )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.read_snapshot",
+        _read_snapshot,
+    )
+
+    sleep_calls: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.asyncio.sleep",
+        _record_sleep,
+    )
+
+    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+
+    assert sleep_calls == [2.0, 1.0]

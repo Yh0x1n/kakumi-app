@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import reflex as rx
@@ -23,6 +24,13 @@ class SecondaryDisplayState(rx.State):
     error_message: str = ""
 
     stale_after_seconds: int = 8
+    viewer_heartbeat_ttl_seconds: int = 12
+    poll_min_interval_seconds: float = 1.0
+    poll_max_interval_seconds: float = 8.0
+    poll_idle_backoff_multiplier: float = 2.0
+    poll_error_backoff_multiplier: float = 2.0
+
+    _viewer_client_token: str = ""
 
     @rx.var
     def kata_title(self) -> str:
@@ -31,7 +39,9 @@ class SecondaryDisplayState(rx.State):
     @rx.var
     def kata_aka_name(self) -> str:
         aka = self.snapshot.get("aka", {})
-        return str(aka.get("name") or "ATLETA 1") if isinstance(aka, dict) else "ATLETA 1"
+        return (
+            str(aka.get("name") or "ATLETA 1") if isinstance(aka, dict) else "ATLETA 1"
+        )
 
     @rx.var
     def kata_ao_name(self) -> str:
@@ -103,7 +113,9 @@ class SecondaryDisplayState(rx.State):
     @rx.var
     def kumite_aka_name(self) -> str:
         aka = self.snapshot.get("aka", {})
-        return str(aka.get("name") or "ATLETA 1") if isinstance(aka, dict) else "ATLETA 1"
+        return (
+            str(aka.get("name") or "ATLETA 1") if isinstance(aka, dict) else "ATLETA 1"
+        )
 
     @rx.var
     def kumite_ao_name(self) -> str:
@@ -159,14 +171,68 @@ class SecondaryDisplayState(rx.State):
             return "Ninguna"
         return ", ".join(active)
 
-    def _is_viewer_connected(self) -> bool:
+    def _resolve_viewer_client_token(self) -> str:
+        if self._viewer_client_token != "":
+            return self._viewer_client_token
+
         try:
-            app = rx.State._get_app()  # type: ignore[attr-defined]
-            token = self.router.session.client_token
-            socket_record = app._token_manager.token_to_socket.get(token)
-            return socket_record is not None
+            token = str(self.router.session.client_token or "").strip()
         except Exception:
+            return ""
+
+        if token != "":
+            self._viewer_client_token = token
+        return token
+
+    def _touch_viewer_heartbeat(self) -> None:
+        display_key = self.current_display_key.strip()
+        token = self._resolve_viewer_client_token()
+        if display_key == "" or token == "":
+            return
+        SecondaryDisplayService.register_viewer_heartbeat(
+            display_key=display_key,
+            client_token=token,
+        )
+
+    def _clear_viewer_heartbeat(self) -> None:
+        display_key = self.current_display_key.strip()
+        token = self._resolve_viewer_client_token()
+        if display_key == "" or token == "":
+            return
+        SecondaryDisplayService.unregister_viewer_heartbeat(
+            display_key=display_key,
+            client_token=token,
+        )
+
+    def _is_viewer_connected(self) -> bool:
+        display_key = self.current_display_key.strip()
+        token = self._resolve_viewer_client_token()
+
+        if display_key == "" or token == "":
             return True
+
+        get_app = getattr(rx.State, "_get_app", None)
+        if callable(get_app):
+            try:
+                app = get_app()
+                token_manager = getattr(app, "_token_manager", None)
+                token_to_socket = getattr(token_manager, "token_to_socket", None)
+                if token_to_socket is not None:
+                    socket_record = token_to_socket.get(token)
+                    if socket_record is None:
+                        self._clear_viewer_heartbeat()
+                        return False
+
+                    self._touch_viewer_heartbeat()
+                    return True
+            except Exception:
+                pass
+
+        return SecondaryDisplayService.has_recent_viewer_heartbeat(
+            display_key=display_key,
+            client_token=token,
+            ttl_seconds=self.viewer_heartbeat_ttl_seconds,
+        )
 
     def _route_params(self) -> dict[str, Any]:
         try:
@@ -188,6 +254,12 @@ class SecondaryDisplayState(rx.State):
         self.modality = str(payload.get("modality", ""))
         self.source_kind = str(payload.get("source_kind", ""))
 
+    @staticmethod
+    def _snapshot_fingerprint(status: str, payload: dict[str, Any] | None) -> str:
+        normalized_payload = payload if isinstance(payload, dict) else {}
+        serialized_payload = json.dumps(normalized_payload, sort_keys=True)
+        return f"{status}:{serialized_payload}"
+
     @rx.event
     async def load_display(self) -> None:
         self.is_loading = True
@@ -202,6 +274,8 @@ class SecondaryDisplayState(rx.State):
             self.error_message = str(error)
             self.is_loading = False
             return
+
+        self._touch_viewer_heartbeat()
 
         result = SecondaryDisplayService.read_snapshot(
             display_key=self.current_display_key,
@@ -224,6 +298,8 @@ class SecondaryDisplayState(rx.State):
         if self.current_display_key == "":
             return
 
+        self._touch_viewer_heartbeat()
+
         result = SecondaryDisplayService.read_snapshot(
             display_key=self.current_display_key,
             stale_after_seconds=self.stale_after_seconds,
@@ -239,32 +315,68 @@ class SecondaryDisplayState(rx.State):
         self._apply_snapshot_payload(result.snapshot or {})
         self.is_stale = result.status == "stale"
 
+    @rx.event
+    async def viewer_heartbeat(self, _tick: str = "") -> None:
+        del _tick
+        self._touch_viewer_heartbeat()
+
     @rx.event(background=True)
     async def poll_snapshot_loop(self) -> None:
+        sleep_seconds = self.poll_min_interval_seconds
+        previous_fingerprint = ""
+
         while True:
             async with self:
                 is_connected = self._is_viewer_connected()
                 display_key = self.current_display_key
                 stale_after_seconds = self.stale_after_seconds
+                min_interval = max(float(self.poll_min_interval_seconds), 0.25)
+                max_interval = max(float(self.poll_max_interval_seconds), min_interval)
+                idle_multiplier = max(float(self.poll_idle_backoff_multiplier), 1.0)
+                error_multiplier = max(float(self.poll_error_backoff_multiplier), 1.0)
 
             if not is_connected:
                 break
 
+            unchanged_or_empty = True
+            transient_error = False
+
             if display_key != "":
-                result = SecondaryDisplayService.read_snapshot(
-                    display_key=display_key,
-                    stale_after_seconds=stale_after_seconds,
-                )
+                try:
+                    result = SecondaryDisplayService.read_snapshot(
+                        display_key=display_key,
+                        stale_after_seconds=stale_after_seconds,
+                    )
+                except Exception:
+                    transient_error = True
+                else:
+                    snapshot_fingerprint = self._snapshot_fingerprint(
+                        result.status,
+                        result.snapshot,
+                    )
+                    unchanged_or_empty = snapshot_fingerprint == previous_fingerprint
+                    previous_fingerprint = snapshot_fingerprint
 
+                    async with self:
+                        if result.status == "missing":
+                            self.snapshot = {}
+                            self.has_snapshot = False
+                            self.is_stale = False
+                            self.error_message = "Pantalla no encontrada"
+                        else:
+                            self.error_message = ""
+                            self._apply_snapshot_payload(result.snapshot or {})
+                            self.is_stale = result.status == "stale"
+
+            if transient_error:
                 async with self:
-                    if result.status == "missing":
-                        self.snapshot = {}
-                        self.has_snapshot = False
-                        self.is_stale = False
-                        self.error_message = "Pantalla no encontrada"
-                    else:
-                        self.error_message = ""
-                        self._apply_snapshot_payload(result.snapshot or {})
-                        self.is_stale = result.status == "stale"
+                    self.error_message = "Sincronización temporalmente inestable"
+                sleep_seconds = min(max_interval, max(sleep_seconds, min_interval))
+                sleep_seconds = min(max_interval, sleep_seconds * error_multiplier)
+            elif unchanged_or_empty:
+                sleep_seconds = min(max_interval, max(sleep_seconds, min_interval))
+                sleep_seconds = min(max_interval, sleep_seconds * idle_multiplier)
+            else:
+                sleep_seconds = min_interval
 
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(float(sleep_seconds))

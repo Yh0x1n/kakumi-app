@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 import reflex as rx
 
 from kakumi_app.components.public_kata_display import public_kata_display
@@ -39,7 +41,9 @@ def public_display_page() -> rx.Component:
                 rx.badge("Solo lectura", color_scheme="gray", size="2"),
                 rx.cond(
                     SecondaryDisplayState.is_stale,
-                    rx.badge("Sincronización atrasada", color_scheme="orange", size="2"),
+                    rx.badge(
+                        "Sincronización atrasada", color_scheme="orange", size="2"
+                    ),
                     rx.badge("En vivo", color_scheme="green", size="2"),
                 ),
                 spacing="2",
@@ -48,6 +52,13 @@ def public_display_page() -> rx.Component:
             top="10px",
             right="10px",
             z_index="1000",
+        ),
+        rx.moment(
+            date=datetime.datetime.now(datetime.UTC).isoformat(),
+            from_now=True,
+            interval=3000,
+            on_change=SecondaryDisplayState.viewer_heartbeat,
+            display="none",
         ),
         width="100vw",
         height="100vh",

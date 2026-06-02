@@ -67,7 +67,7 @@ def change_password_form() -> rx.Component:
                         AuthState.cp_error,
                         rx.callout(
                             AuthState.cp_error,
-                            icon="alert-circle",
+                            icon="circle_alert",
                             color_scheme="red",
                             margin_bottom="1em",
                             width="100%",

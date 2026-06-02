@@ -40,7 +40,7 @@ def users_table() -> rx.Component:
             state.error_message,
             rx.callout(
                 state.error_message,
-                icon="alert-circle",
+                icon="circle_alert",
                 color_scheme="red",
                 margin_bottom="1em",
             ),

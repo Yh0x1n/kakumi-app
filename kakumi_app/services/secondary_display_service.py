@@ -5,8 +5,10 @@ from __future__ import annotations
 import datetime
 import json
 import secrets
+import threading
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import reflex as rx
 from sqlmodel import select
@@ -26,9 +28,68 @@ class SecondaryDisplayReadResult:
 class SecondaryDisplayService:
     """Persistence-backed synchronization for operator/public display sessions."""
 
+    _viewer_heartbeat_lock = threading.Lock()
+    _viewer_heartbeats: dict[tuple[str, str], float] = {}
+
     @staticmethod
     def _generate_display_key() -> str:
         return secrets.token_urlsafe(16)
+
+    @staticmethod
+    def register_viewer_heartbeat(*, display_key: str, client_token: str) -> None:
+        """Record the latest liveness heartbeat for one viewer websocket token."""
+        normalized_key = display_key.strip()
+        normalized_token = client_token.strip()
+        if normalized_key == "" or normalized_token == "":
+            return
+
+        now = time.monotonic()
+        with SecondaryDisplayService._viewer_heartbeat_lock:
+            SecondaryDisplayService._viewer_heartbeats[
+                (normalized_key, normalized_token)
+            ] = now
+
+    @staticmethod
+    def unregister_viewer_heartbeat(*, display_key: str, client_token: str) -> None:
+        """Remove heartbeat state for one viewer websocket token."""
+        normalized_key = display_key.strip()
+        normalized_token = client_token.strip()
+        if normalized_key == "" or normalized_token == "":
+            return
+
+        with SecondaryDisplayService._viewer_heartbeat_lock:
+            SecondaryDisplayService._viewer_heartbeats.pop(
+                (normalized_key, normalized_token),
+                None,
+            )
+
+    @staticmethod
+    def has_recent_viewer_heartbeat(
+        *,
+        display_key: str,
+        client_token: str,
+        ttl_seconds: int,
+    ) -> bool:
+        """Check whether a viewer token has sent heartbeat recently enough."""
+        normalized_key = display_key.strip()
+        normalized_token = client_token.strip()
+        if normalized_key == "" or normalized_token == "":
+            return False
+
+        threshold_seconds = max(int(ttl_seconds), 1)
+        now = time.monotonic()
+
+        with SecondaryDisplayService._viewer_heartbeat_lock:
+            key = (normalized_key, normalized_token)
+            last_seen = SecondaryDisplayService._viewer_heartbeats.get(key)
+            if last_seen is None:
+                return False
+
+            if now - last_seen > threshold_seconds:
+                SecondaryDisplayService._viewer_heartbeats.pop(key, None)
+                return False
+
+            return True
 
     @staticmethod
     def ensure_display_session(
@@ -43,7 +104,7 @@ class SecondaryDisplayService:
                 DisplaySession.modality == modality,
                 DisplaySession.source_kind == source_kind,
                 DisplaySession.match_id == match_id,
-                DisplaySession.is_active.is_(True),
+                cast(Any, DisplaySession.is_active).is_(True),
             )
             existing = session.exec(statement).first()
             if existing is not None:

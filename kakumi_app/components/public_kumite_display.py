@@ -12,8 +12,8 @@ def public_kumite_display() -> rx.Component:
 
     return rx.box(
         rx.vstack(
-            rx.text("Kumite", font_size="4vw", font_weight="bold"),
-            rx.text(SecondaryDisplayState.kumite_title, font_size="2.2vw"),
+            rx.text("KUMITE", font_size="4vw", font_weight="bold"),
+            # rx.text(SecondaryDisplayState.kumite_title, font_size="2.2vw"),
             rx.hstack(
                 rx.vstack(
                     rx.text("AKA", font_size="2vw", color="red"),
@@ -44,9 +44,13 @@ def public_kumite_display() -> rx.Component:
                     align="center",
                     spacing="2",
                     width="40vw",
+                    bg="red",
+                    border_radius="5px",
                 ),
                 rx.vstack(
-                    rx.text(SecondaryDisplayState.kumite_timer_formatted, font_size="6vw"),
+                    rx.text(
+                        SecondaryDisplayState.kumite_timer_formatted, font_size="6vw"
+                    ),
                     rx.text("Solo lectura", font_size="1.5vw", color="gray"),
                     align="center",
                     width="20vw",
@@ -80,6 +84,8 @@ def public_kumite_display() -> rx.Component:
                     align="center",
                     spacing="2",
                     width="40vw",
+                    bg="blue",
+                    border_radius="5px",
                 ),
                 width="100%",
                 justify="between",

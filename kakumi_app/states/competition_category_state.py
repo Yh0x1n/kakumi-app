@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class CompetitionCategoryState(rx.State):
     """Load category and match list data for operator views."""
 
-    category: CompetitionCategoryData | dict[str, Any] = {}
+    category: CompetitionCategoryData | dict[str, Any] = {"kata_flow_mode": "STANDARD"}
     matches: list[MatchCardData] = []
     is_loading: bool = False
     error_message: str = ""
@@ -73,7 +73,7 @@ class CompetitionCategoryState(rx.State):
         """Load operator-facing category match data for the current route."""
         self.is_loading = True
         self.error_message = ""
-        self.category = {}
+        self.category = {"kata_flow_mode": "STANDARD"}
         self.matches = []
         self.informal_standings = []
         self.is_informal_mode = False
@@ -137,9 +137,7 @@ class CompetitionCategoryState(rx.State):
                         a
                         for a in matched_roster
                         if a.belt_rank
-                        and min_idx
-                        <= BELT_RANK_ORDER.get(a.belt_rank, -1)
-                        <= max_idx
+                        and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
                     ]
 
                 roster_athlete_ids = {a.id for a in matched_roster}
@@ -153,7 +151,9 @@ class CompetitionCategoryState(rx.State):
                 tatami_names = self._name_lookup(session, Tatami, tatami_ids)
                 referee_names = self._name_lookup(session, Referee, referee_ids)
 
-                kata_flow_mode = str(getattr(category, "kata_flow_mode", "STANDARD"))
+                kata_flow_mode = str(
+                    getattr(category, "kata_flow_mode", "STANDARD") or "STANDARD"
+                )
 
             self.category = {
                 "id": category.id,
