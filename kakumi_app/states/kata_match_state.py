@@ -243,7 +243,11 @@ class KataMatchState(rx.State):
     def _build_informal_public_results(self) -> list[str]:
         results: list[str] = []
         for row in self.informal_standings:
-            if "rank" not in row or "athlete_name" not in row or "final_score" not in row:
+            if (
+                "rank" not in row
+                or "athlete_name" not in row
+                or "final_score" not in row
+            ):
                 continue
             results.append(
                 f"{self._coerce_int(row['rank'])}. "
@@ -315,9 +319,7 @@ class KataMatchState(rx.State):
             "result_message": self.result_message,
             "judge_detail_visible": judge_detail_visible,
             "judge_detail_lines": (
-                self._build_public_judge_detail_lines()
-                if judge_detail_visible
-                else []
+                self._build_public_judge_detail_lines() if judge_detail_visible else []
             ),
             "majority_tally_visible": majority_tally != "",
             "majority_tally": majority_tally,
@@ -386,9 +388,7 @@ class KataMatchState(rx.State):
 
     def _advance_informal_next_athlete(self) -> None:
         roster_ids = [
-            self._coerce_int(row["id"])
-            for row in self.informal_roster
-            if "id" in row
+            self._coerce_int(row["id"]) for row in self.informal_roster if "id" in row
         ]
         if not roster_ids:
             self.informal_selected_athlete_id = 0
@@ -429,9 +429,7 @@ class KataMatchState(rx.State):
                     athlete
                     for athlete in athletes
                     if athlete.belt_rank
-                    and min_idx
-                    <= BELT_RANK_ORDER.get(athlete.belt_rank, -1)
-                    <= max_idx
+                    and min_idx <= BELT_RANK_ORDER.get(athlete.belt_rank, -1) <= max_idx
                 ]
 
         self.informal_category_id = category_id
@@ -492,7 +490,8 @@ class KataMatchState(rx.State):
     def _resolve_panel_complete(self) -> bool:
         if self.is_flag_mode:
             return all(
-                self.judge_entries[slot].get("vote") in {
+                self.judge_entries[slot].get("vote")
+                in {
                     Participant.AKA.value,
                     Participant.AO.value,
                 }
@@ -641,9 +640,7 @@ class KataMatchState(rx.State):
             return
         if participant not in {Participant.AKA.value, Participant.AO.value}:
             return
-        next_entries = {
-            slot: dict(entry) for slot, entry in self.judge_entries.items()
-        }
+        next_entries = {slot: dict(entry) for slot, entry in self.judge_entries.items()}
         next_entries[judge_slot][participant] = value.strip()
         self.judge_entries = next_entries
         self.panel_complete = self._resolve_panel_complete()
@@ -764,9 +761,7 @@ class KataMatchState(rx.State):
             return
         if vote not in {Participant.AKA.value, Participant.AO.value}:
             return
-        next_entries = {
-            slot: dict(entry) for slot, entry in self.judge_entries.items()
-        }
+        next_entries = {slot: dict(entry) for slot, entry in self.judge_entries.items()}
         next_entries[judge_slot]["vote"] = vote
         self.judge_entries = next_entries
         self.panel_complete = self._resolve_panel_complete()
@@ -839,8 +834,7 @@ class KataMatchState(rx.State):
             reverse=True,
         )
         self.informal_standings = [
-            {**row, "rank": index + 1}
-            for index, row in enumerate(sorted_rows)
+            {**row, "rank": index + 1} for index, row in enumerate(sorted_rows)
         ]
         self.informal_judge_entries = self._build_informal_judge_entries()
         self.informal_exhibition_participant_name = ""

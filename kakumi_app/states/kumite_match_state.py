@@ -252,9 +252,7 @@ class KumiteMatchState(rx.State):
                 winner = self._winner_from_scoreboard()
             elif end_reason == "TIME_OVER_SENSHU":
                 winner = (
-                    Participant.AKA.value
-                    if self.aka_senshu
-                    else Participant.AO.value
+                    Participant.AKA.value if self.aka_senshu else Participant.AO.value
                 )
         self._apply_local_match_end_result(
             end_reason=end_reason,
@@ -720,7 +718,9 @@ class KumiteMatchState(rx.State):
                         self.timer_running = False
                         self._timer_loop_active = False
                         if self.is_exhibition_mode or self.match_id <= 0:
-                            toast_message = self._resolve_local_timeout_and_toast_message()
+                            toast_message = (
+                                self._resolve_local_timeout_and_toast_message()
+                            )
                         else:
                             resolve_time_expired = True
                             match_id_to_resolve = self.match_id
@@ -765,7 +765,9 @@ class KumiteMatchState(rx.State):
                         display_key = ""
                         snapshot = {}
                     else:
-                        display_key = self.public_display_key or self._ensure_display_session()
+                        display_key = (
+                            self.public_display_key or self._ensure_display_session()
+                        )
                         snapshot = self._build_display_snapshot()
                 if disconnected_inside_lock:
                     break
@@ -873,8 +875,7 @@ class KumiteMatchState(rx.State):
             return False
         penalty = session.get(Penalty, int(created_penalty_ids[-1]))
         return (
-            penalty is not None
-            and penalty.penalty_type == PenaltyType.SHIKKAKU.value
+            penalty is not None and penalty.penalty_type == PenaltyType.SHIKKAKU.value
         )
 
     def _update_last_penalty_display(self, participant: str, penalty_type: str) -> None:

@@ -27,6 +27,7 @@ class SecondaryDisplayReadResult:
 
 class SecondaryDisplayService:
     """Persistence-backed synchronization for operator/public display sessions."""
+    _viewer_registry: dict[str, set[str]] = {}
 
     _viewer_heartbeat_lock = threading.Lock()
     _viewer_heartbeats: dict[tuple[str, str], float] = {}
@@ -54,14 +55,21 @@ class SecondaryDisplayService:
         """Remove heartbeat state for one viewer websocket token."""
         normalized_key = display_key.strip()
         normalized_token = client_token.strip()
+        SecondaryDisplayService._clear_viewer_heartbeat(display_key=normalized_key, client_token=normalized_token)
+
+    @staticmethod
+    def _clear_viewer_heartbeat(*, display_key: str, client_token: str) -> None:
+        normalized_key = display_key.strip()
+        normalized_token = client_token.strip()
         if normalized_key == "" or normalized_token == "":
             return
-
         with SecondaryDisplayService._viewer_heartbeat_lock:
             SecondaryDisplayService._viewer_heartbeats.pop(
                 (normalized_key, normalized_token),
                 None,
             )
+        # Also remove from viewer registry
+        SecondaryDisplayService.unregister_viewer(display_key=normalized_key, client_token=normalized_token)
 
     @staticmethod
     def has_recent_viewer_heartbeat(
@@ -142,6 +150,53 @@ class SecondaryDisplayService:
             session.commit()
             session.refresh(display_session)
             return display_session
+
+    @staticmethod
+    def register_viewer(*, display_key: str, client_token: str) -> None:
+        """Add a viewer token to the registry for a display key."""
+        key = display_key.strip()
+        token = client_token.strip()
+        if not key or not token:
+            return
+        registry = SecondaryDisplayService._viewer_registry
+        if key not in registry:
+            registry[key] = set()
+        registry[key].add(token)
+
+    @staticmethod
+    def unregister_viewer(*, display_key: str, client_token: str) -> None:
+        """Remove a viewer token from the registry."""
+        key = display_key.strip()
+        token = client_token.strip()
+        if not key or not token:
+            return
+        registry = SecondaryDisplayService._viewer_registry
+        tokens = registry.get(key)
+        if tokens:
+            tokens.discard(token)
+            if not tokens:
+                registry.pop(key, None)
+
+    @staticmethod
+    def has_active_viewers(display_key: str) -> bool:
+        """Return True if any viewer tokens are registered for the display key."""
+        return bool(SecondaryDisplayService._viewer_registry.get(display_key.strip()))
+
+    @staticmethod
+    def unregister_viewer_by_token(*, client_token: str) -> None:
+        """Remove the token from any display key it is registered under."""
+        token = client_token.strip()
+        if not token:
+            return
+        registry = SecondaryDisplayService._viewer_registry
+        keys_to_delete = []
+        for key, tokens in registry.items():
+            if token in tokens:
+                tokens.discard(token)
+                if not tokens:
+                    keys_to_delete.append(key)
+        for key in keys_to_delete:
+            del registry[key]
 
     @staticmethod
     def read_snapshot(

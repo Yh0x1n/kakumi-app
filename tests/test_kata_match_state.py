@@ -213,6 +213,7 @@ async def test_finalize_tournament_rejects_incomplete_panel(
 
     def toast_error(message: str) -> str:
         return f"toast:{message}"
+
     monkeypatch.setattr(
         "kakumi_app.states.kata_match_state.rx.toast.error",
         toast_error,
@@ -364,12 +365,13 @@ async def test_enable_exhibition_mode_initializes_informal_single_panel_state() 
 
 @pytest.mark.asyncio
 @pytest.mark.anyio
-async def test_finalize_exhibition_informal_saves_and_advances_participant(
-) -> None:
+async def test_finalize_exhibition_informal_saves_and_advances_participant() -> None:
     state = KataMatchState()
     await _event_fn(KataMatchState.enable_exhibition_mode)(state)
     await _event_fn(KataMatchState.set_kata_mode)(state, "INFORMAL")
-    await _event_fn(KataMatchState.set_informal_exhibition_participant_name)(state, "Lucía")
+    await _event_fn(KataMatchState.set_informal_exhibition_participant_name)(
+        state, "Lucía"
+    )
 
     for slot in ("J1", "J2", "J3", "J4", "J5"):
         await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.2")
@@ -393,7 +395,9 @@ async def test_finalize_exhibition_informal_saves_and_advances_participant(
 
 @pytest.mark.asyncio
 @pytest.mark.anyio
-async def test_exhibition_informal_works_without_category_and_uses_fallback_name() -> None:
+async def test_exhibition_informal_works_without_category_and_uses_fallback_name() -> (
+    None
+):
     state = KataMatchState()
     await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
@@ -604,7 +608,9 @@ async def test_informal_snapshot_exposes_single_athlete_and_results_payload() ->
     state = KataMatchState()
     await _event_fn(KataMatchState.enable_exhibition_mode)(state)
     await _event_fn(KataMatchState.set_kata_mode)(state, "INFORMAL")
-    await _event_fn(KataMatchState.set_informal_exhibition_participant_name)(state, "Lucía")
+    await _event_fn(KataMatchState.set_informal_exhibition_participant_name)(
+        state, "Lucía"
+    )
 
     for slot in ("J1", "J2", "J3", "J4", "J5"):
         await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.2")

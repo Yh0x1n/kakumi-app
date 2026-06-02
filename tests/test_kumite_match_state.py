@@ -454,8 +454,7 @@ async def test_exhibition_mode_penalty_mutates_local_slots_without_db_call(
     )
 
     events = [
-        event
-        async for event in state.apply_penalty_cumulative(participant="AKA")
+        event async for event in state.apply_penalty_cumulative(participant="AKA")
     ]
 
     assert events == []
@@ -742,7 +741,9 @@ async def test_run_timer_loop_decrements_and_stops_with_toast(
         toast_success,
     )
 
-    events = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
+    events = [
+        event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)
+    ]
 
     assert events == []
     assert state.timer_seconds == 0
@@ -1049,7 +1050,9 @@ async def test_timer_loop_time_expired_points_emits_winner_toast_no_modal(
         toast_success,
     )
 
-    events = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
+    events = [
+        event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)
+    ]
 
     assert events == ["toast-finished"]
     assert state.timer_running is False

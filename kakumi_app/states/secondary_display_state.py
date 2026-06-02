@@ -212,23 +212,6 @@ class SecondaryDisplayState(rx.State):
         if display_key == "" or token == "":
             return True
 
-        get_app = getattr(rx.State, "_get_app", None)
-        if callable(get_app):
-            try:
-                app = get_app()
-                token_manager = getattr(app, "_token_manager", None)
-                token_to_socket = getattr(token_manager, "token_to_socket", None)
-                if token_to_socket is not None:
-                    socket_record = token_to_socket.get(token)
-                    if socket_record is None:
-                        self._clear_viewer_heartbeat()
-                        return False
-
-                    self._touch_viewer_heartbeat()
-                    return True
-            except Exception:
-                pass
-
         return SecondaryDisplayService.has_recent_viewer_heartbeat(
             display_key=display_key,
             client_token=token,
@@ -267,6 +250,10 @@ class SecondaryDisplayState(rx.State):
         self.error_message = ""
         try:
             self.current_display_key = self._parse_display_key_param()
+            # Register this viewer token for the display key
+            token = self._resolve_viewer_client_token()
+            if token != "" and self.current_display_key != "":
+                SecondaryDisplayService.register_viewer(display_key=self.current_display_key, client_token=token)
         except ValueError as error:
             self.current_display_key = ""
             self.snapshot = {}
