@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
-from collections.abc import Callable
-from typing import Any, Optional
+from collections.abc import AsyncGenerator, Callable, Sequence
+from typing import Any
 
 import reflex as rx
 from sqlmodel import Session, select
@@ -161,6 +161,10 @@ class KumiteMatchState(rx.State):
         }
 
     def _publish_display_snapshot(self) -> None:
+        # Avoid stale writes when no viewer socket is currently connected.
+        if not self._is_viewer_connected():
+            return
+
         display_key = self.public_display_key or self._ensure_display_session()
         result = SecondaryDisplayService.publish_snapshot(
             display_key=display_key,
@@ -408,7 +412,7 @@ class KumiteMatchState(rx.State):
             raise ValueError("ID de encuentro inválido")
         return int(raw_match_id)
 
-    def _resolve_athlete_name(self, session: Session, athlete_id: Optional[int]) -> str:
+    def _resolve_athlete_name(self, session: Session, athlete_id: int | None) -> str:
         """Resolve athlete name fallback-safe for scoreboard labels."""
         if athlete_id is None:
             return "ATLETA"
@@ -417,7 +421,7 @@ class KumiteMatchState(rx.State):
             return "ATLETA"
         return athlete.name
 
-    def _build_penalty_slots(self, penalties: list[Penalty]) -> dict[str, bool]:
+    def _build_penalty_slots(self, penalties: Sequence[Penalty]) -> dict[str, bool]:
         """Build cumulative slot map for scoreboard from latest penalty level."""
         slots = {"C1": False, "C2": False, "C3": False, "HC": False, "H": False}
         if not penalties:
@@ -469,7 +473,7 @@ class KumiteMatchState(rx.State):
             self._reset_scoreboard(exhibition_mode=False)
             return
 
-        self.match_id = match.id
+        self.match_id = int(match.id or 0)
         self.has_active_match = True
         self.is_exhibition_mode = False
         self.aka_score = match.aka_score
@@ -491,7 +495,7 @@ class KumiteMatchState(rx.State):
                 Penalty.match_id == match.id,
                 Penalty.participant == Participant.AKA.value,
             )
-            .order_by(Penalty.id.asc())
+            .order_by(Penalty.id)
         ).all()
         ao_penalties = session.exec(
             select(Penalty)
@@ -499,7 +503,7 @@ class KumiteMatchState(rx.State):
                 Penalty.match_id == match.id,
                 Penalty.participant == Participant.AO.value,
             )
-            .order_by(Penalty.id.asc())
+            .order_by(Penalty.id)
         ).all()
         self.aka_penalty_slots = self._build_penalty_slots(aka_penalties)
         self.ao_penalty_slots = self._build_penalty_slots(ao_penalties)
@@ -532,6 +536,10 @@ class KumiteMatchState(rx.State):
             return socket_record is not None
         except Exception:
             return True
+
+    def _mark_timer_loop_disconnected(self) -> None:
+        self.timer_running = False
+        self._timer_loop_active = False
 
     @rx.event
     async def enable_exhibition_mode(self) -> None:
@@ -605,7 +613,10 @@ class KumiteMatchState(rx.State):
                 session.commit()
 
     @rx.event
-    async def start_live_and_timer(self, match_id: int) -> None:
+    async def start_live_and_timer(
+        self,
+        match_id: int,
+    ) -> AsyncGenerator[Any, None]:
         """Start live match then timer in one composed handler."""
         await self.start_live_match(match_id)
         # start_timer is an event that yields an async-generator (uses yield inside).
@@ -672,13 +683,12 @@ class KumiteMatchState(rx.State):
         self._publish_display_snapshot()
 
     @rx.event(background=True)
-    async def run_timer_loop(self) -> None:
+    async def run_timer_loop(self) -> AsyncGenerator[Any, None]:
         """Drive countdown in background while timer_running is true."""
         while True:
             if not self._is_viewer_connected():
                 async with self:
-                    self.timer_running = False
-                    self._timer_loop_active = False
+                    self._mark_timer_loop_disconnected()
                 break
 
             await asyncio.sleep(1)
@@ -689,60 +699,91 @@ class KumiteMatchState(rx.State):
             publish_tick_update = False
             snapshot_for_publish: dict[str, Any] | None = None
             display_key_for_publish = ""
+            disconnected_inside_lock = False
             async with self:
-                if not self.timer_running:
+                # Re-check while holding state lock to close TOCTOU window.
+                if not self._is_viewer_connected():
+                    self._mark_timer_loop_disconnected()
+                    disconnected_inside_lock = True
+                elif not self.timer_running:
                     self._timer_loop_active = False
                     break
-
-                if self.timer_seconds <= 0:
+                elif self.timer_seconds <= 0:
                     self.timer_seconds = 0
                     self.timer_running = False
                     self._timer_loop_active = False
                     break
-
-                self.timer_seconds -= 1
-                if self.timer_seconds <= 0:
-                    self.timer_seconds = 0
-                    self.timer_running = False
-                    self._timer_loop_active = False
-                    if self.is_exhibition_mode or self.match_id <= 0:
-                        toast_message = self._resolve_local_timeout_and_toast_message()
-                    else:
-                        resolve_time_expired = True
-                        match_id_to_resolve = self.match_id
-                    display_key_for_publish = (
-                        self.public_display_key or self._ensure_display_session()
-                    )
-                    snapshot_for_publish = self._build_display_snapshot()
                 else:
-                    publish_tick_update = True
+                    self.timer_seconds -= 1
+                    if self.timer_seconds <= 0:
+                        self.timer_seconds = 0
+                        self.timer_running = False
+                        self._timer_loop_active = False
+                        if self.is_exhibition_mode or self.match_id <= 0:
+                            toast_message = self._resolve_local_timeout_and_toast_message()
+                        else:
+                            resolve_time_expired = True
+                            match_id_to_resolve = self.match_id
+                    else:
+                        publish_tick_update = True
+
                     display_key_for_publish = (
                         self.public_display_key or self._ensure_display_session()
                     )
                     snapshot_for_publish = self._build_display_snapshot()
+
+            if disconnected_inside_lock:
+                break
 
             if resolve_time_expired:
                 result = KumiteScoringService.resolve_time_expired(match_id_to_resolve)
                 winner = ""
+                disconnected_inside_lock = False
                 async with self:
-                    self._apply_match_end_result(result)
-                    winner = str(getattr(result, "winner", "") or "")
-                    with rx.session() as session:
-                        self._sync_from_match(
-                            session=session,
-                            match_id=match_id_to_resolve,
-                        )
+                    if not self._is_viewer_connected():
+                        self._mark_timer_loop_disconnected()
+                        disconnected_inside_lock = True
+                    else:
+                        self._apply_match_end_result(result)
+                        winner = str(getattr(result, "winner", "") or "")
+                        with rx.session() as session:
+                            self._sync_from_match(
+                                session=session,
+                                match_id=match_id_to_resolve,
+                            )
+                if disconnected_inside_lock:
+                    break
+
                 if winner in (Participant.AKA.value, Participant.AO.value):
                     yield rx.toast.success(self._winner_toast_message(winner))
+
+                disconnected_inside_lock = False
                 async with self:
-                    display_key = self.public_display_key or self._ensure_display_session()
-                    snapshot = self._build_display_snapshot()
+                    if not self._is_viewer_connected():
+                        self._mark_timer_loop_disconnected()
+                        disconnected_inside_lock = True
+                        display_key = ""
+                        snapshot = {}
+                    else:
+                        display_key = self.public_display_key or self._ensure_display_session()
+                        snapshot = self._build_display_snapshot()
+                if disconnected_inside_lock:
+                    break
+
                 published = self._publish_display_snapshot_background_safe(
                     display_key=display_key,
                     snapshot=snapshot,
                 )
+
+                disconnected_inside_lock = False
                 async with self:
-                    self.display_status = "sync" if published else "error"
+                    if not self._is_viewer_connected():
+                        self._mark_timer_loop_disconnected()
+                        disconnected_inside_lock = True
+                    else:
+                        self.display_status = "sync" if published else "error"
+                if disconnected_inside_lock:
+                    break
                 break
 
             if toast_message is not None:
@@ -752,18 +793,35 @@ class KumiteMatchState(rx.State):
                         display_key=display_key_for_publish,
                         snapshot=snapshot_for_publish,
                     )
+                    disconnected_inside_lock = False
                     async with self:
-                        self.display_status = "sync" if published else "error"
+                        if not self._is_viewer_connected():
+                            self._mark_timer_loop_disconnected()
+                            disconnected_inside_lock = True
+                        else:
+                            self.display_status = "sync" if published else "error"
+                    if disconnected_inside_lock:
+                        break
                 break
 
-            if publish_tick_update:
-                if snapshot_for_publish is not None and display_key_for_publish != "":
-                    published = self._publish_display_snapshot_background_safe(
-                        display_key=display_key_for_publish,
-                        snapshot=snapshot_for_publish,
-                    )
-                    async with self:
+            if (
+                publish_tick_update
+                and snapshot_for_publish is not None
+                and display_key_for_publish != ""
+            ):
+                published = self._publish_display_snapshot_background_safe(
+                    display_key=display_key_for_publish,
+                    snapshot=snapshot_for_publish,
+                )
+                disconnected_inside_lock = False
+                async with self:
+                    if not self._is_viewer_connected():
+                        self._mark_timer_loop_disconnected()
+                        disconnected_inside_lock = True
+                    else:
                         self.display_status = "sync" if published else "error"
+                if disconnected_inside_lock:
+                    break
 
     @rx.event
     async def tick_timer(self) -> None:
@@ -1281,7 +1339,7 @@ class KumiteMatchState(rx.State):
     def _apply_penalty(
         self,
         participant: str,
-        penalty_type: Optional[PenaltyType],
+        penalty_type: PenaltyType | None,
     ) -> None:
         """Execute backend service call and sync display state.
 

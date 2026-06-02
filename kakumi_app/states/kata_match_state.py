@@ -19,11 +19,11 @@ from kakumi_app.models.tournament_model import (
     Participant,
     TournamentCategory,
 )
+from kakumi_app.services.bracket_service import propagate_winner
 from kakumi_app.services.kata_informal_service import KataInformalService
-from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 from kakumi_app.services.kata_scoring_service import KataScoringService
 from kakumi_app.services.secondary_display_service import SecondaryDisplayService
-from kakumi_app.services.bracket_service import propagate_winner
+from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 
 
 class KataMatchState(rx.State):
@@ -79,11 +79,12 @@ class KataMatchState(rx.State):
     @rx.var
     def informal_roster_labels(self) -> list[str]:
         """Return informal roster labels for select."""
-        return [
-            f"{int(row['id'])} - {str(row['name'])}"
-            for row in self.informal_roster
-            if "id" in row and "name" in row
-        ]
+        labels: list[str] = []
+        for row in self.informal_roster:
+            if "id" not in row or "name" not in row:
+                continue
+            labels.append(f"{self._coerce_int(row['id'])} - {str(row['name'])}")
+        return labels
 
     @rx.var
     def informal_selected_athlete_label(self) -> str:
@@ -91,8 +92,8 @@ class KataMatchState(rx.State):
         if self.informal_selected_athlete_id <= 0:
             return ""
         for row in self.informal_roster:
-            if int(row.get("id", 0)) == self.informal_selected_athlete_id:
-                return f"{int(row['id'])} - {str(row['name'])}"
+            if self._coerce_int(row.get("id")) == self.informal_selected_athlete_id:
+                return f"{self._coerce_int(row['id'])} - {str(row['name'])}"
         return ""
 
     @rx.var
@@ -122,6 +123,20 @@ class KataMatchState(rx.State):
             f"J{index}": {"AKA": "", "AO": "", "vote": ""}
             for index in range(1, size + 1)
         }
+
+    @staticmethod
+    def _coerce_int(raw_value: object, *, default: int = 0) -> int:
+        if isinstance(raw_value, int):
+            return raw_value
+        if isinstance(raw_value, str):
+            stripped = raw_value.strip()
+            if stripped == "":
+                return default
+            try:
+                return int(stripped)
+            except ValueError:
+                return default
+        return default
 
     def _reset_state(self, *, exhibition_mode: bool) -> None:
         self.match_id = 0 if exhibition_mode else self.match_id
@@ -226,14 +241,15 @@ class KataMatchState(rx.State):
         return aka_votes, ao_votes
 
     def _build_informal_public_results(self) -> list[str]:
-        return [
-            (
-                f"{int(row['rank'])}. {str(row['athlete_name'])} — "
-                f"{str(row['final_score'])}"
+        results: list[str] = []
+        for row in self.informal_standings:
+            if "rank" not in row or "athlete_name" not in row or "final_score" not in row:
+                continue
+            results.append(
+                f"{self._coerce_int(row['rank'])}. "
+                f"{str(row['athlete_name'])} — {str(row['final_score'])}"
             )
-            for row in self.informal_standings
-            if "rank" in row and "athlete_name" in row and "final_score" in row
-        ]
+        return results
 
     def _has_public_judge_input(self) -> bool:
         if self.kata_mode == "INFORMAL":
@@ -321,7 +337,20 @@ class KataMatchState(rx.State):
             },
         }
 
+    def _is_viewer_connected(self) -> bool:
+        try:
+            app = rx.State._get_app()  # type: ignore[attr-defined]
+            token = self.router.session.client_token
+            socket_record = app._token_manager.token_to_socket.get(token)
+            return socket_record is not None
+        except Exception:
+            return True
+
     def _publish_display_snapshot(self) -> None:
+        # Operator-side snapshots are no-ops when viewer socket is gone.
+        if not self._is_viewer_connected():
+            return
+
         display_key = self.public_display_key or self._ensure_display_session()
         result = SecondaryDisplayService.publish_snapshot(
             display_key=display_key,
@@ -335,25 +364,29 @@ class KataMatchState(rx.State):
             return
         ranking = KataInformalService.rank_category(self.informal_category_id)
         name_by_id = {
-            int(row["id"]): str(row["name"])
+            self._coerce_int(row["id"]): str(row["name"])
             for row in self.informal_roster
             if "id" in row and "name" in row
         }
-        self.informal_standings = [
-            {
-                "rank": index + 1,
-                "athlete_id": int(row["athlete_id"]),
-                "athlete_name": name_by_id.get(int(row["athlete_id"]), "—"),
-                "final_score": f"{float(row['final_score']):.3f}",
-                "victory_points": int(row.get("victory_points", 0)),
-                "needs_extra_kata": bool(row["needs_extra_kata"]),
-            }
-            for index, row in enumerate(ranking)
-        ]
+        self.informal_standings = []
+        for index, row in enumerate(ranking):
+            athlete_id = self._coerce_int(row.get("athlete_id"))
+            self.informal_standings.append(
+                {
+                    "rank": index + 1,
+                    "athlete_id": athlete_id,
+                    "athlete_name": name_by_id.get(athlete_id, "—"),
+                    "final_score": f"{float(row['final_score']):.3f}",
+                    "victory_points": self._coerce_int(
+                        row.get("victory_points"),
+                    ),
+                    "needs_extra_kata": bool(row.get("needs_extra_kata", False)),
+                }
+            )
 
     def _advance_informal_next_athlete(self) -> None:
         roster_ids = [
-            int(row["id"])
+            self._coerce_int(row["id"])
             for row in self.informal_roster
             if "id" in row
         ]
@@ -374,7 +407,7 @@ class KataMatchState(rx.State):
                 self.informal_category_id = 0
                 self.informal_roster = []
                 self.informal_selected_athlete_id = 0
-                self.informal_judge_entries = []
+                self.informal_judge_entries = self._build_informal_judge_entries()
                 return
 
             query = select(Athlete).where(
@@ -393,10 +426,12 @@ class KataMatchState(rx.State):
                     category.max_belt_rank, len(BELT_RANKS) - 1
                 )
                 athletes = [
-                    a
-                    for a in athletes
-                    if a.belt_rank
-                    and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+                    athlete
+                    for athlete in athletes
+                    if athlete.belt_rank
+                    and min_idx
+                    <= BELT_RANK_ORDER.get(athlete.belt_rank, -1)
+                    <= max_idx
                 ]
 
         self.informal_category_id = category_id
@@ -404,7 +439,9 @@ class KataMatchState(rx.State):
             {"id": athlete.id, "name": athlete.name} for athlete in athletes
         ]
         self.informal_selected_athlete_id = (
-            int(self.informal_roster[0]["id"]) if len(self.informal_roster) > 0 else 0
+            self._coerce_int(self.informal_roster[0]["id"])
+            if len(self.informal_roster) > 0
+            else 0
         )
         self.informal_judge_entries = self._build_informal_judge_entries()
         self._refresh_informal_standings()
@@ -414,7 +451,7 @@ class KataMatchState(rx.State):
             category = session.exec(
                 select(TournamentCategory)
                 .where(TournamentCategory.modality == Modality.KATA_INDIVIDUAL.value)
-                .order_by(TournamentCategory.id.asc())
+                .order_by(TournamentCategory.id)
             ).first()
         if category is None:
             raise ValueError("No hay categoría disponible para modo informal")

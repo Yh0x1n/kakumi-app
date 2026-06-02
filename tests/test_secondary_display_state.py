@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import reflex as rx
@@ -13,6 +14,10 @@ from kakumi_app.components.public_kata_display import public_kata_display
 from kakumi_app.components.public_kumite_display import public_kumite_display
 from kakumi_app.pages.public_display import public_display_page
 from kakumi_app.states.secondary_display_state import SecondaryDisplayState
+
+
+def _event_fn(event_callback: Any) -> Any:
+    return event_callback.fn
 
 
 def _set_display_route_param(state: SecondaryDisplayState, display_key: str) -> None:
@@ -52,7 +57,7 @@ async def test_load_display_reports_missing_key_error() -> None:
     state = SecondaryDisplayState()
     _set_display_route_param(state, "missing-key")
 
-    await SecondaryDisplayState.load_display.fn(state)
+    await _event_fn(SecondaryDisplayState.load_display)(state)
 
     assert state.current_display_key == "missing-key"
     assert state.has_snapshot is False
@@ -76,7 +81,7 @@ async def test_load_display_flags_stale_snapshot(
         ),
     )
 
-    await SecondaryDisplayState.load_display.fn(state)
+    await _event_fn(SecondaryDisplayState.load_display)(state)
 
     assert state.is_stale is True
     assert state.has_snapshot is True
@@ -105,7 +110,7 @@ async def test_refresh_snapshot_updates_modality_and_payload(
         ),
     )
 
-    await SecondaryDisplayState.refresh_snapshot.fn(state)
+    await _event_fn(SecondaryDisplayState.refresh_snapshot)(state)
 
     assert state.error_message == ""
     assert state.has_snapshot is True
@@ -156,7 +161,7 @@ async def test_refresh_snapshot_exposes_kumite_senshu_and_penalties(
         ),
     )
 
-    await SecondaryDisplayState.refresh_snapshot.fn(state)
+    await _event_fn(SecondaryDisplayState.refresh_snapshot)(state)
 
     assert state.kumite_aka_senshu is True
     assert state.kumite_ao_senshu is False
@@ -284,7 +289,7 @@ async def test_poll_snapshot_loop_refreshes_with_state_lock_boundary(
     )
 
     with pytest.raises(asyncio.CancelledError):
-        await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+        await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
 
     assert state.has_snapshot is True
     assert state.modality == "KATA"
@@ -316,7 +321,7 @@ async def test_poll_snapshot_loop_stops_for_disconnected_viewer(
         lambda self: False,
     )
 
-    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+    await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
 
     assert read_calls["count"] == 0
 
@@ -336,7 +341,7 @@ async def test_viewer_heartbeat_registers_presence_with_service(
         lambda *, display_key, client_token: calls.append((display_key, client_token)),
     )
 
-    await SecondaryDisplayState.viewer_heartbeat.fn(state, "tick")
+    await _event_fn(SecondaryDisplayState.viewer_heartbeat)(state, "tick")
 
     assert calls == [("live-key", "viewer-token")]
 
@@ -404,7 +409,7 @@ async def test_poll_snapshot_loop_stops_after_heartbeat_expiration(
         _no_wait,
     )
 
-    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+    await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
 
     assert read_calls["count"] == 1
 
@@ -417,7 +422,7 @@ async def test_poll_snapshot_loop_applies_idle_backoff_for_unchanged_snapshot(
     state = SecondaryDisplayState()
     state.current_display_key = "stable-key"
 
-    connectivity_sequence = iter([True, True, True, False])
+    connectivity_sequence = iter([True, True, True, True, True, True, False])
     monkeypatch.setattr(
         SecondaryDisplayState,
         "_is_viewer_connected",
@@ -443,7 +448,7 @@ async def test_poll_snapshot_loop_applies_idle_backoff_for_unchanged_snapshot(
         _record_sleep,
     )
 
-    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+    await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
 
     assert sleep_calls == [1.0, 2.0, 4.0]
 
@@ -456,7 +461,7 @@ async def test_poll_snapshot_loop_applies_error_backoff_after_transient_failure(
     state = SecondaryDisplayState()
     state.current_display_key = "unstable-key"
 
-    connectivity_sequence = iter([True, True, False])
+    connectivity_sequence = iter([True, True, True, True, False])
     monkeypatch.setattr(
         SecondaryDisplayState,
         "_is_viewer_connected",
@@ -491,6 +496,129 @@ async def test_poll_snapshot_loop_applies_error_backoff_after_transient_failure(
         _record_sleep,
     )
 
-    await SecondaryDisplayState.poll_snapshot_loop.fn(state)
+    await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
 
     assert sleep_calls == [2.0, 1.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_poll_snapshot_loop_skips_mutation_when_disconnected_during_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "race-key"
+    state.snapshot = {"title": "existing"}
+    state.has_snapshot = True
+    state.error_message = ""
+
+    connectivity_sequence = iter([True, False])
+    monkeypatch.setattr(
+        SecondaryDisplayState,
+        "_is_viewer_connected",
+        lambda self: next(connectivity_sequence),
+    )
+
+    read_calls = {"count": 0}
+
+    def _read_snapshot(display_key: str, stale_after_seconds: int) -> SimpleNamespace:
+        del display_key, stale_after_seconds
+        read_calls["count"] += 1
+        return SimpleNamespace(
+            status="ok",
+            snapshot={"modality": "KATA", "title": "new"},
+            updated_at=None,
+        )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.read_snapshot",
+        _read_snapshot,
+    )
+
+    sleep_calls: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.asyncio.sleep",
+        _record_sleep,
+    )
+
+    await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
+
+    assert read_calls["count"] == 1
+    assert sleep_calls == []
+    assert state.snapshot == {"title": "existing"}
+    assert state.has_snapshot is True
+    assert state.modality == ""
+    assert state.source_kind == ""
+    assert state.error_message == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_reduced_heartbeat_ttl_allows_normal_polling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = SecondaryDisplayState()
+    state.current_display_key = "ttl-key"
+    state._viewer_client_token = "viewer-token"
+
+    monkeypatch.setattr(
+        rx.State,
+        "_get_app",
+        lambda: SimpleNamespace(),
+        raising=False,
+    )
+
+    ttl_checks: list[int] = []
+    heartbeat_sequence = iter([True, True, False])
+
+    def _has_recent_viewer_heartbeat(
+        *,
+        display_key: str,
+        client_token: str,
+        ttl_seconds: int,
+    ) -> bool:
+        assert display_key == "ttl-key"
+        assert client_token == "viewer-token"
+        ttl_checks.append(ttl_seconds)
+        return next(heartbeat_sequence)
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.has_recent_viewer_heartbeat",
+        _has_recent_viewer_heartbeat,
+    )
+
+    read_calls = {"count": 0}
+
+    def _read_snapshot(display_key: str, stale_after_seconds: int) -> SimpleNamespace:
+        del display_key, stale_after_seconds
+        read_calls["count"] += 1
+        return SimpleNamespace(
+            status="ok",
+            snapshot={"modality": "KUMITE", "title": "Live"},
+            updated_at=None,
+        )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.SecondaryDisplayService.read_snapshot",
+        _read_snapshot,
+    )
+
+    async def _no_wait(_: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "kakumi_app.states.secondary_display_state.asyncio.sleep",
+        _no_wait,
+    )
+
+    await _event_fn(SecondaryDisplayState.poll_snapshot_loop)(state)
+
+    assert state.viewer_heartbeat_ttl_seconds == 5
+    assert read_calls["count"] == 1
+    assert state.has_snapshot is True
+    assert state.modality == "KUMITE"
+    assert ttl_checks == [5, 5, 5]

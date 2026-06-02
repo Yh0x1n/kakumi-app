@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 import reflex as rx
 from reflex.istate.data import PageData
@@ -11,6 +13,10 @@ from kakumi_app.models.kata_model import KataJudgeScore
 from kakumi_app.models.tournament_model import Match, MatchStatus
 from kakumi_app.services.kata_scoring_service import KataScoringService
 from kakumi_app.states.kata_match_state import KataMatchState
+
+
+def _event_fn(event_callback: Any) -> Any:
+    return event_callback.fn
 
 
 def _set_match_route_param(state: KataMatchState, match_id: int | str) -> None:
@@ -53,7 +59,7 @@ async def test_enable_exhibition_mode_publishes_exhibition_secondary_snapshot(
         _publish,
     )
 
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
     assert calls["ensure"] == {
         "modality": "KATA",
@@ -71,7 +77,7 @@ async def test_enable_exhibition_mode_publishes_exhibition_secondary_snapshot(
 async def test_enable_exhibition_mode_starts_free_operation_defaults() -> None:
     state = KataMatchState()
 
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
     assert state.is_exhibition_mode is True
     assert state.has_active_match is False
@@ -88,7 +94,7 @@ async def test_load_match_tournament_sets_kata_contract_fields(
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
 
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
 
     assert state.match_id == kata_match.id
     assert state.is_exhibition_mode is False
@@ -107,7 +113,7 @@ async def test_finalize_exhibition_requires_complete_panel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
     def toast_error(message: str) -> str:
         return f"toast:{message}"
@@ -130,7 +136,7 @@ async def test_finalize_exhibition_majority_sets_winner_without_db_writes(
     sample_judges,
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
     state.judge_panel_size = 3
     state.decision_rule = "majority-by-judge"
     state._set_numerical_entry("J1", "AKA", "8.0")
@@ -159,21 +165,21 @@ async def test_finalize_exhibition_majority_sets_winner_without_db_writes(
 @pytest.mark.anyio
 async def test_exhibition_can_switch_decision_rule_from_scoreboard_state() -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
-    await KataMatchState.set_panel_size.fn(state, 3)
-    await KataMatchState.set_judge_score.fn(state, "J1", "AKA", "9.0")
-    await KataMatchState.set_judge_score.fn(state, "J1", "AO", "8.0")
-    await KataMatchState.set_judge_score.fn(state, "J2", "AKA", "9.0")
-    await KataMatchState.set_judge_score.fn(state, "J2", "AO", "8.0")
-    await KataMatchState.set_judge_score.fn(state, "J3", "AKA", "7.0")
-    await KataMatchState.set_judge_score.fn(state, "J3", "AO", "9.9")
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
+    await _event_fn(KataMatchState.set_panel_size)(state, 3)
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AKA", "9.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AO", "8.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J2", "AKA", "9.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J2", "AO", "8.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AKA", "7.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AO", "9.9")
 
     default_events = [event async for event in state.finalize_match()]
 
     assert default_events == []
     assert state.winner_participant == "AO"
 
-    KataMatchState.set_decision_rule.fn(state, "majority-by-judge")
+    _event_fn(KataMatchState.set_decision_rule)(state, "majority-by-judge")
     switched_events = [event async for event in state.finalize_match()]
 
     assert switched_events == []
@@ -187,10 +193,10 @@ async def test_tournament_cannot_override_category_decision_rule_from_scoreboard
 ) -> None:
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
     category_rule = state.decision_rule
 
-    KataMatchState.set_decision_rule.fn(state, "majority-by-judge")
+    _event_fn(KataMatchState.set_decision_rule)(state, "majority-by-judge")
 
     assert state.decision_rule == category_rule
 
@@ -203,7 +209,7 @@ async def test_finalize_tournament_rejects_incomplete_panel(
 ) -> None:
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
 
     def toast_error(message: str) -> str:
         return f"toast:{message}"
@@ -227,7 +233,7 @@ async def test_finalize_tournament_persists_scores_and_winner(
     sample_judges(5)
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
     state.judge_panel_size = 5
     state.decision_rule = "average-with-discard"
     for index in range(1, 6):
@@ -269,10 +275,10 @@ async def test_finalize_tournament_flag_mode_persists_three_votes(
 
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
-    await KataMatchState.load_match.fn(state)
-    await KataMatchState.set_flag_vote.fn(state, "J1", "AKA")
-    await KataMatchState.set_flag_vote.fn(state, "J2", "AKA")
-    await KataMatchState.set_flag_vote.fn(state, "J3", "AO")
+    await _event_fn(KataMatchState.load_match)(state)
+    await _event_fn(KataMatchState.set_flag_vote)(state, "J1", "AKA")
+    await _event_fn(KataMatchState.set_flag_vote)(state, "J2", "AKA")
+    await _event_fn(KataMatchState.set_flag_vote)(state, "J3", "AO")
 
     events = [event async for event in state.finalize_match()]
 
@@ -304,7 +310,7 @@ async def test_finalize_tournament_updates_standings_and_bunkai_contract(
 
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
     state.judge_panel_size = 5
     state.decision_rule = "average-with-discard"
 
@@ -340,7 +346,7 @@ async def test_finalize_tournament_updates_standings_and_bunkai_contract(
 async def test_enable_exhibition_mode_initializes_informal_single_panel_state() -> None:
     state = KataMatchState()
 
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
     assert state.kata_mode == "STANDARD"
     assert state.informal_selected_athlete_label == ""
@@ -361,12 +367,12 @@ async def test_enable_exhibition_mode_initializes_informal_single_panel_state() 
 async def test_finalize_exhibition_informal_saves_and_advances_participant(
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
-    await KataMatchState.set_kata_mode.fn(state, "INFORMAL")
-    await KataMatchState.set_informal_exhibition_participant_name.fn(state, "Lucía")
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
+    await _event_fn(KataMatchState.set_kata_mode)(state, "INFORMAL")
+    await _event_fn(KataMatchState.set_informal_exhibition_participant_name)(state, "Lucía")
 
     for slot in ("J1", "J2", "J3", "J4", "J5"):
-        await KataMatchState.set_informal_judge_score.fn(state, slot, "8.2")
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.2")
 
     events = [event async for event in state.finalize_match()]
 
@@ -389,9 +395,9 @@ async def test_finalize_exhibition_informal_saves_and_advances_participant(
 @pytest.mark.anyio
 async def test_exhibition_informal_works_without_category_and_uses_fallback_name() -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
-    await KataMatchState.set_kata_mode.fn(state, "INFORMAL")
+    await _event_fn(KataMatchState.set_kata_mode)(state, "INFORMAL")
 
     assert state.kata_mode == "INFORMAL"
     assert state.error_message == ""
@@ -399,7 +405,7 @@ async def test_exhibition_informal_works_without_category_and_uses_fallback_name
     assert state.informal_current_athlete_label == "ATLETA"
 
     for slot in ("J1", "J2", "J3", "J4", "J5"):
-        await KataMatchState.set_informal_judge_score.fn(state, slot, "8.0")
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.0")
 
     events = [event async for event in state.finalize_match()]
 
@@ -424,7 +430,7 @@ async def test_tournament_load_match_activates_informal_single_panel_for_categor
     state = KataMatchState()
     _set_match_route_param(state, kata_match.id)
 
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
 
     assert state.kata_mode == "INFORMAL"
 
@@ -463,7 +469,7 @@ async def test_load_match_publishes_secondary_display_snapshot(
         _publish,
     )
 
-    await KataMatchState.load_match.fn(state)
+    await _event_fn(KataMatchState.load_match)(state)
 
     assert state.public_display_key == "kata-key"
     assert calls["ensure"] == {
@@ -482,9 +488,9 @@ async def test_reset_entries_repulishes_secondary_display_snapshot_in_exhibition
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
         "kakumi_app.states.kata_match_state.SecondaryDisplayService.publish_snapshot",
@@ -493,7 +499,7 @@ async def test_reset_entries_repulishes_secondary_display_snapshot_in_exhibition
         ),
     )
 
-    await KataMatchState.reset_entries.fn(state)
+    await _event_fn(KataMatchState.reset_entries)(state)
 
     assert calls
     assert state.public_display_key != ""
@@ -509,25 +515,25 @@ async def test_standard_snapshot_uses_sum_total_without_changing_decision_logic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
-    await KataMatchState.set_panel_size.fn(state, 3)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
+    await _event_fn(KataMatchState.set_panel_size)(state, 3)
     state.kata_mode = "STANDARD"
     state.decision_rule = "average-with-discard"
 
-    await KataMatchState.set_judge_score.fn(state, "J1", "AKA", "9.0")
-    await KataMatchState.set_judge_score.fn(state, "J1", "AO", "8.0")
-    await KataMatchState.set_judge_score.fn(state, "J2", "AKA", "9.0")
-    await KataMatchState.set_judge_score.fn(state, "J2", "AO", "8.0")
-    await KataMatchState.set_judge_score.fn(state, "J3", "AKA", "7.0")
-    await KataMatchState.set_judge_score.fn(state, "J3", "AO", "9.9")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AKA", "9.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AO", "8.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J2", "AKA", "9.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J2", "AO", "8.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AKA", "7.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AO", "9.9")
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         "kakumi_app.states.kata_match_state.SecondaryDisplayService.publish_snapshot",
         lambda *, display_key, snapshot: calls.append(snapshot),
     )
 
-    await KataMatchState.set_judge_score.fn(state, "J3", "AO", "9.9")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AO", "9.9")
     events = [event async for event in state.finalize_match()]
 
     assert events == []
@@ -544,17 +550,17 @@ async def test_standard_snapshot_shows_judge_detail_only_after_votes_entered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
     state.kata_mode = "STANDARD"
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         "kakumi_app.states.kata_match_state.SecondaryDisplayService.publish_snapshot",
         lambda *, display_key, snapshot: calls.append(snapshot),
     )
 
-    await KataMatchState.reset_entries.fn(state)
-    await KataMatchState.set_judge_score.fn(state, "J1", "AKA", "8.4")
+    await _event_fn(KataMatchState.reset_entries)(state)
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AKA", "8.4")
 
     assert len(calls) >= 2
     before_votes = calls[-2]
@@ -571,17 +577,17 @@ async def test_informal_snapshot_shows_judge_detail_only_after_votes_entered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
-    await KataMatchState.set_kata_mode.fn(state, "INFORMAL")
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
+    await _event_fn(KataMatchState.set_kata_mode)(state, "INFORMAL")
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         "kakumi_app.states.kata_match_state.SecondaryDisplayService.publish_snapshot",
         lambda *, display_key, snapshot: calls.append(snapshot),
     )
 
-    await KataMatchState.reset_entries.fn(state)
-    await KataMatchState.set_informal_judge_score.fn(state, "J2", "8.7")
+    await _event_fn(KataMatchState.reset_entries)(state)
+    await _event_fn(KataMatchState.set_informal_judge_score)(state, "J2", "8.7")
 
     assert len(calls) >= 2
     before_votes = calls[-2]
@@ -596,12 +602,12 @@ async def test_informal_snapshot_shows_judge_detail_only_after_votes_entered(
 @pytest.mark.anyio
 async def test_informal_snapshot_exposes_single_athlete_and_results_payload() -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
-    await KataMatchState.set_kata_mode.fn(state, "INFORMAL")
-    await KataMatchState.set_informal_exhibition_participant_name.fn(state, "Lucía")
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
+    await _event_fn(KataMatchState.set_kata_mode)(state, "INFORMAL")
+    await _event_fn(KataMatchState.set_informal_exhibition_participant_name)(state, "Lucía")
 
     for slot in ("J1", "J2", "J3", "J4", "J5"):
-        await KataMatchState.set_informal_judge_score.fn(state, slot, "8.2")
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.2")
 
     _ = [event async for event in state.finalize_match()]
     snapshot = state._build_display_snapshot()
@@ -616,21 +622,21 @@ async def test_informal_snapshot_exposes_single_athlete_and_results_payload() ->
 @pytest.mark.anyio
 async def test_standard_majority_snapshot_exposes_vote_tally() -> None:
     state = KataMatchState()
-    await KataMatchState.enable_exhibition_mode.fn(state)
-    await KataMatchState.set_panel_size.fn(state, 5)
+    await _event_fn(KataMatchState.enable_exhibition_mode)(state)
+    await _event_fn(KataMatchState.set_panel_size)(state, 5)
     state.kata_mode = "STANDARD"
     state.decision_rule = "majority-by-judge"
 
-    await KataMatchState.set_judge_score.fn(state, "J1", "AKA", "8.0")
-    await KataMatchState.set_judge_score.fn(state, "J1", "AO", "7.0")
-    await KataMatchState.set_judge_score.fn(state, "J2", "AKA", "8.1")
-    await KataMatchState.set_judge_score.fn(state, "J2", "AO", "7.1")
-    await KataMatchState.set_judge_score.fn(state, "J3", "AKA", "8.2")
-    await KataMatchState.set_judge_score.fn(state, "J3", "AO", "7.2")
-    await KataMatchState.set_judge_score.fn(state, "J4", "AKA", "7.0")
-    await KataMatchState.set_judge_score.fn(state, "J4", "AO", "8.0")
-    await KataMatchState.set_judge_score.fn(state, "J5", "AKA", "7.1")
-    await KataMatchState.set_judge_score.fn(state, "J5", "AO", "8.1")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AKA", "8.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J1", "AO", "7.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J2", "AKA", "8.1")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J2", "AO", "7.1")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AKA", "8.2")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J3", "AO", "7.2")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J4", "AKA", "7.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J4", "AO", "8.0")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J5", "AKA", "7.1")
+    await _event_fn(KataMatchState.set_judge_score)(state, "J5", "AO", "8.1")
 
     snapshot = state._build_display_snapshot()
 
@@ -638,3 +644,46 @@ async def test_standard_majority_snapshot_exposes_vote_tally() -> None:
     assert snapshot["majority_tally"] == "AKA 3 - AO 2"
     assert snapshot["majority_aka_votes"] == 3
     assert snapshot["majority_ao_votes"] == 2
+
+
+def test_publish_display_snapshot_skipped_when_viewer_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KataMatchState()
+    state.public_display_key = "kata-key"
+    object.__setattr__(
+        state.router,
+        "session",
+        type("Session", (), {"client_token": "disconnected-token"})(),
+    )
+
+    fake_app = type(
+        "App",
+        (),
+        {
+            "_token_manager": type(
+                "TokenManager",
+                (),
+                {"token_to_socket": {}},
+            )()
+        },
+    )()
+    monkeypatch.setattr(rx.State, "_get_app", lambda: fake_app, raising=False)
+
+    ensure_calls: list[dict[str, Any]] = []
+    publish_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "kakumi_app.states.kata_match_state.SecondaryDisplayService.ensure_display_session",
+        lambda **kwargs: ensure_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "kakumi_app.states.kata_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda **kwargs: publish_calls.append(kwargs),
+    )
+
+    state._publish_display_snapshot()
+
+    assert ensure_calls == []
+    assert publish_calls == []
+    assert state.public_display_key == "kata-key"
+    assert state.display_status == ""

@@ -24,7 +24,8 @@ class SecondaryDisplayState(rx.State):
     error_message: str = ""
 
     stale_after_seconds: int = 8
-    viewer_heartbeat_ttl_seconds: int = 12
+    # Reduce TTL to shorten fallback window where heartbeat allows publishes
+    viewer_heartbeat_ttl_seconds: int = 5
     poll_min_interval_seconds: float = 1.0
     poll_max_interval_seconds: float = 8.0
     poll_idle_backoff_multiplier: float = 2.0
@@ -358,6 +359,9 @@ class SecondaryDisplayState(rx.State):
                     previous_fingerprint = snapshot_fingerprint
 
                     async with self:
+                        # Re-check connection inside state lock to avoid TOCTOU race
+                        if not self._is_viewer_connected():
+                            break
                         if result.status == "missing":
                             self.snapshot = {}
                             self.has_snapshot = False

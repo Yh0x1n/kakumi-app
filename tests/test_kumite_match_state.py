@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -28,6 +29,10 @@ from kakumi_app.services.exceptions import (
     PenaltyRemovalNotAllowedError,
 )
 from kakumi_app.states.kumite_match_state import KumiteMatchState
+
+
+def _event_fn(event_callback: Any) -> Any:
+    return event_callback.fn
 
 
 def _set_match_route_param(state: KumiteMatchState, match_id: int | str) -> None:
@@ -88,7 +93,7 @@ async def test_enable_exhibition_mode_publishes_exhibition_secondary_snapshot(
         _publish,
     )
 
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
     assert calls["ensure"] == {
         "modality": "KUMITE",
@@ -440,7 +445,7 @@ async def test_exhibition_mode_penalty_mutates_local_slots_without_db_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
     mock_apply_penalty = Mock()
     monkeypatch.setattr(
@@ -465,7 +470,7 @@ async def test_exhibition_mode_hansoku_emits_winner_toast_and_ends_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_running = True
     state.aka_penalty_slots = {
         "C1": True,
@@ -591,7 +596,7 @@ async def test_load_match_from_route_initializes_real_match_timer_and_identity(
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
 
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     assert state.match_id == sample_match.id
     assert state.has_active_match is True
@@ -618,7 +623,7 @@ async def test_load_match_from_route_uses_category_duration_seconds(
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
 
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     assert state.timer_seconds == 120
     assert state.timer_formatted == "02:00"
@@ -633,7 +638,7 @@ async def test_load_match_invalid_or_missing_route_stays_real_route_safe_state(
     state = KumiteMatchState()
     object.__setattr__(state.router, "_page", PageData(params=params))
 
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     assert state.match_id == 0
     assert state.has_active_match is False
@@ -648,7 +653,7 @@ async def test_load_match_not_found_stays_real_route_safe_state() -> None:
     state = KumiteMatchState()
     _set_match_route_param(state, 999999)
 
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     assert state.match_id == 0
     assert state.has_active_match is False
@@ -671,7 +676,7 @@ async def test_timer_start_tick_stop_reset_end_flow_for_real_match(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     state.timer_seconds = 2
     events = [event async for event in state.start_timer()]
@@ -683,7 +688,7 @@ async def test_timer_start_tick_stop_reset_end_flow_for_real_match(
     assert state.timer_seconds == 1
     assert state.timer_running is True
 
-    await KumiteMatchState.stop_timer.fn(state)
+    await _event_fn(KumiteMatchState.stop_timer)(state)
     assert state.timer_running is False
 
     reset_events = [event async for event in state.reset_timer()]
@@ -706,7 +711,7 @@ async def test_timer_start_tick_stop_reset_end_flow_for_real_match(
 @pytest.mark.anyio
 async def test_exhibition_mode_can_start_timer_without_active_match() -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
     events = [event async for event in state.start_timer()]
 
@@ -722,7 +727,7 @@ async def test_run_timer_loop_decrements_and_stops_with_toast(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_seconds = 1
     state.timer_running = True
     state._timer_loop_active = True
@@ -737,7 +742,7 @@ async def test_run_timer_loop_decrements_and_stops_with_toast(
         toast_success,
     )
 
-    events = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+    events = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
 
     assert events == []
     assert state.timer_seconds == 0
@@ -774,7 +779,7 @@ async def test_exhibition_mode_reset_timer_uses_exhibition_base_without_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_base_seconds = 75
     state.timer_seconds = 12
 
@@ -794,7 +799,7 @@ async def test_exhibition_mode_reset_timer_uses_exhibition_base_without_warning(
 @pytest.mark.anyio
 async def test_set_timer_updates_timer_base_and_seconds_in_exhibition_mode() -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_seconds = 12
 
     events = [event async for event in state.set_timer(60)]
@@ -809,7 +814,7 @@ async def test_set_timer_updates_timer_base_and_seconds_in_exhibition_mode() -> 
 @pytest.mark.anyio
 async def test_add_or_substract_timer_changes_seconds_with_floor_zero() -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_seconds = 5
 
     plus_events = [event async for event in state.add_or_substract_timer(10)]
@@ -825,7 +830,7 @@ async def test_add_or_substract_timer_changes_seconds_with_floor_zero() -> None:
 @pytest.mark.anyio
 async def test_apply_score_in_exhibition_mode_does_not_auto_assign_senshu() -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
     events = [
         event
@@ -846,7 +851,7 @@ async def test_apply_score_in_exhibition_mode_does_not_auto_assign_senshu() -> N
 @pytest.mark.anyio
 async def test_manual_senshu_apply_and_revoke_exhibition_mode() -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
     apply_events = [
         event
@@ -868,7 +873,7 @@ async def test_manual_senshu_apply_and_revoke_exhibition_mode() -> None:
 @pytest.mark.anyio
 async def test_exhibition_undo_restores_manual_senshu_snapshot() -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
     apply_events = [
         event
@@ -898,7 +903,7 @@ async def test_manual_senshu_apply_real_mode_calls_service_and_syncs(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     def _apply(match_id: int, participant: str):
         assert match_id == sample_match.id
@@ -943,7 +948,7 @@ async def test_manual_senshu_revoke_real_mode_calls_service_and_syncs(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     def _revoke(match_id: int, participant: str):
         assert match_id == sample_match.id
@@ -985,7 +990,7 @@ async def test_manual_senshu_real_mode_service_error_yields_toast(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.KumiteScoringService.apply_manual_senshu",
@@ -1028,7 +1033,7 @@ async def test_timer_loop_time_expired_points_emits_winner_toast_no_modal(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.timer_seconds = 1
     state.timer_running = True
     state._timer_loop_active = True
@@ -1044,7 +1049,7 @@ async def test_timer_loop_time_expired_points_emits_winner_toast_no_modal(
         toast_success,
     )
 
-    events = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+    events = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
 
     assert events == ["toast-finished"]
     assert state.timer_running is False
@@ -1074,7 +1079,7 @@ async def test_timer_loop_time_expired_hantei_required_blocks_scoring(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.timer_seconds = 1
     state.timer_running = True
     state._timer_loop_active = True
@@ -1084,7 +1089,7 @@ async def test_timer_loop_time_expired_hantei_required_blocks_scoring(
 
     monkeypatch.setattr("asyncio.sleep", _fast_sleep)
 
-    _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+    _ = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
 
     assert state.hantei_required is True
     assert state.match_end_reason == "HANTEI_REQUIRED"
@@ -1126,7 +1131,7 @@ async def test_apply_hantei_decision_updates_state_and_unblocks_scoring(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.hantei_required = True
     state.match_end_modal_open = True
     state.match_end_reason = "HANTEI_REQUIRED"
@@ -1187,7 +1192,7 @@ async def test_apply_score_superiority_emits_winner_toast_and_stops_timer(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.timer_running = True
 
     toast_success = Mock(return_value="toast-finished")
@@ -1230,7 +1235,7 @@ async def test_tick_timer_real_match_end_emits_winner_toast_no_modal(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.timer_seconds = 1
     state.timer_running = True
 
@@ -1272,7 +1277,7 @@ async def test_tick_timer_real_match_time_over_senshu_emits_toast_no_modal(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.timer_seconds = 1
     state.timer_running = True
 
@@ -1314,7 +1319,7 @@ async def test_tick_timer_real_match_time_over_senshu_ao_winner_sets_score_color
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
     state.timer_seconds = 1
     state.timer_running = True
 
@@ -1343,7 +1348,7 @@ async def test_tick_timer_exhibition_time_over_points_emits_winner_toast_no_moda
 ) -> None:
     """Exhibition timeout by points emite toast exacto y no modal."""
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.aka_score = 3
     state.ao_score = 1
     state.timer_seconds = 1
@@ -1373,7 +1378,7 @@ async def test_tick_timer_exhibition_time_over_senshu_emits_toast_no_modal(
 ) -> None:
     """Exhibition time-over por SENSHU no abre dialog; emite toast exacto."""
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.aka_score = 1
     state.ao_score = 1
     state.aka_senshu = False
@@ -1403,7 +1408,7 @@ async def test_tick_timer_exhibition_time_over_senshu_emits_toast_no_modal(
 async def test_tick_timer_exhibition_draw_requires_hantei_and_allows_decision() -> None:
     """Exhibition tie timeout requires HANTEI and operator can resolve winner."""
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.aka_score = 2
     state.ao_score = 2
     state.timer_seconds = 1
@@ -1445,7 +1450,7 @@ async def test_apply_score_exhibition_superiority_emits_winner_toast_and_stops_t
 ) -> None:
     """Exhibition superiority emite toast exacto y no abre modal."""
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.aka_score = 6
     state.ao_score = 0
     state.timer_running = True
@@ -1477,7 +1482,7 @@ async def test_apply_score_exhibition_superiority_emits_winner_toast_and_stops_t
 async def test_reset_points_exhibition_mode_clears_score_senshu_and_penalties() -> None:
     """Reset puntos en exhibition limpia score/senshu/penalidades."""
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.aka_score = 4
     state.ao_score = 2
     state.aka_senshu = True
@@ -1497,7 +1502,7 @@ async def test_reset_points_exhibition_mode_clears_score_senshu_and_penalties() 
         "H": False,
     }
 
-    await KumiteMatchState.reset_points.fn(state)
+    await _event_fn(KumiteMatchState.reset_points)(state)
 
     assert state.aka_score == 0
     assert state.ao_score == 0
@@ -1525,7 +1530,7 @@ async def test_open_disqualification_dialog_sets_target_and_opens() -> None:
     """Abrir descalificación guarda lado objetivo y abre modal."""
     state = KumiteMatchState()
 
-    await KumiteMatchState.open_disqualification_dialog.fn(
+    await _event_fn(KumiteMatchState.open_disqualification_dialog)(
         state,
         participant=Participant.AKA.value,
     )
@@ -1550,8 +1555,8 @@ async def test_apply_disqualification_emits_toast_closes_dialog_and_marks_end(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
-    await KumiteMatchState.open_disqualification_dialog.fn(
+    await _event_fn(KumiteMatchState.load_match)(state)
+    await _event_fn(KumiteMatchState.open_disqualification_dialog)(
         state,
         participant=Participant.AKA.value,
     )
@@ -1616,7 +1621,7 @@ async def test_apply_penalty_hansoku_emits_winner_toast_no_modal(
 
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     toast_success = Mock(return_value="toast-hansoku")
     monkeypatch.setattr(
@@ -1666,7 +1671,7 @@ async def test_load_match_publishes_secondary_display_snapshot(
         _publish,
     )
 
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     assert state.public_display_key == "kumite-key"
     assert calls["ensure"] == {
@@ -1685,9 +1690,9 @@ async def test_reset_points_repulishes_secondary_display_snapshot_in_exhibition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
@@ -1696,7 +1701,7 @@ async def test_reset_points_repulishes_secondary_display_snapshot_in_exhibition(
         ),
     )
 
-    await KumiteMatchState.reset_points.fn(state)
+    await _event_fn(KumiteMatchState.reset_points)(state)
 
     assert calls
     assert state.public_display_key != ""
@@ -1723,13 +1728,13 @@ async def test_load_match_snapshot_includes_senshu_and_penalties_shape(
 
     KumiteScoringService.apply_score(
         match_id=sample_match.id,
-        participant=Participant.AKA.value,
-        score_type=ScoreType.YUKO.value,
+        participant=Participant.AKA,
+        score_type=ScoreType.YUKO,
         applied_by_id=sample_user.id,
     )
     KumiteScoringService.apply_penalty(
         match_id=sample_match.id,
-        participant=Participant.AO.value,
+        participant=Participant.AO,
         penalty_type=PenaltyType.CHUI,
         reason="foul",
         applied_by_id=sample_user.id,
@@ -1738,13 +1743,13 @@ async def test_load_match_snapshot_includes_senshu_and_penalties_shape(
     state = KumiteMatchState()
     _set_match_route_param(state, sample_match.id)
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
         lambda *, display_key, snapshot: calls.append(snapshot),
     )
 
-    await KumiteMatchState.load_match.fn(state)
+    await _event_fn(KumiteMatchState.load_match)(state)
 
     assert calls
     snapshot = calls[-1]
@@ -1772,7 +1777,7 @@ async def test_run_timer_loop_publishes_snapshot_on_each_tick(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_seconds = 2
     state.timer_running = True
     state._timer_loop_active = True
@@ -1780,14 +1785,14 @@ async def test_run_timer_loop_publishes_snapshot_on_each_tick(
     async def _fast_sleep(_: float) -> None:
         return None
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr("asyncio.sleep", _fast_sleep)
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
         lambda *, display_key, snapshot: calls.append(snapshot),
     )
 
-    _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+    _ = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
 
     assert len(calls) >= 1
     assert calls[0]["timer_seconds"] == 1
@@ -1801,7 +1806,7 @@ async def test_run_timer_loop_first_tick_avoids_sync_state_mutation_publisher(
 ) -> None:
     """Background first tick must not use sync publisher mutating self directly."""
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_seconds = 2
     state.timer_running = True
     state._timer_loop_active = True
@@ -1825,7 +1830,7 @@ async def test_run_timer_loop_first_tick_avoids_sync_state_mutation_publisher(
     )
 
     with pytest.raises(asyncio.CancelledError):
-        _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+        _ = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
 
     assert state.timer_seconds == 1
     assert state.timer_running is True
@@ -1837,7 +1842,7 @@ async def test_run_timer_loop_stops_without_publish_for_disconnected_viewer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = KumiteMatchState()
-    await KumiteMatchState.enable_exhibition_mode.fn(state)
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
     state.timer_seconds = 9
     state.timer_running = True
     state._timer_loop_active = True
@@ -1848,14 +1853,97 @@ async def test_run_timer_loop_stops_without_publish_for_disconnected_viewer(
         lambda self: False,
     )
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
         lambda *, display_key, snapshot: calls.append(snapshot),
     )
 
-    _ = [event async for event in KumiteMatchState.run_timer_loop.fn(state)]
+    _ = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
 
     assert calls == []
     assert state.timer_running is False
     assert state._timer_loop_active is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_run_timer_loop_checks_connection_inside_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    await _event_fn(KumiteMatchState.enable_exhibition_mode)(state)
+    state.timer_seconds = 9
+    state.timer_running = True
+    state._timer_loop_active = True
+    baseline_display_status = state.display_status
+
+    connection_sequence = iter([True, False])
+    monkeypatch.setattr(
+        KumiteMatchState,
+        "_is_viewer_connected",
+        lambda self: next(connection_sequence),
+    )
+
+    async def _fast_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", _fast_sleep)
+
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda *, display_key, snapshot: calls.append(snapshot),
+    )
+
+    _ = [event async for event in _event_fn(KumiteMatchState.run_timer_loop)(state)]
+
+    assert calls == []
+    assert state.timer_seconds == 9
+    assert state.timer_running is False
+    assert state._timer_loop_active is False
+    assert state.last_action_label == ""
+    assert state.display_status == baseline_display_status
+
+
+def test_publish_display_snapshot_skipped_when_viewer_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = KumiteMatchState()
+    state.public_display_key = "kumite-key"
+    object.__setattr__(
+        state.router,
+        "session",
+        type("Session", (), {"client_token": "disconnected-token"})(),
+    )
+
+    fake_app = type(
+        "App",
+        (),
+        {
+            "_token_manager": type(
+                "TokenManager",
+                (),
+                {"token_to_socket": {}},
+            )()
+        },
+    )()
+    monkeypatch.setattr(rx.State, "_get_app", lambda: fake_app, raising=False)
+
+    ensure_calls: list[dict[str, Any]] = []
+    publish_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.ensure_display_session",
+        lambda **kwargs: ensure_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "kakumi_app.states.kumite_match_state.SecondaryDisplayService.publish_snapshot",
+        lambda **kwargs: publish_calls.append(kwargs),
+    )
+
+    state._publish_display_snapshot()
+
+    assert ensure_calls == []
+    assert publish_calls == []
+    assert state.public_display_key == "kumite-key"
+    assert state.display_status == ""
