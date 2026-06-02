@@ -84,6 +84,7 @@ class CompetitionCategoryState(rx.State):
             with rx.session() as session:
                 category = session.get(TournamentCategory, category_id)
                 if category is None:
+                    self.category = {}
                     self.error_message = "Categoría no encontrada"
                     return
 
@@ -187,8 +188,10 @@ class CompetitionCategoryState(rx.State):
                     category_modalities={category.id: str(category.modality)},
                 )
         except ValueError:
+            self.category = {}
             self.error_message = "ID de categoría inválido"
         except Exception:
+            self.category = {}
             logger.exception("Error cargando categoría de competencia")
             self.error_message = "Error cargando datos"
         finally:
