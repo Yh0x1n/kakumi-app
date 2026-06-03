@@ -2,6 +2,7 @@
 
 # Imports
 import reflex as rx
+
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.styles.tokens import (
     ACCENT_GOLD,
@@ -39,28 +40,59 @@ def sidebar_item(text: str, icon: str, href: str) -> rx.Component:
 
 
 def sidebar_logout() -> rx.Component:
-    """Logout button styled like a sidebar item."""
-    return rx.button(
-        rx.hstack(
-            rx.icon("log-out", color="white"),
-            rx.text("Cerrar sesión", size="5", color=TEXT_WHITE),
-            width="100%",
-            align="center",
-            padding_x="0.5rem",
-            padding_y="0.75rem",
+    """Logout button with confirmation dialog."""
+    return rx.dialog.root(
+        rx.dialog.trigger(
+            rx.button(
+                rx.hstack(
+                    rx.icon("log-out", color="white"),
+                    rx.text("Cerrar sesión", size="5", color=TEXT_WHITE),
+                    width="100%",
+                    align="center",
+                    padding_x="0.5rem",
+                    padding_y="0.75rem",
+                ),
+                variant="ghost",
+                width="100%",
+                style={
+                    "_hover": {
+                        "bg": BRAND_RED_HOVER,
+                        "color": TEXT_WHITE,
+                        "border-radius": "0.5em",
+                        "transition": "0.5s ease",
+                    },
+                    "cursor": "pointer",
+                },
+            ),
         ),
-        on_click=AuthState.logout,
-        variant="ghost",
-        width="100%",
-        style={
-            "_hover": {
-                "bg": BRAND_RED_HOVER,
-                "color": TEXT_WHITE,
-                "border-radius": "0.5em",
-                "transition": "0.5s ease",
-            },
-            "cursor": "pointer",
-        },
+        rx.dialog.content(
+            rx.dialog.title(
+                "Cerrar sesión",
+                font_weight="bold",
+            ),
+            rx.dialog.description(
+                "¿Estás seguro de que querés cerrar la sesión?",
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button(
+                        "No",
+                        variant="soft",
+                        color_scheme="gray",
+                    ),
+                ),
+                rx.dialog.close(
+                    rx.button(
+                        "Sí, cerrar sesión",
+                        color_scheme="red",
+                        on_click=AuthState.logout,
+                    ),
+                ),
+                justify="end",
+                spacing="3",
+                margin_top="1em",
+            ),
+        ),
     )
 
 
@@ -70,6 +102,7 @@ def sidebar_items() -> rx.Component:
         sidebar_item("Exhibición", "eye", "/exhibition"),
         sidebar_item("Resultados", "medal", "/results"),
         sidebar_item("Registros", "square-library", "/registries"),
+        sidebar_item("Espectadores", "eye", "/viewer"),
         rx.cond(
             AuthState.is_operator,
             rx.vstack(
