@@ -15,12 +15,12 @@ import reflex as rx
 
 from .components.sidebar import sidebar
 from .models.athlete_model import Athlete  # noqa [F401]
+from .models.display_model import DisplaySession  # noqa [F401]
 from .models.referee_model import Referee  # noqa [F401]
 from .models.tournament_model import (  # noqa [F401]
     Tournament,
     TournamentCategory,
 )
-from .models.display_model import DisplaySession  # noqa [F401]
 from .pages.competition import (
     bracket_page,
     category_page,
@@ -32,6 +32,8 @@ from .pages.public_display import public_display_page
 from .pages.registries import registries
 from .pages.results import results
 from .pages.tournament import tournament
+from .pages.viewer import viewer_dashboard_page, viewer_login_page
+from .states.auth_state import DEV_AUTH_BYPASS, AuthState
 from .states.bracket_state import BracketState
 from .states.competition_category_state import CompetitionCategoryState
 from .states.kata_match_state import KataMatchState
@@ -39,8 +41,8 @@ from .states.kumite_match_state import KumiteMatchState
 from .states.results_state import ResultsState
 from .states.secondary_display_state import SecondaryDisplayState
 from .states.tournament_state import TournamentState
-from .states.auth_state import AuthState, DEV_AUTH_BYPASS
-from .styles.tokens import HOVER_GRAY, TEXT_PRIMARY, BG_PAGE
+from .states.viewer_state import ViewerState
+from .styles.tokens import BG_PAGE, HOVER_GRAY, TEXT_PRIMARY
 
 
 class State(rx.State):
@@ -163,4 +165,15 @@ app.add_page(
         SecondaryDisplayState.load_display,
         SecondaryDisplayState.poll_snapshot_loop,
     ],
+)
+app.add_page(
+    viewer_login_page,
+    route="/viewer",
+    title="Kakumi | Acceso espectadores",
+)
+app.add_page(
+    viewer_dashboard_page,
+    route="/viewer/dashboard/[tournament_id]",
+    title="Kakumi | Dashboard espectador",
+    on_load=ViewerState.load_viewer_dashboard,
 )

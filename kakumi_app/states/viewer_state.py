@@ -95,9 +95,7 @@ class ViewerState(rx.State):
                 "id": category.id,
                 "name": category.name,
                 "type": (
-                    "kata"
-                    if str(category.modality).startswith("KATA")
-                    else "kumite"
+                    "kata" if str(category.modality).startswith("KATA") else "kumite"
                 ),
             }
             for category in categories
@@ -135,6 +133,14 @@ class ViewerState(rx.State):
         return rx.toast.success("Acceso autorizado")
 
     @rx.event
+    @rx.event
+    async def load_viewer_dashboard(self) -> Any:
+        """Load tournament from route param for dashboard on_load."""
+        tournament_id = self.router.page.params.get("tournament_id")
+        if tournament_id:
+            return await self.load_tournament_by_id(int(tournament_id))
+        return rx.redirect("/viewer")
+
     async def load_tournament_by_id(self, tournament_id: int) -> Any:
         """Load tournament by ID (for route parameter)."""
         with rx.session() as session:

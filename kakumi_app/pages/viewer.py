@@ -88,7 +88,7 @@ def viewer_login() -> rx.Component:
     return viewer_login_page()
 
 
-def viewer_dashboard_page(tournament_id: int) -> rx.Component:
+def viewer_dashboard_page() -> rx.Component:
     """Viewer dashboard page showing tournament live results."""
     state = ViewerState
 
@@ -129,7 +129,7 @@ def viewer_dashboard_page(tournament_id: int) -> rx.Component:
                 rx.vstack(
                     rx.heading("Categorías", size="4"),
                     rx.cond(
-                        len(state.categories) == 0,
+                        state.categories.length() == 0,
                         rx.text("No hay categorías disponibles."),
                         rx.foreach(
                             state.categories,
