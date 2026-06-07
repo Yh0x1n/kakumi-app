@@ -167,6 +167,7 @@ class Tournament(rx.Model, table=True):
     organizing_federation: Optional[str] = Field(default=None, max_length=255)
     license_number: Optional[str] = Field(default=None, max_length=50)
     viewer_code: Optional[str] = Field(default=None, max_length=8)
+    viewer_code_generated_at: Optional[datetime.datetime] = Field(default=None)
 
     # Foreign Keys
     created_by_id: Optional[int] = Field(default=None, foreign_key="users.id")
@@ -228,9 +229,7 @@ class TournamentCategory(rx.Model, table=True):
     has_bunkai: bool = Field(default=False)
     judge_panel_size: int = Field(default=3)  # 3..5
     scoring_type: Optional[str] = Field(default=None)  # STANDARD, FLAG
-    kata_decision_rule: str = Field(
-        default=KataDecisionRule.AVERAGE_WITH_DISCARD.value
-    )
+    kata_decision_rule: str = Field(default=KataDecisionRule.AVERAGE_WITH_DISCARD.value)
     kata_flow_mode: str = Field(default=KataFlowMode.STANDARD.value)
     bunkai_mode: str = Field(default="NONE")
 

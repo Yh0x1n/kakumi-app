@@ -133,9 +133,11 @@ class ViewerState(rx.State):
         return rx.toast.success("Acceso autorizado")
 
     @rx.event
-    @rx.event
     async def load_viewer_dashboard(self) -> Any:
         """Load tournament from route param for dashboard on_load."""
+        # Extract ?code= query param (critical gap fix)
+        self.viewer_code = self.router.page.params.get("code", "")
+
         tournament_id = self.router.page.params.get("tournament_id")
         if tournament_id:
             return await self.load_tournament_by_id(int(tournament_id))
