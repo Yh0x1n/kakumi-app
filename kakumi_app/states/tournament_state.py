@@ -18,6 +18,9 @@ from kakumi_app.services.auth_service import AuthService
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.tournament_category_state import TournamentCategoryState
 from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
+import datetime
+from kakumi_app.services.viewer_service import ViewerService
+from kakumi_app.services.qr_helper import _make_qr_data_url
 
 
 # Rol mínimo requerido para gestionar estados de torneos
@@ -43,6 +46,12 @@ class TournamentState(rx.State):
     transition_error: str = ""
     is_transitioning: bool = False
     validation_warnings: list[str] = []
+
+    # ── QR state vars ──────────────────────────────────
+    qr_data_url: str = ""
+    qr_code_text: str = ""
+    qr_generated_at: str = ""
+    qr_expires_at: str = ""
 
     # ID del usuario actual (se setea desde AuthState)
     _current_user_id: int = 0
@@ -354,4 +363,56 @@ class TournamentState(rx.State):
             return
 
         async for event in self._execute_transition(TournamentStatus.ARCHIVADO):
+            yield event
+
+    # ── Base URL helper ───────────────────────────────
+
+    def _get_base_url(self) -> str:
+        """Extract base URL from router context for QR generation.
+
+        Falls back to Host header if router.url.origin unavailable.
+        """
+        try:
+            if hasattr(self.router, "url") and getattr(self.router.url, "origin", None):
+                return self.router.url.origin
+        except Exception:
+            pass
+        # Fallback: construct from Host header
+        host = self.router.headers.get("host", "localhost:3000")
+        return f"http://{host}"
+
+    # ── QR event handlers ──────────────────────────
+
+    @rx.event
+    async def generate_qr(self) -> None:
+        """Generate viewer code + QR for current tournament."""
+        tournament_id = self._get_tournament_id()
+        if tournament_id is None:
+            yield rx.toast.error("No tournament selected")
+            return
+
+        code = ViewerService.generate_viewer_code(tournament_id)
+        if code is None:
+            yield rx.toast.error("Could not generate viewer code")
+            return
+
+        # Build absolute URL from router context (QR scan from other devices)
+        base_url = self._get_base_url()
+        url = f"{base_url}/viewer/dashboard/{tournament_id}?code={code}"
+        data_uri = _make_qr_data_url(url)
+
+        now = datetime.datetime.utcnow()
+        expires = now + datetime.timedelta(hours=5)
+
+        self.qr_data_url = data_uri
+        self.qr_code_text = code
+        self.qr_generated_at = now.strftime("%Y-%m-%d %H:%M UTC")
+        self.qr_expires_at = expires.strftime("%Y-%m-%d %H:%M UTC")
+
+        yield rx.toast.success("QR generado")
+
+    @rx.event
+    async def regenerate_qr(self) -> None:
+        """Regenerate viewer code + QR (invalidates previous code)."""
+        async for event in self.generate_qr():
             yield event

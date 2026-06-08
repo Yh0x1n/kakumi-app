@@ -293,6 +293,8 @@ async def test_tournament_crud_filter_keeps_full_row_payload_for_edit_flow(
         "status": TournamentStatus.INSCRIPCION.value,
         "start_date": "2027-04-10",
         "end_date": "2027-04-12",
+        "start_date_display": "10/04/2027",
+        "end_date_display": "12/04/2027",
         "tatami_count": 3,
         "created_by_id": sample_user.id,
     }
@@ -306,8 +308,8 @@ async def test_tournament_crud_save_create_then_update(sample_user: Any) -> None
     state = TournamentCrudState()
     state.name = "Copa Delta"
     state.venue = "Polideportivo"
-    state.start_date = "2027-03-01"
-    state.end_date = "2027-03-02"
+    state.start_date = "01/03/2027"
+    state.end_date = "02/03/2027"
     state.tatami_count = "2"
     state.status = TournamentStatus.PLANIFICADO.value
     state.created_by_id = str(sample_user.id)
@@ -358,8 +360,8 @@ async def test_tournament_crud_save_update_preserves_existing_lifecycle_status(
     state.current_tournament = {"id": tournament.id}
     state.name = "Copa Estado"
     state.venue = "Sede Editada"
-    state.start_date = "2027-05-01"
-    state.end_date = "2027-05-02"
+    state.start_date = "01/05/2027"
+    state.end_date = "02/05/2027"
     state.tatami_count = "4"
     state.status = TournamentStatus.PLANIFICADO.value
     state.created_by_id = str(sample_user.id)
@@ -1029,8 +1031,8 @@ async def test_tournament_crud_save_rolls_back_and_shows_toast_on_db_error(
     state = TournamentCrudState()
     state.name = "DB Error Cup"
     state.venue = "Dojo"
-    state.start_date = "2027-03-01"
-    state.end_date = "2027-03-02"
+    state.start_date = "01/03/2027"
+    state.end_date = "02/03/2027"
     state.tatami_count = "1"
     state.status = TournamentStatus.PLANIFICADO.value
     state.created_by_id = str(sample_user.id)

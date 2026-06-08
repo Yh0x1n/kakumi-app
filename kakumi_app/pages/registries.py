@@ -19,6 +19,7 @@ from kakumi_app.components.registry_crud import (
 from kakumi_app.states.athlete_state import AthleteState
 from kakumi_app.utils import BELT_RANKS
 from kakumi_app.states.referee_state import RefereeState
+from kakumi_app.components.date_calendar import date_calendar_popover
 from kakumi_app.states.tournament_crud_state import TournamentCrudState
 from kakumi_app.styles.tokens import MUTED_TEXT, TEXT_PRIMARY
 
@@ -425,25 +426,19 @@ def _tournament_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading("Inicio (YYYY-MM-DD)", size="3", color=TEXT_PRIMARY),
-                        rx.input(
-                            placeholder="Inicio (YYYY-MM-DD)",
+                        rx.heading("Inicio (DD/MM/AAAA)", size="3", color=TEXT_PRIMARY),
+                        date_calendar_popover(
                             value=state.start_date,
                             on_change=state.set_start_date,
-                            border="1px solid black",
-                            background_color="white",
-                            color=TEXT_PRIMARY,
+                            target="start",
                         ),
                     ),
                     rx.vstack(
-                        rx.heading("Fin (YYYY-MM-DD)", size="3", color=TEXT_PRIMARY),
-                        rx.input(
-                            placeholder="Fin (YYYY-MM-DD)",
+                        rx.heading("Fin (DD/MM/AAAA)", size="3", color=TEXT_PRIMARY),
+                        date_calendar_popover(
                             value=state.end_date,
                             on_change=state.set_end_date,
-                            border="1px solid black",
-                            background_color="white",
-                            color=TEXT_PRIMARY,
+                            target="end",
                         ),
                     ),
                 ),
@@ -654,13 +649,14 @@ def _tournaments_card() -> rx.Component:
             result_label="Torneos registrados",
         ),
         table=registry_table(
-            headers=["Nombre", "Sede", "Estado", "Inicio", "Acciones"],
+            headers=["Nombre", "Sede", "Estado", "Inicio", "Fin", "Acciones"],
             rows_var=state.tournaments,
             row_renderer=lambda tournament: rx.table.row(
                 rx.table.cell(tournament["name"], color=TEXT_PRIMARY),
                 rx.table.cell(tournament["venue"], color=TEXT_PRIMARY),
                 rx.table.cell(tournament["status"], color=TEXT_PRIMARY),
-                rx.table.cell(tournament["start_date"], color=TEXT_PRIMARY),
+                rx.table.cell(tournament["start_date_display"], color=TEXT_PRIMARY),
+                rx.table.cell(tournament["end_date_display"], color=TEXT_PRIMARY),
                 rx.table.cell(
                     rx.hstack(
                         rx.button(

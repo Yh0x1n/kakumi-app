@@ -3,6 +3,7 @@ Viewer Service
 Business logic for viewer access codes and validation.
 """
 
+import secrets
 from typing import Optional
 import datetime
 
@@ -15,7 +16,7 @@ from kakumi_app.models.tournament_model import Tournament
 class ViewerService:
     """Service for viewer access operations."""
 
-    EXPIRATION_DAYS = 30  # Viewer codes expire after 30 days
+    EXPIRATION_HOURS = 5  # Viewer codes expire after 5 hours
     _MAX_ATTEMPTS = 5
     _LOCKOUT_MINUTES = 5
     # In-memory store for failed attempts per code
@@ -25,10 +26,10 @@ class ViewerService:
     def _is_code_expired(tournament: Tournament) -> bool:
         """Return True if the viewer code has expired."""
         if tournament.viewer_code_generated_at is None:
-            # Legacy code without timestamp — treat as not expired
-            return False
+            # NULL timestamp — treat as expired
+            return True
         age = datetime.datetime.utcnow() - tournament.viewer_code_generated_at
-        return age.days > ViewerService.EXPIRATION_DAYS
+        return age.total_seconds() > ViewerService.EXPIRATION_HOURS * 3600
 
     @staticmethod
     def _is_code_locked(code: str) -> bool:
@@ -73,7 +74,7 @@ class ViewerService:
             tournament = session.get(Tournament, tournament_id)
             if not tournament:
                 return None
-            new_code = Tournament.generate_viewer_code()
+            new_code = secrets.token_hex(4)
             tournament.viewer_code = new_code
             tournament.viewer_code_generated_at = datetime.datetime.utcnow()
             session.add(tournament)

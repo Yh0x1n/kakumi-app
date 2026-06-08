@@ -629,6 +629,62 @@ def _tatami_card() -> rx.Component:
     )
 
 
+def _qr_card() -> rx.Component:
+    """Render QR generation card in tournament workspace."""
+    state = TournamentState
+    return rx.card(
+        rx.vstack(
+            rx.heading("QR de Espectadores", size="5", color=TEXT_PRIMARY),
+            rx.text(
+                "Genera un código QR para que los espectadores accedan "
+                "al dashboard del torneo.",
+                color=TEXT_TERTIARY,
+            ),
+            rx.cond(
+                state.qr_data_url != "",
+                rx.vstack(
+                    rx.image(
+                        src=state.qr_data_url,
+                        width="200px",
+                        height="200px",
+                    ),
+                    rx.text(
+                        f"Código: {state.qr_code_text}",
+                        color=TEXT_PRIMARY,
+                    ),
+                    rx.text(
+                        f"Expira: {state.qr_expires_at}",
+                        color=TEXT_TERTIARY,
+                        font_size="sm",
+                    ),
+                    rx.button(
+                        "Regenerar QR",
+                        on_click=state.regenerate_qr,
+                        variant="outline",
+                    ),
+                    spacing="3",
+                    align="center",
+                    width="100%",
+                ),
+                rx.vstack(
+                    rx.button(
+                        "Generar QR",
+                        on_click=state.generate_qr,
+                        disabled=~state.has_selected_tournament,
+                    ),
+                    spacing="3",
+                    align="center",
+                    width="100%",
+                ),
+            ),
+            spacing="3",
+            align="start",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
 def tournament() -> rx.Component:
     """Render tournament operator workspace shell."""
     body = rx.vstack(
@@ -638,6 +694,7 @@ def tournament() -> rx.Component:
             _lifecycle_card(),
             _categories_card(),
             _tatami_card(),
+            _qr_card(),
             columns="2",
             spacing="4",
             width="100%",

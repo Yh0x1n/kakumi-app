@@ -121,3 +121,5 @@ opencode.jsonc
 
 # Anti Gravity CLI — local dev tooling, not project code
 /.antigravitycli/
+backend.zip
+frontend.zip
