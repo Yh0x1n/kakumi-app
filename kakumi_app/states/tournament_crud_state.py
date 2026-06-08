@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import calendar as _calendar
+import contextlib
 import datetime
-from typing import Any, Optional
+from typing import Any
 
 import reflex as rx
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,6 +21,81 @@ from kakumi_app.models.tournament_model import (
 from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
+# ── Date format helpers (module-level) ──
+
+
+def _iso_to_display(iso_str: str) -> str:
+    """Convert '2026-06-07' → '07/06/2026'. Return '' on failure."""
+    if not iso_str:
+        return ""
+    try:
+        d = datetime.datetime.strptime(iso_str, "%Y-%m-%d").date()
+        return d.strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        return ""
+
+
+def _display_to_date(display_str: str) -> datetime.date | None:
+    """Convert '07/06/2026' → date(2026, 6, 7). Return None on failure.
+
+    Accepts 'DD-MM-YYYY' by normalising dashes to slashes.
+    """
+    if not display_str or not isinstance(display_str, str):
+        return None
+    normalised = display_str.replace("-", "/")
+    try:
+        return datetime.datetime.strptime(normalised, "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _date_to_iso(d: datetime.date) -> str:
+    """Convert date → '2026-06-07'."""
+    return d.isoformat()
+
+
+def _build_day_cells(
+    year: int, month: int, selected_display: str
+) -> list[dict[str, Any]]:
+    """Build a flat list of day cell descriptors for the month grid.
+
+    Each item has:
+        day: int (0 for filler/empty cells)
+        is_current_month: bool
+        is_selected: bool
+        label: str (day number or "")
+
+    Uses calendar.monthcalendar for proper week alignment.
+    """
+    cal = _calendar.Calendar(6).monthdayscalendar(year, month)
+    selected_date: datetime.date | None = None
+    if selected_display:
+        with contextlib.suppress(ValueError, TypeError):
+            selected_date = datetime.datetime.strptime(
+                selected_display, "%d/%m/%Y"
+            ).date()
+
+    cells: list[dict[str, Any]] = []
+    for week in cal:
+        for day in week:
+            is_current = day != 0
+            date_obj = datetime.date(year, month, day) if is_current else None
+            is_selected = (
+                selected_date is not None
+                and date_obj is not None
+                and date_obj == selected_date
+            )
+            cells.append(
+                {
+                    "day": day,
+                    "is_current_month": is_current,
+                    "is_selected": is_selected,
+                    "label": str(day) if is_current else "",
+                }
+            )
+    return cells
+
+
 class TournamentCrudState(CrudStateMixin, rx.State):
     """State for tournament CRUD screens in registries module."""
 
@@ -28,7 +105,7 @@ class TournamentCrudState(CrudStateMixin, rx.State):
     search_query: str = CrudStateMixin.search_query
 
     tournaments: list[dict[str, Any]] = []
-    current_tournament: Optional[dict[str, Any]] = None
+    current_tournament: dict[str, Any] | None = None
 
     name: str = ""
     venue: str = ""
@@ -37,6 +114,46 @@ class TournamentCrudState(CrudStateMixin, rx.State):
     tatami_count: str = "1"
     status: str = TournamentStatus.PLANIFICADO.value
     created_by_id: str = ""
+
+    # ── Calendar popover state ──
+    show_calendar: bool = False
+    calendar_target: str = ""  # "start" or "end"
+    calendar_month: int = 0  # 0 = uninitialized
+    calendar_year: int = 0  # 0 = uninitialized
+
+    @rx.var
+    def calendar_day_cells(self) -> list[dict[str, Any]]:
+        """Computed day cells for the calendar popover grid.
+
+        Depends on calendar_month, calendar_year, and the active
+        date field (start_date or end_date based on calendar_target).
+        """
+        if self.calendar_month == 0 or self.calendar_year == 0:
+            return []
+        display = self.start_date if self.calendar_target == "start" else self.end_date
+        return _build_day_cells(self.calendar_year, self.calendar_month, display)
+
+    @rx.var
+    def calendar_month_name(self) -> str:
+        """Spanish month name for the current calendar_month."""
+        names = [
+            "",
+            "Enero",
+            "Febrero",
+            "Marzo",
+            "Abril",
+            "Mayo",
+            "Junio",
+            "Julio",
+            "Agosto",
+            "Septiembre",
+            "Octubre",
+            "Noviembre",
+            "Diciembre",
+        ]
+        if 1 <= self.calendar_month <= 12:
+            return names[self.calendar_month]
+        return ""
 
     def _serialize_tournament(self, tournament: Tournament) -> dict[str, Any]:
         """Return JSON-safe tournament row for CRUD list and edit flow."""
@@ -47,9 +164,64 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             "status": tournament.status,
             "start_date": tournament.start_date.isoformat(),
             "end_date": tournament.end_date.isoformat(),
+            "start_date_display": _iso_to_display(tournament.start_date.isoformat()),
+            "end_date_display": _iso_to_display(tournament.end_date.isoformat()),
             "tatami_count": tournament.tatami_count,
             "created_by_id": tournament.created_by_id,
         }
+
+    # ── Calendar popover event handlers ──
+
+    @rx.event
+    def toggle_calendar(self, target: str) -> None:
+        """Toggle calendar popover for a specific date field."""
+        if self.show_calendar and self.calendar_target == target:
+            self.show_calendar = False
+            self.calendar_target = ""
+            return
+        self.show_calendar = True
+        self.calendar_target = target
+        if self.calendar_month == 0 or self.calendar_year == 0:
+            now = datetime.date.today()
+            self.calendar_month = now.month
+            self.calendar_year = now.year
+
+    @rx.event
+    def calendar_prev_month(self) -> None:
+        """Navigate calendar to previous month with year wrap."""
+        if self.calendar_month == 1:
+            self.calendar_month = 12
+            self.calendar_year -= 1
+        else:
+            self.calendar_month -= 1
+
+    @rx.event
+    def calendar_next_month(self) -> None:
+        """Navigate calendar to next month with year wrap."""
+        if self.calendar_month == 12:
+            self.calendar_month = 1
+            self.calendar_year += 1
+        else:
+            self.calendar_month += 1
+
+    @rx.event
+    def select_calendar_day(self, day: int) -> None:
+        """Select a day from the calendar popover. Set date and close."""
+        day_int = int(day)
+        date_obj = datetime.date(self.calendar_year, self.calendar_month, day_int)
+        display_val = date_obj.strftime("%d/%m/%Y")
+        if self.calendar_target == "start":
+            self.start_date = display_val
+        elif self.calendar_target == "end":
+            self.end_date = display_val
+        self.show_calendar = False
+        self.calendar_target = ""
+
+    @rx.event
+    def close_calendar(self) -> None:
+        """Close the calendar popover unconditionally. Used by backdrop click."""
+        self.show_calendar = False
+        self.calendar_target = ""
 
     @rx.event
     async def initialize_registry_view(self) -> None:
@@ -90,7 +262,7 @@ class TournamentCrudState(CrudStateMixin, rx.State):
     def set_form_values(
         self,
         _: Any,
-        tournament: Optional[dict[str, Any]] = None,
+        tournament: dict[str, Any] | None = None,
     ) -> None:
         """Set form values for edit or create modes."""
         if tournament:
@@ -98,8 +270,10 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             self._set_form_open(editing=True)
             self.name = tournament.get("name", "")
             self.venue = tournament.get("venue", "")
-            self.start_date = tournament.get("start_date", "")
-            self.end_date = tournament.get("end_date") or self.start_date
+            self.start_date = _iso_to_display(tournament.get("start_date", ""))
+            self.end_date = _iso_to_display(
+                tournament.get("end_date") or tournament.get("start_date", "")
+            )
             self.tatami_count = str(tournament.get("tatami_count") or "1")
             created_by_id = tournament.get("created_by_id")
             self.created_by_id = str(created_by_id) if created_by_id else ""
@@ -140,11 +314,10 @@ class TournamentCrudState(CrudStateMixin, rx.State):
         if not self._validate_form():
             return
 
-        try:
-            start_date = datetime.datetime.strptime(self.start_date, "%Y-%m-%d").date()
-            end_date = datetime.datetime.strptime(self.end_date, "%Y-%m-%d").date()
-        except ValueError:
-            self.error_message = "Invalid date format (YYYY-MM-DD)"
+        start_date = _display_to_date(self.start_date)
+        end_date = _display_to_date(self.end_date)
+        if start_date is None or end_date is None:
+            self.error_message = "Invalid date format (DD/MM/YYYY)"
             return
 
         try:
@@ -153,7 +326,7 @@ class TournamentCrudState(CrudStateMixin, rx.State):
             self.error_message = "Tatami count must be a number"
             return
 
-        created_by_id: Optional[int] = None
+        created_by_id: int | None = None
         if self.created_by_id:
             try:
                 created_by_id = int(self.created_by_id)
