@@ -7,7 +7,6 @@ import reflex as rx
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.user_admin_state import UserAdminState
 from kakumi_app.components.sidebar import sidebar
-from kakumi_app.styles.tokens import TEXT_PRIMARY, TEXT_TERTIARY, BG_PAGE
 
 
 def users_table() -> rx.Component:
@@ -49,23 +48,22 @@ def users_table() -> rx.Component:
         rx.table.root(
             rx.table.header(
                 rx.table.row(
-                    rx.table.column_header_cell("Usuario", color=TEXT_PRIMARY),
-                    rx.table.column_header_cell("Email", color=TEXT_PRIMARY),
-                    rx.table.column_header_cell("Nombre", color=TEXT_PRIMARY),
-                    rx.table.column_header_cell("Rol", color=TEXT_PRIMARY),
-                    rx.table.column_header_cell("Activo", color=TEXT_PRIMARY),
-                    rx.table.column_header_cell("Acciones", color=TEXT_PRIMARY),
+                    rx.table.column_header_cell("Usuario"),
+                    rx.table.column_header_cell("Email"),
+                    rx.table.column_header_cell("Nombre"),
+                    rx.table.column_header_cell("Rol"),
+                    rx.table.column_header_cell("Activo"),
+                    rx.table.column_header_cell("Acciones"),
                 ),
             ),
             rx.table.body(
                 rx.foreach(
                     state.users,
                     lambda user: rx.table.row(
-                        rx.table.cell(user["username"], color=TEXT_PRIMARY),
-                        rx.table.cell(user["email"], color=TEXT_PRIMARY),
+                        rx.table.cell(user["username"]),
+                        rx.table.cell(user["email"]),
                         rx.table.cell(
                             rx.cond(user["full_name"], user["full_name"], "-"),
-                            color=TEXT_PRIMARY,
                         ),
                         rx.table.cell(
                             rx.select(
@@ -76,7 +74,6 @@ def users_table() -> rx.Component:
                                 ),
                                 size="2",
                             ),
-                            color=TEXT_PRIMARY,
                         ),
                         rx.table.cell(
                             rx.cond(
@@ -84,7 +81,6 @@ def users_table() -> rx.Component:
                                 rx.badge("Sí", color_scheme="green"),
                                 rx.badge("No", color_scheme="red"),
                             ),
-                            color=TEXT_PRIMARY,
                         ),
                         rx.table.cell(
                             rx.hstack(
@@ -132,7 +128,6 @@ def users_table() -> rx.Component:
                     rx.text(
                         "Esta acción no se puede deshacer.",
                         font_size="sm",
-                        color=TEXT_TERTIARY,
                     ),
                     rx.hstack(
                         rx.button(
@@ -268,13 +263,11 @@ def users_page() -> rx.Component:
                             "Gestión de Usuarios",
                             font_size="3xl",
                             font_weight="bold",
-                            color=TEXT_PRIMARY,
                             margin_bottom="0.5em",
                         ),
                         rx.text(
                             "Administrar usuarios del sistema",
                             font_size="md",
-                            color=TEXT_TERTIARY,
                             margin_bottom="1em",
                         ),
                         rx.cond(
@@ -288,7 +281,6 @@ def users_page() -> rx.Component:
                     width="100%",
                 ),
                 width="100%",
-                background_color=BG_PAGE,
                 min_height="100vh",
             ),
             width="100%",
@@ -305,7 +297,6 @@ def users_page() -> rx.Component:
                 rx.text(
                     "You don't have permission to access this page.",
                     font_size="lg",
-                    color=TEXT_TERTIARY,
                 ),
                 rx.button(
                     "Go Home",

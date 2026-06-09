@@ -7,7 +7,6 @@ import reflex as rx
 
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.auth_state import DEV_AUTH_BYPASS
-from kakumi_app.styles.tokens import BG_PAGE, CARD_BG, TEXT_TERTIARY
 
 
 def _strength_icon(is_valid) -> rx.Component:
@@ -33,7 +32,6 @@ def change_password_form() -> rx.Component:
                 "Your first login requires a password change. "
                 "Please choose a new strong password.",
                 font_size="sm",
-                color=TEXT_TERTIARY,
                 margin_bottom="1.5em",
             ),
             rx.form(
@@ -132,7 +130,6 @@ def change_password_form() -> rx.Component:
         width="400px",
         box_shadow="lg",
         border_radius="lg",
-        bg=CARD_BG,
     )
 
 
@@ -149,7 +146,6 @@ def change_password_page() -> rx.Component:
             spacing="5",
             justify_content="center",
             min_height="100vh",
-            background_color=BG_PAGE,
         ),
         width="100%",
         min_height="100vh",

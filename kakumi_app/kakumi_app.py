@@ -42,7 +42,6 @@ from .states.results_state import ResultsState
 from .states.secondary_display_state import SecondaryDisplayState
 from .states.tournament_state import TournamentState
 from .states.viewer_state import ViewerState
-from .styles.tokens import BG_PAGE, HOVER_GRAY, TEXT_PRIMARY
 
 
 class State(rx.State):
@@ -71,7 +70,6 @@ def index() -> rx.Component:
                     font_size=50,
                     align="left",
                     padding_y="0.5em",
-                    color=TEXT_PRIMARY,
                     font_weight="bold",
                 ),
                 spacing="4",
@@ -87,20 +85,12 @@ def index() -> rx.Component:
                                 f"Resultado {i + 1}",
                                 weight="bold",
                                 font_size="10",
-                                color=TEXT_PRIMARY,
                             ),
                             underline="none",
                             height="100%",
                         ),
                         border_width="thick",
-                        border_color="black",
                         border_radius="1em",
-                        style={
-                            "_hover": {
-                                "background-color": HOVER_GRAY,
-                                "transition": "0.5s ease",
-                            },
-                        },
                     ),
                 ),
                 columns="2",
@@ -109,7 +99,6 @@ def index() -> rx.Component:
                 padding="0.5em",
             ),
         ),
-        background_color=BG_PAGE,
         height="100vh",
     )
 
@@ -120,7 +109,7 @@ def index() -> rx.Component:
     return content
 
 
-app = rx.App()
+app = rx.App(theme=rx.theme(appearance="dark", has_background=True))
 _register_side_effect_pages()
 app.add_page(
     index, title="Kakumi Tournament Manager", on_load=AuthState.check_auth_redirect
