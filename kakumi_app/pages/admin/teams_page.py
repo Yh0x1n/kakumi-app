@@ -7,7 +7,6 @@ import reflex as rx
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.team_state import TeamState
 from kakumi_app.components.sidebar import sidebar
-from kakumi_app.styles.tokens import TEXT_PRIMARY, TEXT_TERTIARY, BG_PAGE
 
 
 def teams_table() -> rx.Component:
@@ -177,13 +176,11 @@ def teams_page() -> rx.Component:
                             "Gestión de Equipos",
                             font_size="3xl",
                             font_weight="bold",
-                            color=TEXT_PRIMARY,
                             margin_bottom="0.5em",
                         ),
                         rx.text(
                             "Administrar equipos registrados",
                             font_size="md",
-                            color=TEXT_TERTIARY,
                             margin_bottom="1em",
                         ),
                         rx.cond(
@@ -197,7 +194,6 @@ def teams_page() -> rx.Component:
                     width="100%",
                 ),
                 width="100%",
-                background_color=BG_PAGE,
                 min_height="100vh",
             ),
             width="100%",
@@ -214,7 +210,6 @@ def teams_page() -> rx.Component:
                 rx.text(
                     "You don't have permission to access this page.",
                     font_size="lg",
-                    color=TEXT_TERTIARY,
                 ),
                 rx.button(
                     "Go Home",

@@ -159,8 +159,7 @@ def date_calendar_popover(
         justify="start",
         padding="8px 12px",
         style={
-            "border": "1px solid black",
-            "background_color": "white",
+            "border": "1px solid white",
             "cursor": "pointer",
         },
     )

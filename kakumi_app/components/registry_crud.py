@@ -8,14 +8,8 @@ import reflex as rx
 
 from kakumi_app.components.sidebar import sidebar
 from kakumi_app.styles.tokens import (
-    BG_PAGE,
-    BORDER_LIGHT,
     BRAND_RED,
     BRAND_RED_HOVER,
-    CARD_BG,
-    HEADER_BG,
-    MUTED_TEXT,
-    TEXT_PRIMARY,
 )
 
 
@@ -38,7 +32,6 @@ def registry_page_shell(*, body: rx.Component) -> rx.Component:
         ),
         width="100%",
         min_height="100vh",
-        background_color=BG_PAGE,
     )
 
 
@@ -57,11 +50,11 @@ def registry_actions_header(
     """Header with page copy and action group aligned to screenshot."""
     return rx.hstack(
         rx.vstack(
-            rx.heading(title, size="8", color="#1a1c1c"),
-            rx.text(subtitle, color=MUTED_TEXT),
+            rx.heading(title, size="8"),
+            rx.text(subtitle),
             rx.cond(
                 help_text is not None,
-                rx.text(help_text or "", color=MUTED_TEXT, size="2"),
+                rx.text(help_text or "", size="2"),
             ),
             spacing="1",
             align="start",
@@ -113,33 +106,29 @@ def registry_import_panel(
     """Shared import panel with upload picker for registry pages."""
     return rx.box(
         rx.vstack(
-            rx.heading("Importar archivo", size="5", color=TEXT_PRIMARY),
+            rx.heading("Importar archivo", size="5"),
             rx.text(
                 "Seleccioná un archivo .xlsx para importar registros con encabezados en español.",
-                color=MUTED_TEXT,
             ),
             rx.upload(
                 rx.vstack(
                     rx.icon(tag="upload", color=BRAND_RED),
                     rx.text("Arrastrá el archivo acá o hacé clic para seleccionarlo"),
-                    rx.text("Formato soportado: .xlsx", size="2", color=MUTED_TEXT),
+                    rx.text("Formato soportado: .xlsx", size="2"),
                     spacing="2",
                     align="center",
                 ),
                 id=upload_id,
                 max_files=1,
-                border=f"1.5px dashed {BORDER_LIGHT}",
+                border="1.5px dashed white",
                 border_radius="12px",
                 padding="24px",
                 width="100%",
-                background_color=BG_PAGE,
             ),
             rx.vstack(
                 rx.cond(
                     selected_file_name,
-                    rx.text(
-                        selected_file_name, color=TEXT_PRIMARY, font_weight="medium"
-                    ),
+                    rx.text(selected_file_name, font_weight="medium"),
                     rx.foreach(
                         rx.selected_files(upload_id), lambda file: rx.text(file)
                     ),
@@ -170,9 +159,8 @@ def registry_import_panel(
             width="100%",
         ),
         width="100%",
-        border=f"1px solid {BORDER_LIGHT}",
+        border="1px solid white",
         border_radius="12px",
-        background_color=CARD_BG,
         padding="24px",
     )
 
@@ -193,16 +181,13 @@ def registry_table_filters(
                         tag="search",
                         width="16",
                         heigth="12",
-                        color=TEXT_PRIMARY,
                     ),
                 ),
                 placeholder=search_placeholder,
                 on_change=on_search_change,
                 width={"base": "100%", "md": "420px"},
-                background_color=BG_PAGE,
                 color_scheme="gold",
-                color=TEXT_PRIMARY,
-                border=f"1px solid {BORDER_LIGHT}",
+                border="1px solid white",
             ),
             rx.button(
                 "Buscar",
@@ -215,14 +200,14 @@ def registry_table_filters(
             width="100%",
             wrap="wrap",
         ),
-        rx.text(result_label, size="2", color=MUTED_TEXT),
+        rx.text(result_label, size="2"),
         width="100%",
         justify="between",
         align="center",
         direction={"base": "column", "md": "row"},
         spacing="3",
         padding="16px",
-        border_bottom=f"1px solid {BORDER_LIGHT}",
+        border_bottom="1px solid white",
     )
 
 
@@ -249,13 +234,12 @@ def registry_empty_state(
             width="64px",
             height="64px",
             border_radius="9999px",
-            background_color="#e8e8e8",
             display="flex",
             align_items="center",
             justify_content="center",
         ),
-        rx.heading(title, size="6", color=TEXT_PRIMARY),
-        rx.text(subtitle, color=MUTED_TEXT, text_align="center", max_width="560px"),
+        rx.heading(title, size="6"),
+        rx.text(subtitle, text_align="center", max_width="560px"),
         rx.button(
             cta_label,
             on_click=on_cta_click,
@@ -288,8 +272,6 @@ def registry_table(
                         *[
                             rx.table.column_header_cell(
                                 header,
-                                color=MUTED_TEXT,
-                                background_color=HEADER_BG,
                             )
                             for header in headers
                         ]
@@ -310,7 +292,7 @@ def registry_table(
 def registry_pagination_footer(*, summary_label: str) -> rx.Component:
     """Footer area matching screenshot pagination baseline."""
     return rx.hstack(
-        rx.text(summary_label, size="2", color=MUTED_TEXT),
+        rx.text(summary_label, size="2"),
         rx.hstack(
             rx.button("‹", size="1", disabled=True, variant="ghost"),
             rx.button("›", size="1", disabled=True, variant="ghost"),
@@ -320,7 +302,7 @@ def registry_pagination_footer(*, summary_label: str) -> rx.Component:
         justify="between",
         align="center",
         padding="14px 16px",
-        border_top=f"1px solid {BORDER_LIGHT}",
+        border_top="1px solid white",
     )
 
 
@@ -336,8 +318,7 @@ def registry_table_card(
         table,
         footer,
         width="100%",
-        border=f"1px solid {BORDER_LIGHT}",
+        border="1px solid white",
         border_radius="12px",
-        background_color=CARD_BG,
         overflow="hidden",
     )

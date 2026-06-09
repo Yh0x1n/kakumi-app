@@ -6,7 +6,6 @@ Login page for viewer code entry and dashboard for live results.
 import reflex as rx
 
 from kakumi_app.states.viewer_state import ViewerState
-from kakumi_app.styles.tokens import BG_CARD_ALT, BG_PAGE, TEXT_PRIMARY, TEXT_TERTIARY
 
 # NOTE: Bracket components not yet implemented
 # from kakumi_app.components.bracket_view import bracket_view
@@ -61,7 +60,6 @@ def viewer_login_page() -> rx.Component:
                                 "en vivo del torneo."
                             ),
                             font_size="0.9em",
-                            color=TEXT_TERTIARY,
                             margin_top="1em",
                             text_align="center",
                         ),
@@ -76,7 +74,6 @@ def viewer_login_page() -> rx.Component:
             spacing="5",
             justify_content="center",
             min_height="100vh",
-            background_color=BG_PAGE,
         ),
         width="100%",
         min_height="100vh",
@@ -99,7 +96,6 @@ def viewer_dashboard_page() -> rx.Component:
                     f"Torneo: {state.current_tournament['name']}",
                     font_size="2em",
                     font_weight="bold",
-                    color=TEXT_PRIMARY,
                 ),
                 rx.spacer(),
                 rx.button(
@@ -108,7 +104,6 @@ def viewer_dashboard_page() -> rx.Component:
                     color_scheme="red",
                 ),
                 padding="1em",
-                background_color=BG_PAGE,
                 width="100%",
             ),
             rx.box(
@@ -118,7 +113,6 @@ def viewer_dashboard_page() -> rx.Component:
                     rx.text(f"Estado: {state.current_tournament['status']}"),
                     rx.text(f"Código de espectador: {state.viewer_code}"),
                     padding="1em",
-                    background_color=BG_CARD_ALT,
                     border_radius="0.5em",
                     margin_bottom="1em",
                 ),
@@ -144,7 +138,6 @@ def viewer_dashboard_page() -> rx.Component:
                         ),
                     ),
                     padding="1em",
-                    background_color=BG_PAGE,
                     border_radius="0.5em",
                     margin_bottom="1em",
                 ),
@@ -159,10 +152,8 @@ def viewer_dashboard_page() -> rx.Component:
                             "La visualización de brackets estará disponible "
                             "cuando se implementen los modelos de partidos."
                         ),
-                        color=TEXT_TERTIARY,
                     ),
                     padding="1em",
-                    background_color=BG_PAGE,
                     border_radius="0.5em",
                     margin_bottom="1em",
                 ),
@@ -170,7 +161,6 @@ def viewer_dashboard_page() -> rx.Component:
                 padding="0 1em",
             ),
             spacing="4",
-            background_color=BG_PAGE,
             min_height="100vh",
         ),
         width="100%",

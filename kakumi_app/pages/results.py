@@ -5,15 +5,14 @@ from __future__ import annotations
 import reflex as rx
 
 from kakumi_app.components.registry_crud import registry_page_shell
-from kakumi_app.styles.tokens import TEXT_PRIMARY, TEXT_TERTIARY, BG_PAGE
 from kakumi_app.states.results_state import ResultsState
 
 
 def _results_header(title: str, subtitle: str) -> rx.Component:
     """Render common page heading blocks."""
     return rx.vstack(
-        rx.heading(title, size="8", color=TEXT_PRIMARY),
-        rx.text(subtitle, color=TEXT_TERTIARY),
+        rx.heading(title, size="8"),
+        rx.text(subtitle),
         align="start",
         spacing="1",
         width="100%",
@@ -23,12 +22,11 @@ def _results_header(title: str, subtitle: str) -> rx.Component:
 def _empty_state(message: str) -> rx.Component:
     """Render a consistent empty-state card."""
     return rx.box(
-        rx.text(message, color=TEXT_TERTIARY, font_weight="medium"),
+        rx.text(message, font_weight="medium"),
         width="100%",
         padding="16px",
         border_radius="10px",
-        border="1px solid #e2e8f0",
-        background_color=BG_PAGE,
+        border="1px solid white",
     )
 
 
@@ -53,21 +51,15 @@ def results() -> rx.Component:
                         ResultsState.tournaments,
                         lambda tournament: rx.card(
                             rx.vstack(
-                                rx.heading(
-                                    tournament["name"], size="5", color=TEXT_PRIMARY
-                                ),
-                                rx.text(
-                                    f"Sede: {tournament['venue']}", color=TEXT_TERTIARY
-                                ),
+                                rx.heading(tournament["name"], size="5"),
+                                rx.text(f"Sede: {tournament['venue']}"),
                                 rx.text(
                                     f"Categorías: {tournament['category_count']} · "
                                     f"Completadas: {tournament['completed_category_count']}",
-                                    color=TEXT_TERTIARY,
                                 ),
                                 rx.text(
                                     f"Encuentros: {tournament['completed_match_count']}"
                                     f"/{tournament['total_match_count']}",
-                                    color=TEXT_TERTIARY,
                                 ),
                                 rx.link(
                                     "Ver resultados",
@@ -98,8 +90,8 @@ def category_results() -> rx.Component:
     """Category drill-down page with matches or kata standings."""
 
     breadcrumb = rx.hstack(
-        rx.link("Resultados", href="/results", color=TEXT_TERTIARY),
-        rx.text("›", color=TEXT_TERTIARY),
+        rx.link("Resultados", href="/results"),
+        rx.text("›"),
         rx.cond(
             ResultsState.category_title != "",
             rx.text(ResultsState.category_title, font_weight="medium"),
@@ -151,7 +143,7 @@ def category_results() -> rx.Component:
                 rx.cond(
                     ResultsState.category_standings,
                     rx.vstack(
-                        rx.heading("Clasificación", size="5", color=TEXT_PRIMARY),
+                        rx.heading("Clasificación", size="5"),
                         rx.foreach(
                             ResultsState.category_standings,
                             lambda entry: rx.card(
@@ -162,7 +154,6 @@ def category_results() -> rx.Component:
                                     ),
                                     rx.text(
                                         f"{entry.get('total_score', '')}",
-                                        color=TEXT_TERTIARY,
                                     ),
                                     spacing="3",
                                     align="center",
@@ -173,7 +164,7 @@ def category_results() -> rx.Component:
                         width="100%",
                     ),
                     rx.vstack(
-                        rx.heading("Encuentros", size="5", color=TEXT_PRIMARY),
+                        rx.heading("Encuentros", size="5"),
                         rx.foreach(
                             ResultsState.category_matches,
                             lambda match: rx.card(
@@ -222,13 +213,13 @@ def tournament_results() -> rx.Component:
 
     body = rx.vstack(
         _results_header("Resultados del torneo", "Resumen y categorías"),
-        rx.heading("Resumen", size="5", color=TEXT_PRIMARY),
+        rx.heading("Resumen", size="5"),
         summary,
         rx.cond(
             ResultsState.error_message != "",
             rx.callout(ResultsState.error_message, icon="triangle_alert"),
         ),
-        rx.heading("Categorías", size="5", color=TEXT_PRIMARY),
+        rx.heading("Categorías", size="5"),
         rx.cond(
             ResultsState.is_loading,
             rx.text("Cargando resultados..."),
@@ -239,18 +230,14 @@ def tournament_results() -> rx.Component:
                         ResultsState.categories,
                         lambda category: rx.card(
                             rx.vstack(
-                                rx.heading(
-                                    category["name"], size="4", color=TEXT_PRIMARY
-                                ),
+                                rx.heading(category["name"], size="4"),
                                 rx.text(
                                     f"{category['modality']} · "
                                     f"{category['competition_system']}",
-                                    color=TEXT_TERTIARY,
                                 ),
                                 rx.text(
                                     f"Progreso: {category['completed_match_count']}"
                                     f"/{category['total_match_count']}",
-                                    color=TEXT_TERTIARY,
                                 ),
                                 rx.badge(
                                     f"Podio: {category['podium_status']}",
@@ -318,7 +305,7 @@ def podium_results() -> rx.Component:
                         ResultsState.podium_cards,
                         lambda card: rx.card(
                             rx.vstack(
-                                rx.heading(card["name"], size="4", color=TEXT_PRIMARY),
+                                rx.heading(card["name"], size="4"),
                                 _podium_status_badge(card["podium_status"]),
                                 rx.cond(
                                     card["podium_status"] == "available",
@@ -342,7 +329,6 @@ def podium_results() -> rx.Component:
                                 rx.text(
                                     f"{card.get('modality', '')} · "
                                     f"{card.get('competition_system', '')}",
-                                    color=TEXT_TERTIARY,
                                     font_size="sm",
                                 ),
                                 align="start",
@@ -401,12 +387,12 @@ def statistics() -> rx.Component:
             rx.cond(
                 ResultsState.statistics_view,
                 rx.vstack(
-                    rx.heading("Resumen", size="5", color=TEXT_PRIMARY),
+                    rx.heading("Resumen", size="5"),
                     summary,
                     rx.cond(
                         ResultsState.modality_breakdown,
                         rx.vstack(
-                            rx.heading("Por modalidad", size="5", color=TEXT_PRIMARY),
+                            rx.heading("Por modalidad", size="5"),
                             rx.foreach(
                                 ResultsState.modality_breakdown,
                                 lambda row: rx.card(
@@ -428,7 +414,7 @@ def statistics() -> rx.Component:
                     rx.cond(
                         ResultsState.system_breakdown,
                         rx.vstack(
-                            rx.heading("Por sistema", size="5", color=TEXT_PRIMARY),
+                            rx.heading("Por sistema", size="5"),
                             rx.foreach(
                                 ResultsState.system_breakdown,
                                 lambda row: rx.card(
@@ -449,9 +435,7 @@ def statistics() -> rx.Component:
                     rx.cond(
                         ResultsState.match_status_breakdown,
                         rx.vstack(
-                            rx.heading(
-                                "Por estado de encuentro", size="5", color=TEXT_PRIMARY
-                            ),
+                            rx.heading("Por estado de encuentro", size="5"),
                             rx.foreach(
                                 ResultsState.match_status_breakdown,
                                 lambda row: rx.card(

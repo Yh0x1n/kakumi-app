@@ -6,7 +6,6 @@ Provides authentication form and handles initial admin creation.
 import reflex as rx
 
 from kakumi_app.states.auth_state import AuthState
-from kakumi_app.styles.tokens import BG_PAGE, TEXT_TERTIARY, TEXT_PRIMARY
 
 
 @rx.page(route="/login", on_load=[AuthState.create_initial_admin, AuthState.check_auth])
@@ -22,7 +21,6 @@ def login_page() -> rx.Component:
                         font_weight="bold",
                         text_align="center",
                         margin_bottom="0.5em",
-                        color=TEXT_PRIMARY,
                     ),
                     rx.heading(
                         "Iniciar Sesión",
@@ -30,7 +28,6 @@ def login_page() -> rx.Component:
                         font_weight="normal",
                         text_align="center",
                         margin_bottom="1em",
-                        color=TEXT_PRIMARY,
                     ),
                     rx.form(
                         rx.vstack(
@@ -68,7 +65,6 @@ def login_page() -> rx.Component:
                     rx.text(
                         "Por favor, ingrese sus credenciales.",
                         font_size="0.9em",
-                        color=TEXT_TERTIARY,
                         margin_top="1em",
                         text_align="center",
                     ),
@@ -83,7 +79,6 @@ def login_page() -> rx.Component:
         ),
         width="100%",
         min_height="100vh",
-        background_color=BG_PAGE,
     )
 
 
