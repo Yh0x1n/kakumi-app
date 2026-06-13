@@ -847,7 +847,7 @@ class KataMatchState(rx.State):
         if self.informal_category_id <= 0:
             raise ValueError("Categoría informal no disponible")
         if self.informal_selected_athlete_id <= 0:
-            raise ValueError("Seleccioná un atleta")
+            raise ValueError("Selecciona un atleta")
 
         scores: list[float] = []
         for slot in self.judge_slots:

@@ -126,7 +126,7 @@ class RefereeState(CrudStateMixin, rx.State):
         self.import_error_messages = messages
 
         if errors:
-            self.error_message = "Importación con errores: revisá el detalle"
+            self.error_message = "Importación con errores: revisa el detalle"
         else:
             self.error_message = ""
 
@@ -183,7 +183,7 @@ class RefereeState(CrudStateMixin, rx.State):
         """Return UI label for referee availability flag."""
         return "Disponible" if referee.get("is_available", True) else "No disponible"
 
-    license_number_options: list[str] = ['A', 'B', 'C']
+    license_number_options: list[str] = ["A", "B", "C"]
 
     @rx.event
     def set_form_values(
@@ -200,9 +200,7 @@ class RefereeState(CrudStateMixin, rx.State):
             self.license_level = self._display_license_level(
                 referee.get("license_level", "NATIONAL")
             )
-            self.role = self._display_role(
-                referee.get("role", "REFEREE")
-            )
+            self.role = self._display_role(referee.get("role", "REFEREE"))
             self.tatami_certified = referee.get("tatami_certified") or ""
             self.is_available = bool(referee.get("is_available", True))
             self.dojo = referee.get("dojo") or ""
@@ -358,7 +356,7 @@ class RefereeState(CrudStateMixin, rx.State):
     async def handle_import_upload(self, files: list[rx.UploadFile]) -> Any:
         """Read an uploaded XLSX file and import referees from it."""
         if not files:
-            self.error_message = "Seleccioná un archivo XLSX antes de importar"
+            self.error_message = "Selecciona un archivo XLSX antes de importar"
             return rx.toast.error(self.error_message)
 
         uploaded_file = files[0]
@@ -367,7 +365,9 @@ class RefereeState(CrudStateMixin, rx.State):
         if filename.endswith(".xlsx"):
             self.import_file_type = "xlsx"
         else:
-            self.error_message = "Formato no soportado. Usá .xlsx; .xls no está soportado."
+            self.error_message = (
+                "Formato no soportado. Usa .xlsx; .xls no está soportado."
+            )
             return rx.toast.error(self.error_message)
 
         upload_data = await uploaded_file.read()
@@ -390,8 +390,7 @@ class RefereeState(CrudStateMixin, rx.State):
             rx.download(
                 data=workbook_bytes,
                 mime_type=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ),
                 filename=self._build_export_filename(),
             ),

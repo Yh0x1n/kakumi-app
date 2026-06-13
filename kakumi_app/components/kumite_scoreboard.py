@@ -187,7 +187,9 @@ def kumite_scoreboard() -> rx.Component:
                         href=f"/display/{KumiteMatchState.public_display_key}",
                         is_external=True,
                     ),
-                    rx.button("Preparar pantalla pública", variant="soft", is_disabled=True),
+                    rx.button(
+                        "Preparar pantalla pública", variant="soft", is_disabled=True
+                    ),
                 ),
                 spacing="2",
             ),
@@ -197,7 +199,7 @@ def kumite_scoreboard() -> rx.Component:
                     rx.dialog.content(
                         rx.dialog.title("Descalificación"),
                         rx.dialog.description(
-                            "Seleccioná tipo de descalificación para finalizar combate"
+                            "Selecciona tipo de descalificación para finalizar combate"
                         ),
                         rx.hstack(
                             rx.button(
