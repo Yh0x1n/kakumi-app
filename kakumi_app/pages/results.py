@@ -35,7 +35,7 @@ def results() -> rx.Component:
     body = rx.vstack(
         _results_header(
             "Resultados",
-            "Seleccioná un torneo para ver su hub de resultados.",
+            "Selecciona un torneo para ver su hub de resultados.",
         ),
         rx.cond(
             ResultsState.error_message != "",

@@ -648,7 +648,7 @@ async def test_registry_state_upload_rejects_legacy_xls_files(
     """Registry upload flow must reject `.xls` files before import service runs."""
     state = state_cls()
     calls = {"import": False}
-    expected_error = "Formato no soportado. Usá .xlsx; .xls no está soportado."
+    expected_error = "Formato no soportado. Usa .xlsx; .xls no está soportado."
 
     def _unexpected_import(_: bytes) -> tuple[int, int, list[str]]:
         calls["import"] = True
@@ -956,7 +956,7 @@ def test_registry_import_panel_copy_is_spanish_and_xlsx_only() -> None:
         Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
     ).read_text(encoding="utf-8")
 
-    assert "Seleccioná un archivo .xlsx" in file_content
+    assert "Selecciona un archivo .xlsx" in file_content
     assert "encabezados en español" in file_content
     assert "Formato soportado: .xlsx" in file_content
     assert "CSV o JSON" not in file_content

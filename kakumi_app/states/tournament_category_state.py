@@ -104,13 +104,17 @@ class TournamentCategoryState(CrudStateMixin, rx.State):
     @staticmethod
     def _normalize_competition_system(display: str) -> str:
         """Spanish display → internal enum value."""
-        rev = {v: k for k, v in TournamentCategoryState._COMPETITION_SYSTEM_DISPLAY.items()}
+        rev = {
+            v: k for k, v in TournamentCategoryState._COMPETITION_SYSTEM_DISPLAY.items()
+        }
         return rev.get(display.strip(), display)
 
     @staticmethod
     def _display_competition_system(internal: str) -> str:
         """Internal enum value → Spanish display."""
-        return TournamentCategoryState._COMPETITION_SYSTEM_DISPLAY.get(internal, internal)
+        return TournamentCategoryState._COMPETITION_SYSTEM_DISPLAY.get(
+            internal, internal
+        )
 
     @rx.var
     def has_selected_tournament_context(self) -> bool:
@@ -198,7 +202,9 @@ class TournamentCategoryState(CrudStateMixin, rx.State):
                 .where(TournamentCategory.tournament_id == self.current_tournament_id)
                 .order_by(TournamentCategory.id)
             ).all()
-        self.categories = [self._serialize_category(category) for category in categories]
+        self.categories = [
+            self._serialize_category(category) for category in categories
+        ]
 
     @rx.event
     async def set_tournament_context(self, tournament_id: int) -> None:
@@ -235,9 +241,7 @@ class TournamentCategoryState(CrudStateMixin, rx.State):
             self.modality = self._display_modality(
                 category.get("modality", Modality.KATA_INDIVIDUAL.value)
             )
-            self.gender = self._display_gender(
-                category.get("gender", "MALE")
-            )
+            self.gender = self._display_gender(category.get("gender", "MALE"))
             self.min_age = str(category.get("min_age", 0))
             self.max_age = str(category.get("max_age", 99))
             self.min_belt_rank = category.get("min_belt_rank") or ""
@@ -262,7 +266,7 @@ class TournamentCategoryState(CrudStateMixin, rx.State):
     def _validate_form(self) -> Optional[dict[str, Any]]:
         """Validate manual category input and return normalized payload."""
         if not self.current_tournament_id:
-            self.error_message = "Seleccioná un torneo primero"
+            self.error_message = "Selecciona un torneo primero"
             return None
 
         if not self.name.strip():

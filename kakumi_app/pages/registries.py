@@ -36,7 +36,7 @@ def registries() -> rx.Component:
                 rx.heading("Registros", size="8"),
                 rx.text(
                     "Selecciona un módulo para gestionar atletas, árbitros y torneos.",
-                    ),
+                ),
                 spacing="1",
                 align="start",
                 width="100%",
@@ -76,7 +76,7 @@ def _athlete_form() -> rx.Component:
                             value=state.name,
                             on_change=state.set_name,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Email", size="3"),
@@ -86,7 +86,7 @@ def _athlete_form() -> rx.Component:
                             on_change=state.set_email,
                             type="email",
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                 ),
                 row(
@@ -98,7 +98,7 @@ def _athlete_form() -> rx.Component:
                             on_change=state.set_age,
                             type="number",
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Género", size="3"),
@@ -122,7 +122,7 @@ def _athlete_form() -> rx.Component:
                             on_change=state.set_weight_kg,
                             type="number",
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Grado", size="3"),
@@ -130,7 +130,7 @@ def _athlete_form() -> rx.Component:
                             BELT_RANKS,
                             value=state.belt_rank,
                             on_change=state.set_belt_rank,
-                            placeholder="Seleccioná un grado",
+                            placeholder="Selecciona un grado",
                             style={
                                 "border": "1px solid white",
                                 "background_color": "white",
@@ -146,19 +146,17 @@ def _athlete_form() -> rx.Component:
                             value=state.dojo,
                             on_change=state.set_dojo,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
-                        rx.heading(
-                            "Nacionalidad (ISO 3 letras)", size="3"
-                        ),
+                        rx.heading("Nacionalidad (ISO 3 letras)", size="3"),
                         rx.input(
                             placeholder="Nacionalidad (ISO 3 letras)",
                             value=state.nationality,
                             on_change=state.set_nationality,
                             max_length=3,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                 ),
                 # Fila final
@@ -171,7 +169,7 @@ def _athlete_form() -> rx.Component:
                                 value=state.license_number,
                                 on_change=state.set_license_number,
                                 border="1px solid white",
-                                ),
+                            ),
                         ),
                         width=["100%", "100%", "50%"],
                     ),
@@ -230,7 +228,7 @@ def _referee_form() -> rx.Component:
                             value=state.name,
                             on_change=state.set_name,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Licencia *", size="3"),
@@ -238,7 +236,7 @@ def _referee_form() -> rx.Component:
                             state.license_number_options,
                             value=state.license_number,
                             on_change=state.set_license_number,
-                            placeholder="Seleccioná o escribí licencia",
+                            placeholder="Selecciona o escribe licencia",
                             style={
                                 "border": "1px solid white",
                                 "background_color": "white",
@@ -279,15 +277,13 @@ def _referee_form() -> rx.Component:
                 ),
                 row(
                     rx.vstack(
-                        rx.heading(
-                            "Certificación tatami (JSON)", size="3"
-                        ),
+                        rx.heading("Certificación tatami (JSON)", size="3"),
                         rx.input(
                             placeholder="Certificación tatami (JSON)",
                             value=state.tatami_certified,
                             on_change=state.set_tatami_certified,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Dojo", size="3"),
@@ -296,7 +292,7 @@ def _referee_form() -> rx.Component:
                             value=state.dojo,
                             on_change=state.set_dojo,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                 ),
                 row(
@@ -308,7 +304,7 @@ def _referee_form() -> rx.Component:
                             on_change=state.set_email,
                             type="email",
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Teléfono", size="3"),
@@ -317,7 +313,7 @@ def _referee_form() -> rx.Component:
                             value=state.phone,
                             on_change=state.set_phone,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                 ),
                 rx.flex(
@@ -377,7 +373,7 @@ def _tournament_form() -> rx.Component:
                             value=state.name,
                             on_change=state.set_name,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                     rx.vstack(
                         rx.heading("Sede *", size="3"),
@@ -386,7 +382,7 @@ def _tournament_form() -> rx.Component:
                             value=state.venue,
                             on_change=state.set_venue,
                             border="1px solid white",
-                            ),
+                        ),
                     ),
                 ),
                 row(
@@ -417,7 +413,7 @@ def _tournament_form() -> rx.Component:
                                 on_change=state.set_tatami_count,
                                 type="number",
                                 border="1px solid white",
-                                ),
+                            ),
                         ),
                         width=["100%", "100%", "50%"],
                     ),
@@ -435,7 +431,7 @@ def _tournament_form() -> rx.Component:
                                 value=state.created_by_id,
                                 on_change=state.set_created_by_id,
                                 border="1px solid white",
-                                ),
+                            ),
                         ),
                         width=["100%", "100%", "50%"],
                     ),
@@ -474,15 +470,11 @@ def _athletes_card() -> rx.Component:
             rows_var=state.athletes,
             row_renderer=lambda athlete: rx.table.row(
                 rx.table.cell(athlete["name"]),
-                rx.table.cell(
-                    rx.cond(athlete["email"], athlete["email"], "-")
-                ),
-                rx.table.cell(
-                    rx.cond(athlete["dojo"], athlete["dojo"], "-")
-                ),
+                rx.table.cell(rx.cond(athlete["email"], athlete["email"], "-")),
+                rx.table.cell(rx.cond(athlete["dojo"], athlete["dojo"], "-")),
                 rx.table.cell(
                     rx.cond(athlete["is_active"], "Activo", "Inactivo"),
-                    ),
+                ),
                 rx.table.cell(
                     rx.hstack(
                         rx.button(
@@ -545,12 +537,10 @@ def _referees_card() -> rx.Component:
             row_renderer=lambda referee: rx.table.row(
                 rx.table.cell(referee["name"]),
                 rx.table.cell(referee["license_number"]),
-                rx.table.cell(
-                    rx.cond(referee["dojo"], referee["dojo"], "-")
-                ),
+                rx.table.cell(rx.cond(referee["dojo"], referee["dojo"], "-")),
                 rx.table.cell(
                     rx.cond(referee["is_available"], "Disponible", "No disponible"),
-                    ),
+                ),
                 rx.table.cell(
                     rx.hstack(
                         rx.button(
@@ -573,7 +563,7 @@ def _referees_card() -> rx.Component:
                 icon="🧑‍⚖️",
                 title="No hay árbitros registrados",
                 subtitle=(
-                    "Importá una lista de árbitros o cargá el primero de forma manual"
+                    "Importa una lista de árbitros o carga el primero de forma manual"
                 ),
                 cta_label="Añadir Primer Árbitro",
                 on_cta_click=state.set_form_values,
@@ -637,7 +627,7 @@ def _tournaments_card() -> rx.Component:
             empty_state=registry_empty_state(
                 icon="🏆",
                 title="No hay torneos registrados",
-                subtitle="Creá un torneo para comenzar a gestionar la competencia",
+                subtitle="Crea un torneo para comenzar a gestionar la competencia",
                 cta_label="Crear Primer Torneo",
                 on_cta_click=state.set_form_values,
             ),
@@ -654,7 +644,7 @@ def athletes() -> rx.Component:
         registry_actions_header(
             title="Gestión de Atletas",
             subtitle="Directorio principal de competidores registrados.",
-            help_text="Importá o exportá plantillas .xlsx con encabezados en español.",
+            help_text="Importa o exporta plantillas .xlsx con encabezados en español.",
             add_label="Añadir Atleta",
             on_add_click=state.set_form_values,
             import_label="Importar .xlsx",
@@ -684,7 +674,7 @@ def referees() -> rx.Component:
         registry_actions_header(
             title="Gestión de Árbitros",
             subtitle="Directorio y control de licencias oficiales.",
-            help_text="Importá o exportá plantillas .xlsx con encabezados en español.",
+            help_text="Importa o exporta plantillas .xlsx con encabezados en español.",
             add_label="Añadir Árbitro",
             on_add_click=state.set_form_values,
             import_label="Importar .xlsx",
