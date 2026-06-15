@@ -42,6 +42,11 @@ from .states.results_state import ResultsState
 from .states.secondary_display_state import SecondaryDisplayState
 from .states.tournament_state import TournamentState
 from .states.viewer_state import ViewerState
+from .styles.tokens import (
+    ACCENT_GOLD,
+    BRAND_RED,
+    BRAND_RED_HOVER,
+)
 
 
 class State(rx.State):
@@ -61,31 +66,85 @@ def _register_side_effect_pages() -> None:
 
 
 def index() -> rx.Component:
-    return rx.center(
-        rx.vstack(
-            rx.heading("Kakumi", font_size="6xl", weight="bold"),
-            rx.text(
-                "Gestión de torneos de Karate-Do",
-                font_size="xl",
-                color=rx.color("gray", 11),
-            ),
-            rx.spacer(height="1em"),
-            rx.link(
-                rx.button(
-                    "Iniciar Sesión",
-                    size="3",
-                    color_scheme="crimson",
-                ),
-                href="/login",
-            ),
-            spacing="4",
-            align="center",
-            justify="center",
-            min_height="100vh",
+    """Landing page — fullscreen hero with background image and dark overlay."""
+    return rx.box(
+        # ── Dark overlay layer ──
+        rx.box(
+            position="absolute",
+            top="0",
+            left="0",
+            width="100%",
+            height="100%",
+            background="rgba(0, 0, 0, 0.65)",
+            z_index="1",
         ),
+        # ── Content layer ──
+        rx.center(
+            rx.vstack(
+                # Brand title
+                rx.heading(
+                    "Kakumi",
+                    font_size=["3.5rem", "4.5rem", "6rem"],
+                    weight="bold",
+                    color="#ffffff",
+                    letter_spacing="0.05em",
+                    text_align="center",
+                ),
+                # Gold accent divider
+                rx.box(
+                    width=["60%", "50%", "40%"],
+                    height="2px",
+                    background_color=ACCENT_GOLD,
+                    border_radius="full",
+                ),
+                # Subtitle
+                rx.text(
+                    "Gestión de torneos de Karate-Do",
+                    font_size=["1.2rem", "1.4rem", "1.6rem"],
+                    color="#ffffff",
+                    text_align="center",
+                ),
+                rx.spacer(height="0.5em"),
+                # CTA button
+                rx.link(
+                    rx.button(
+                        "Iniciar Sesión",
+                        size="3",
+                        padding_x=["1.5rem", "2rem", "2.5rem"],
+                        padding_y=["0.75rem", "1rem", "1.25rem"],
+                        font_size=["1rem", "1.1rem", "1.2rem"],
+                        background_color=BRAND_RED,
+                        color="#ffffff",
+                        border_radius="0.5rem",
+                        box_shadow=f"0 0 0 2px {ACCENT_GOLD}",
+                        _hover={
+                            "background_color": BRAND_RED_HOVER,
+                            "box_shadow": f"0 0 12px {ACCENT_GOLD}",
+                            "transform": "scale(1.03)",
+                        },
+                        transition="all 0.3s ease",
+                        cursor="pointer",
+                    ),
+                    href="/login",
+                    underline="none",
+                ),
+                spacing="6",
+                align="center",
+                justify="center",
+                z_index="2",
+                position="relative",
+            ),
+            width="100%",
+            height="100vh",
+        ),
+        # ── Background wrapper ──
         width="100%",
         height="100vh",
-        background=rx.color("gray", 2),
+        background_image="url('/yorgelis-bg.jpeg')",
+        background_size="cover",
+        background_position="center",
+        position="relative",
+        overflow="hidden",
     )
 
 
