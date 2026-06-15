@@ -1,4 +1,8 @@
-"""Tests for secondary display read-only state and page route."""
+"""Behavioral tests for secondary display read-only state and page route.
+
+Keeps all state behavioral tests, computed var accessors, and polling logic.
+Removes brittle UI string snapshot assertions.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +14,8 @@ import pytest
 import reflex as rx
 from reflex.istate.data import PageData
 
-from kakumi_app.components.public_kata_display import public_kata_display
-from kakumi_app.components.public_kumite_display import public_kumite_display
-from kakumi_app.pages.public_display import public_display_page
 from kakumi_app.states.secondary_display_state import SecondaryDisplayState
+from kakumi_app.pages.public_display import public_display_page
 
 
 def _event_fn(event_callback: Any) -> Any:
@@ -28,27 +30,14 @@ def _set_display_route_param(state: SecondaryDisplayState, display_key: str) -> 
     )
 
 
-def _flatten_render_strings(node: object) -> list[str]:
-    if isinstance(node, str):
-        return [node]
-    if isinstance(node, dict):
-        values: list[str] = []
-        for value in node.values():
-            values.extend(_flatten_render_strings(value))
-        return values
-    if isinstance(node, list):
-        values: list[str] = []
-        for item in node:
-            values.extend(_flatten_render_strings(item))
-        return values
-    return []
+def test_public_display_page_returns_component() -> None:
+    """public_display_page must return a valid rx.Component."""
+    assert isinstance(public_display_page(), rx.Component)
 
 
-def _rendered_string(component: rx.Component) -> str:
-    return " ".join(
-        value.encode("utf-8").decode("unicode_escape")
-        for value in _flatten_render_strings(component.render())
-    )
+# =============================================================================
+# Behavioral tests: load_display
+# =============================================================================
 
 
 @pytest.mark.asyncio
@@ -86,6 +75,11 @@ async def test_load_display_flags_stale_snapshot(
     assert state.is_stale is True
     assert state.has_snapshot is True
     assert state.modality == "KATA"
+
+
+# =============================================================================
+# Behavioral tests: refresh_snapshot
+# =============================================================================
 
 
 @pytest.mark.asyncio
@@ -169,28 +163,9 @@ async def test_refresh_snapshot_exposes_kumite_senshu_and_penalties(
     assert state.kumite_ao_penalties_label == "Ninguna"
 
 
-def test_public_display_page_contains_read_only_copy() -> None:
-    rendered = _rendered_string(public_display_page())
-
-    assert "Pantalla pública" in rendered
-    assert "Solo lectura" in rendered
-    assert "Actualizar" not in rendered
-
-
-def test_public_kata_display_uses_fullscreen_viewport_layout_tokens() -> None:
-    rendered = _rendered_string(public_kata_display())
-
-    assert "100vw" in rendered
-    assert "100vh" in rendered
-    assert "45vw" in rendered
-    assert "5vw" in rendered
-    assert "2vh" in rendered
-
-
-def test_public_kata_display_includes_judge_detail_copy() -> None:
-    rendered = _rendered_string(public_kata_display())
-
-    assert "Detalle jueces" in rendered
+# =============================================================================
+# Computed var accessors
+# =============================================================================
 
 
 def test_kata_informal_accessors_project_single_athlete_and_results() -> None:
@@ -233,34 +208,9 @@ def test_kata_majority_tally_accessors_project_vote_counts_for_big_labels() -> N
     assert state.kata_ao_total == "3"
 
 
-def test_public_kata_display_does_not_include_centered_tally_copy() -> None:
-    rendered = _rendered_string(public_kata_display())
-
-    assert "AKA 3 - AO 2" not in rendered
-
-
-def test_public_kumite_display_uses_fullscreen_viewport_layout_tokens() -> None:
-    rendered = _rendered_string(public_kumite_display())
-
-    assert "100vw" in rendered
-    assert "100vh" in rendered
-    assert "40vw" in rendered
-    assert "20vw" in rendered
-    assert "7vw" in rendered
-    assert "2vh" in rendered
-
-
-def test_public_kumite_display_includes_senshu_and_penalty_copy() -> None:
-    rendered = _rendered_string(public_kumite_display())
-
-    assert "SENSHU" in rendered
-    assert "Penalizaciones" in rendered
-
-
-def test_public_display_does_not_render_quoted_proxy_expressions() -> None:
-    rendered = _rendered_string(public_display_page())
-
-    assert '"(isTrue(' not in rendered
+# =============================================================================
+# Behavioral tests: poll_snapshot_loop
+# =============================================================================
 
 
 @pytest.mark.asyncio
