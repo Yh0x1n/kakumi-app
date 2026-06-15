@@ -121,7 +121,10 @@ class KataInformalState(rx.State):
             self.error_message = "ID de categoría inválido"
             return
 
-        from kakumi_app.models.tournament_model import TournamentCategory, CategoryGender, CategoryStatus
+        from kakumi_app.models.tournament_model import (
+            TournamentCategory,
+            CategoryGender,
+        )
         from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 
         with rx.session() as session:
@@ -187,7 +190,7 @@ class KataInformalState(rx.State):
         """Persist one athlete run and refresh ranking table."""
         self.error_message = ""
         if self.selected_athlete_id <= 0:
-            self.error_message = "Seleccioná un atleta"
+            self.error_message = "Selecciona un atleta"
             return
 
         values: list[float] = []

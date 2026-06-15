@@ -129,14 +129,10 @@ class ResultsState(rx.State):
             view = ResultsService.get_category_view(category_id)
             self.current_category = dict(view.get("category", {}))
             self.category_data = dict(view)
-            self.category_title = str(
-                view.get("category", {}).get("name", "")
-            )
+            self.category_title = str(view.get("category", {}).get("name", ""))
             self.empty_message = str(view.get("empty_message", ""))
             raw_standings = view.get("standings")
-            self.category_standings = (
-                list(raw_standings) if raw_standings else []
-            )
+            self.category_standings = list(raw_standings) if raw_standings else []
             self.category_matches = list(view.get("matches", []))
         except ValueError as error:
             self._reset_category_view()
@@ -180,7 +176,7 @@ class ResultsState(rx.State):
         try:
             tournament_id = self._parse_context_tournament_id()
             if tournament_id is None:
-                self.error_message = "Seleccioná un torneo para ver sus podios."
+                self.error_message = "Selecciona un torneo para ver sus podios."
                 return
             self.selected_tournament_id = tournament_id
             view = ResultsService.get_podiums_view(tournament_id)
@@ -208,7 +204,7 @@ class ResultsState(rx.State):
         try:
             tournament_id = self._parse_context_tournament_id()
             if tournament_id is None:
-                self.error_message = "Seleccioná un torneo para ver estadísticas."
+                self.error_message = "Selecciona un torneo para ver estadísticas."
                 return
             self.selected_tournament_id = tournament_id
             view = ResultsService.get_statistics_view(tournament_id)
@@ -232,8 +228,7 @@ class ResultsState(rx.State):
             ]
             by_match_status = view.get("by_match_status", {})
             self.match_status_breakdown = [
-                {"status": st, "count": cnt}
-                for st, cnt in by_match_status.items()
+                {"status": st, "count": cnt} for st, cnt in by_match_status.items()
             ]
             self.statistics_view = dict(view)
         except ValueError as error:

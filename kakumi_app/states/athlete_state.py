@@ -94,7 +94,7 @@ class AthleteState(CrudStateMixin, rx.State):
         self.import_error_messages = messages
 
         if errors:
-            self.error_message = "Importación con errores: revisá el detalle"
+            self.error_message = "Importación con errores: revisa el detalle"
         else:
             self.error_message = ""
 
@@ -361,7 +361,7 @@ class AthleteState(CrudStateMixin, rx.State):
     async def handle_import_upload(self, files: list[rx.UploadFile]) -> Any:
         """Read an uploaded XLSX file and import athletes from it."""
         if not files:
-            self.error_message = "Seleccioná un archivo XLSX antes de importar"
+            self.error_message = "Selecciona un archivo XLSX antes de importar"
             return rx.toast.error(self.error_message)
 
         uploaded_file = files[0]
@@ -370,7 +370,9 @@ class AthleteState(CrudStateMixin, rx.State):
         if filename.endswith(".xlsx"):
             self.import_file_type = "xlsx"
         else:
-            self.error_message = "Formato no soportado. Usá .xlsx; .xls no está soportado."
+            self.error_message = (
+                "Formato no soportado. Usa .xlsx; .xls no está soportado."
+            )
             return rx.toast.error(self.error_message)
 
         upload_data = await uploaded_file.read()
@@ -393,8 +395,7 @@ class AthleteState(CrudStateMixin, rx.State):
             rx.download(
                 data=workbook_bytes,
                 mime_type=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ),
                 filename=self._build_export_filename(),
             ),
