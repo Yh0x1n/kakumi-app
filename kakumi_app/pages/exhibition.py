@@ -9,9 +9,15 @@ import reflex as rx
 
 from ..components.kata_scoreboard import kata_scoreboard
 from ..components.kumite_scoreboard import kumite_scoreboard
-from ..components.sidebar import sidebar
+from ..components.registry_crud import registry_page_shell
 from ..states.kata_match_state import KataMatchState
 from ..states.kumite_match_state import KumiteMatchState
+
+from kakumi_app.styles.tokens import (
+    BRAND_RED_HOVER,
+    BRAND_RED_HOVER_LIGHT,
+    TEXT_WHITE,
+)
 
 
 # Subpágina del temporizador (Aquí irá todo el sistema de kumite)
@@ -36,35 +42,73 @@ def kata_system() -> rx.Component:
         align="center",
     )
 
+# ── Constantes (mismas que registries_items) ─────
+_EXH_ICON_SIZE = "90px"
+_EXH_CARD_SIZE = "40vh"
+_EXH_CARD_PADDING = "5rem"
+_EXH_CARD_RADIUS = "0.5em"
+_EXH_CARD_STYLE = {
+    "cursor": "pointer",
+    "bg": BRAND_RED_HOVER,
+    "border_radius": _EXH_CARD_RADIUS,
+    "_hover": {
+        "bg": BRAND_RED_HOVER_LIGHT,
+        "color": TEXT_WHITE,
+        "transition": "0.5s ease",
+    },
+}
+
+
+def _exh_icon(icon_path: str) -> rx.Component:
+    """Ícono inline con filtro blanco, como registries."""
+    return rx.image(
+        icon_path,
+        style={"filter": "invert(1)", "color": TEXT_WHITE},
+        width=_EXH_ICON_SIZE,
+        height=_EXH_ICON_SIZE,
+    )
+
+
+def _exh_card(text: str, icon_path: str, href: str) -> rx.Component:
+    """Card de exhibición, misma estructura que registries."""
+    return rx.link(
+        rx.vstack(
+            _exh_icon(icon_path),
+            rx.text(text, font_size="20px", color=TEXT_WHITE, font_weight="bold"),
+            width="100%",
+            height="100%",
+            align="center",
+            justify="center",
+            padding=_EXH_CARD_PADDING,
+            style=_EXH_CARD_STYLE,
+        ),
+        href=href,
+        underline="none",
+        width=_EXH_CARD_SIZE,
+        height=_EXH_CARD_SIZE,
+    )
+
 
 # Menú de exhibición
 def exhibition() -> rx.Component:
-    return rx.box(
+    body = rx.vstack(
         rx.vstack(
-            rx.hstack(
-                sidebar(),
-                rx.vstack(
-                    rx.heading(
-                        "Exhibición",
-                        font_size=50,
-                        align="left",
-                        padding_y="0.5em",
-                        font_weight="bold",
-                    ),
-                    rx.text(
-                        "Aquí se mostrarán los detalles del modo de exhibición.",
-                        font_size=16,
-                        align="left",
-                    ),
-                    rx.hstack(
-                        rx.link(rx.button("Ir a Kata"), href="/exhibition/kata_system"),
-                        rx.link(
-                            rx.button("Ir a Kumite"), href="/exhibition/kumite_system"
-                        ),
-                    ),
-                ),
-            ),
+            rx.heading("Exhibición", size="8"),
+            rx.text("Aquí se mostrarán los detalles del modo de exhibición."),
+            spacing="1",
+            align="start",
+            width="100%",
         ),
+        rx.center(
+            rx.hstack(
+                _exh_card("Kata", "icons/kata.png", "/exhibition/kata_system"),
+                _exh_card("Kumite", "icons/kumite.png", "/exhibition/kumite_system"),
+                spacing="5",
+                justify="center",
+            ),
+            width="100%",
+        ),
+        spacing="4",
         width="100%",
-        height="100vh",
     )
+    return registry_page_shell(body=body)
