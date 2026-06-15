@@ -494,7 +494,7 @@ async def test_login_does_not_redirect_to_change_password_when_flag_false(
     events = _as_event_list(result)
     assert events
     assert _is_toast_event(events[0], toast_kind="success")
-    assert _is_redirect_event(events[1], path="/")
+    assert _is_redirect_event(events[1], path="/home")
 
 
 @pytest.mark.anyio
@@ -540,7 +540,7 @@ async def test_change_password_clears_needs_password_change(
     events = _as_event_list(result)
     assert events
     assert _is_toast_event(events[0], toast_kind="success")
-    assert _is_redirect_event(events[1], path="/")
+    assert _is_redirect_event(events[1], path="/home")
 
 
 @pytest.mark.anyio
