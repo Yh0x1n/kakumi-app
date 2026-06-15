@@ -1,4 +1,8 @@
-"""Regression tests for admin registry alias wrappers."""
+"""Parametrized regression tests for admin registry alias wrappers.
+
+Collapses duplicate base+new route tests into parametrized form.
+Keeps unique tests for reg_item, thin wrappers, and tournaments route.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import get_args
 
+import pytest
 import reflex as rx
 
 from kakumi_app.components.registries_items import reg_item
@@ -54,66 +59,87 @@ def test_admin_athletes_referee_pages_are_thin_wrappers() -> None:
         assert "sidebar(" not in content
 
 
-def test_admin_new_routes_redirect_to_shared_registries_flow() -> None:
-    """New admin routes redirect to shared registries pages."""
-    sys.modules.pop("kakumi_app.pages.admin.athletes_page", None)
-    sys.modules.pop("kakumi_app.pages.admin.referees_page", None)
-    importlib.import_module("kakumi_app.pages.admin.athletes_page")
-    importlib.import_module("kakumi_app.pages.admin.referees_page")
+@pytest.mark.parametrize(
+    ("route", "module_path", "expected_redirect"),
+    [
+        pytest.param(
+            "/admin/athletes/new",
+            "kakumi_app.pages.admin.athletes_page",
+            "/registries/athletes",
+            id="athletes_new",
+        ),
+        pytest.param(
+            "/admin/referees/new",
+            "kakumi_app.pages.admin.referees_page",
+            "/registries/referees",
+            id="referees_new",
+        ),
+        pytest.param(
+            "/admin/athletes",
+            "kakumi_app.pages.admin.athletes_page",
+            "/registries/athletes",
+            id="athletes_base",
+        ),
+        pytest.param(
+            "/admin/referees",
+            "kakumi_app.pages.admin.referees_page",
+            "/registries/referees",
+            id="referees_base",
+        ),
+    ],
+)
+def test_admin_routes_redirect_to_shared_registries(
+    route: str,
+    module_path: str,
+    expected_redirect: str,
+) -> None:
+    """Admin routes must redirect to shared registries pages."""
+    sys.modules.pop(module_path, None)
+    importlib.import_module(module_path)
 
-    athletes_new = _route_config("/admin/athletes/new")
-    referees_new = _route_config("/admin/referees/new")
+    config = _route_config(route)
+    on_load = config.get("on_load")
 
-    athletes_on_load = athletes_new.get("on_load")
-    referees_on_load = referees_new.get("on_load")
+    if isinstance(on_load, list):
+        redirect_spec = on_load[1]
+    else:
+        redirect_spec = on_load
 
-    assert isinstance(athletes_on_load, list)
-    assert isinstance(referees_on_load, list)
-
-    assert _redirect_path(athletes_on_load[1]) == "/registries/athletes"
-    assert _redirect_path(referees_on_load[1]) == "/registries/referees"
+    assert _redirect_path(redirect_spec) == expected_redirect
 
 
-def test_admin_base_routes_redirect_to_shared_registries_flow() -> None:
-    """Base admin routes redirect to shared registries pages."""
-    sys.modules.pop("kakumi_app.pages.admin.athletes_page", None)
-    sys.modules.pop("kakumi_app.pages.admin.referees_page", None)
-    importlib.import_module("kakumi_app.pages.admin.athletes_page")
-    importlib.import_module("kakumi_app.pages.admin.referees_page")
+@pytest.mark.parametrize(
+    ("route", "module_path"),
+    [
+        pytest.param(
+            "/admin/athletes/new",
+            "kakumi_app.pages.admin.athletes_page",
+            id="athletes_new_init",
+        ),
+        pytest.param(
+            "/admin/referees/new",
+            "kakumi_app.pages.admin.referees_page",
+            id="referees_new_init",
+        ),
+    ],
+)
+def test_admin_new_routes_initialize_create_flow_before_redirect(
+    route: str,
+    module_path: str,
+) -> None:
+    """New admin routes must initialize create flow before redirecting."""
+    sys.modules.pop(module_path, None)
+    importlib.import_module(module_path)
 
-    athletes_cfg = _route_config("/admin/athletes")
-    referees_cfg = _route_config("/admin/referees")
+    config = _route_config(route)
+    on_load = config.get("on_load")
 
-    athletes_on_load = athletes_cfg.get("on_load")
-    referees_on_load = referees_cfg.get("on_load")
-
-    assert isinstance(athletes_on_load, rx.event.EventSpec)
-    assert isinstance(referees_on_load, rx.event.EventSpec)
-    assert _redirect_path(athletes_on_load) == "/registries/athletes"
-    assert _redirect_path(referees_on_load) == "/registries/referees"
-
-
-def test_admin_new_routes_initialize_create_flow_before_redirect() -> None:
-    """New admin routes initialize create flow before redirecting."""
-    sys.modules.pop("kakumi_app.pages.admin.athletes_page", None)
-    sys.modules.pop("kakumi_app.pages.admin.referees_page", None)
-    importlib.import_module("kakumi_app.pages.admin.athletes_page")
-    importlib.import_module("kakumi_app.pages.admin.referees_page")
-
-    athletes_new = _route_config("/admin/athletes/new")
-    referees_new = _route_config("/admin/referees/new")
-
-    athletes_on_load = athletes_new.get("on_load")
-    referees_on_load = referees_new.get("on_load")
-
-    assert isinstance(athletes_on_load, list)
-    assert isinstance(referees_on_load, list)
-    assert athletes_on_load[0].args[0][1]._var_value is None
-    assert referees_on_load[0].args[0][1]._var_value is None
+    assert isinstance(on_load, list)
+    assert on_load[0].args[0][1]._var_value is None
 
 
 def test_registries_page_registers_tournaments_route() -> None:
-    """Shared registries page keeps tournaments route registered."""
+    """Shared registries page must keep tournaments route registered."""
     sys.modules.pop("kakumi_app.pages.registries", None)
     importlib.import_module("kakumi_app.pages.registries")
 

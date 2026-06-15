@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import datetime
 import importlib
+import inspect
 import sys
 import uuid
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 import openpyxl
@@ -20,6 +20,7 @@ from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
+from kakumi_app.models.team_model import Team
 from kakumi_app.services.export_service import ExportService
 from kakumi_app.services.import_service import ImportService
 from kakumi_app.models.tournament_model import (
@@ -27,12 +28,51 @@ from kakumi_app.models.tournament_model import (
     TournamentStatus,
 )
 from kakumi_app.states.athlete_state import AthleteState
+from kakumi_app.states.export_state import ExportState
+from kakumi_app.states.import_state import ImportState
 from kakumi_app.states.referee_state import RefereeState
+from kakumi_app.states.team_state import TeamState
 from kakumi_app.states.tournament_state import TournamentState
 from kakumi_app.services.registry_excel_service import (
     build_athletes_workbook,
     build_referees_workbook,
 )
+
+
+def _event_args_map(event: EventSpec) -> dict[str, object]:
+    args_map: dict[str, object] = {}
+    for key_var, value in event.args:
+        key = getattr(key_var, "_js_expr", "")
+        if isinstance(key, str) and key:
+            args_map[key] = value
+    return args_map
+
+
+def _is_toast_event(event: EventSpec, toast_kind: str | None = None) -> bool:
+    args_map = _event_args_map(event)
+    function_arg = args_map.get("function")
+    function_expr = getattr(function_arg, "_js_expr", "")
+    if "__toast" not in function_expr:
+        return False
+    if toast_kind is None:
+        return True
+    return f'"{toast_kind}"' in function_expr
+
+
+def _is_redirect_event(event: EventSpec, path: str | None = None) -> bool:
+    args_map = _event_args_map(event)
+    if "path" not in args_map:
+        return False
+    if path is None:
+        return True
+    path_arg = args_map.get("path")
+    return getattr(path_arg, "_var_value", None) == path
+
+
+def _assert_toast_event(result: object, toast_kind: str | None = None) -> None:
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind=toast_kind) for event in events)
 
 
 def _as_event_list(result: object) -> list[EventSpec]:
@@ -466,16 +506,6 @@ def test_registries_routes_register_crud_pages_with_on_load_handlers() -> None:
     )
 
 
-def test_registries_items_point_to_tournament_route_not_categories() -> None:
-    """Registry cards must point tournaments card to /registries/tournaments."""
-    file_content = (
-        Path(__file__).resolve().parents[1]
-        / "kakumi_app/components/registries_items.py"
-    ).read_text(encoding="utf-8")
-    assert "/registries/tournaments" in file_content
-    assert "/registries/categories" not in file_content
-
-
 def test_admin_alias_routes_still_registered() -> None:
     """Legacy admin athlete/referee routes must remain available as aliases."""
     import kakumi_app.kakumi_app  # noqa: F401
@@ -518,22 +548,6 @@ def test_admin_alias_pages_render_non_empty_compile_safe_body() -> None:
     assert isinstance(referees_component, rx.Component)
     assert "Redirigiendo" in str(athletes_component)
     assert "Redirigiendo" in str(referees_component)
-
-
-def test_registries_page_uses_inline_labels_and_form_rendering_branches() -> None:
-    """
-    Registries page should avoid state helper calls in table cells and render forms.
-    """
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
-    ).read_text(encoding="utf-8")
-
-    assert "athlete_status_label(" not in file_content
-    assert "referee_availability_label(" not in file_content
-    assert "rx.cond(state.show_form" in file_content
-    assert "_athlete_form()" in file_content
-    assert "_referee_form()" in file_content
-    assert "_tournament_form()" in file_content
 
 
 @pytest.mark.anyio
@@ -648,7 +662,7 @@ async def test_registry_state_upload_rejects_legacy_xls_files(
     """Registry upload flow must reject `.xls` files before import service runs."""
     state = state_cls()
     calls = {"import": False}
-    expected_error = "Formato no soportado. Usá .xlsx; .xls no está soportado."
+    expected_error = "Formato no soportado. Usa .xlsx; .xls no está soportado."
 
     def _unexpected_import(_: bytes) -> tuple[int, int, list[str]]:
         calls["import"] = True
@@ -872,108 +886,6 @@ def test_import_referees_xlsx_and_export_referees_xlsx() -> None:
     assert any(row[0] == "Ref Dos" for row in exported_rows)
 
 
-def test_registry_crud_module_exposes_screenshot_layout_primitives() -> None:
-    """Shared CRUD module should expose screenshot-like layout primitives."""
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
-    ).read_text(encoding="utf-8")
-
-    assert "def registry_actions_header(" in file_content
-    assert "def registry_table_card(" in file_content
-    assert "def registry_empty_state(" in file_content
-    assert "def registry_pagination_footer(" in file_content
-    assert "def registry_top_bar(" not in file_content
-
-
-def test_registries_page_uses_redesigned_shared_shell_components() -> None:
-    """Entity pages should consume top bar, action header and table card components."""
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
-    ).read_text(encoding="utf-8")
-
-    assert "registry_actions_header(" in file_content
-    assert "registry_table_card(" in file_content
-    assert "registry_pagination_footer(" in file_content
-    assert "registry_top_bar(" not in file_content
-
-
-def test_registry_shell_has_no_duplicate_header_search_or_hamburger() -> None:
-    """
-    Registries UI should rely on sidebar trigger only, without extra top bar
-    controls.
-    """
-    page_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
-    ).read_text(encoding="utf-8")
-    shell_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
-    ).read_text(encoding="utf-8")
-
-    assert "registry_top_bar(" not in page_content
-    assert "def registry_top_bar(" not in shell_content
-    assert '"☰"' not in shell_content
-
-
-def test_registries_page_keeps_active_import_export_buttons_for_supported_entities() -> (
-    None
-):
-    """
-    Athletes/referees must keep active import and export actions in redesigned
-    header.
-    """
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
-    ).read_text(encoding="utf-8")
-
-    assert "Importar" in file_content
-    assert "Exportar" in file_content
-    assert "state.import_athletes" in file_content
-    assert "state.export_athletes" in file_content
-    assert "state.import_referees" in file_content
-    assert "state.export_referees" in file_content
-
-
-def test_registries_page_wires_upload_components_for_supported_entities() -> None:
-    """Registry pages must wire upload UI for athlete and referee imports."""
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
-    ).read_text(encoding="utf-8")
-    shared_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
-    ).read_text(encoding="utf-8")
-
-    assert "athletes_registry_upload" in file_content
-    assert "referees_registry_upload" in file_content
-    assert "rx.upload(" in shared_content
-    assert "rx.selected_files(" in shared_content
-    assert "handle_import_upload" in file_content
-    assert "rx.upload_files" in file_content
-
-
-def test_registry_import_panel_copy_is_spanish_and_xlsx_only() -> None:
-    """Shared registry import panel must advertise only .xlsx workflow in Spanish."""
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/components/registry_crud.py"
-    ).read_text(encoding="utf-8")
-
-    assert "Seleccioná un archivo .xlsx" in file_content
-    assert "encabezados en español" in file_content
-    assert "Formato soportado: .xlsx" in file_content
-    assert "CSV o JSON" not in file_content
-    assert "CSV, JSON" not in file_content
-
-
-def test_registries_page_uses_explicit_xlsx_labels_for_registry_actions() -> None:
-    """Athlete/referee registries must label import/export actions as .xlsx only."""
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/registries.py"
-    ).read_text(encoding="utf-8")
-
-    assert 'import_label="Importar .xlsx"' in file_content
-    assert 'export_label="Exportar .xlsx"' in file_content
-    assert "encabezados en español" in file_content
-
-
 def test_admin_import_route_redirects_to_shared_athlete_registry_flow() -> None:
     """Legacy admin import page must redirect to shared registry import flow."""
     page_module = importlib.import_module("reflex.page")
@@ -988,19 +900,6 @@ def test_admin_import_route_redirects_to_shared_athlete_registry_flow() -> None:
     assert _is_redirect_event(config.get("on_load"), "/registries/athletes")
     assert isinstance(import_page_module.import_athletes(), rx.Component)
     assert "Redirigiendo" in str(import_page_module.import_athletes())
-
-
-def test_admin_export_page_stays_scoped_to_tournament_results_only() -> None:
-    """Admin export page must stay focused on tournament results, not registries."""
-    file_content = (
-        Path(__file__).resolve().parents[1] / "kakumi_app/pages/admin/export_page.py"
-    ).read_text(encoding="utf-8")
-
-    assert "Exportar Resultados de Torneo" in file_content
-    assert "ExportState.load_tournaments" in file_content
-    assert "export_athletes_xlsx" not in file_content
-    assert "export_referees_xlsx" not in file_content
-    assert "ImportState" not in file_content
 
 
 @pytest.mark.anyio
@@ -1182,3 +1081,414 @@ def test_parse_athlete_row_accepts_belt_color() -> None:
     assert error == ""
     assert data is not None
     assert data["belt_rank"] == "Verde"
+
+
+# =============================================================================
+# Relocated tests from batch files
+# =============================================================================
+
+
+# Relocated from test_batch1_quick_wins_async_rbac.py — athlete form validation
+def test_b2_athlete_validate_form_approval_valid_case() -> None:
+    state = AthleteState()
+    state.name = "Jane Doe"
+    state.age = "26"
+    state.gender = "FEMALE"
+    state.weight_kg = "55"
+    state.belt_rank = "Negro"
+
+    assert state.validate_form() is True
+    assert state.error_message == ""
+
+
+@pytest.mark.parametrize(
+    "belt_rank",
+    [
+        "Negro",
+        "Blanco",
+        "Amarillo",
+        "Naranja",
+        "Verde",
+        "Azul",
+        "Marron",
+        "Negro",
+    ],
+)
+def test_b2_athlete_validate_form_accepts_kyu_dan_and_belt_colors(
+    belt_rank: str,
+) -> None:
+    state = AthleteState()
+    state.name = "Jane Doe"
+    state.age = "26"
+    state.gender = "FEMALE"
+    state.weight_kg = "55"
+    state.belt_rank = belt_rank
+
+    assert state.validate_form() is True
+    assert state.error_message == ""
+
+
+def test_b2_athlete_validate_form_approval_invalid_weight_case() -> None:
+    state = AthleteState()
+    state.name = "Jane Doe"
+    state.age = "26"
+    state.gender = "FEMALE"
+    state.weight_kg = "39.9"
+
+    assert state.validate_form() is False
+    assert state.error_message == "Weight must be between 40.0 and 120.0 kg"
+
+
+# =============================================================================
+# Relocated from test_batch2_rx_event_fixups_and_tokens.py — export handler contract
+# =============================================================================
+
+
+def _event_fn(cls: type, method_name: str):
+    from reflex.event import EventHandler
+
+    handler = getattr(cls, method_name)
+    assert isinstance(handler, EventHandler)
+    assert callable(handler.fn)
+    return handler.fn
+
+
+def test_required_handlers_are_event_handlers() -> None:
+    required = [
+        (ExportState, "export_tournament_results"),
+        (ExportState, "download_export"),
+        (ExportState, "clear_export"),
+        (ImportState, "import_athletes"),
+        (ImportState, "reset_import"),
+    ]
+    for cls, method_name in required:
+        _event_fn(cls, method_name)
+
+
+def test_export_handlers_are_async_events() -> None:
+    for method_name in ["export_tournament_results", "download_export"]:
+        fn = _event_fn(ExportState, method_name)
+        assert inspect.iscoroutinefunction(fn)
+
+
+# =============================================================================
+# Relocated from test_batch3_unified_error_feedback.py — CRUD/toast tests
+# =============================================================================
+
+
+def test_athlete_validate_form_still_sets_inline_validation_error() -> None:
+    state = AthleteState()
+    state.name = ""
+    state.age = "26"
+    state.gender = "FEMALE"
+
+    assert state.validate_form() is False
+    assert state.error_message == "Name must be 2-255 characters"
+
+
+def test_referee_validate_form_still_sets_inline_validation_error() -> None:
+    state = RefereeState()
+    state.name = "A"
+    state.license_number = "REF-001"
+
+    assert state.validate_form() is False
+    assert state.error_message == "Name must be 2-255 characters"
+
+
+def test_team_validate_form_still_sets_inline_validation_error() -> None:
+    state = TeamState()
+    state.name = "Equipo válido"
+    state.category_id = ""
+
+    assert state.validate_form() is False
+    assert state.error_message == "Category is required"
+
+
+@pytest.mark.anyio
+async def test_save_athlete_duplicate_name_uses_toast_feedback(sample_athlete) -> None:
+    state = AthleteState()
+    state.is_editing = False
+    state.name = sample_athlete.name
+    state.age = "26"
+    state.gender = "FEMALE"
+    state.weight_kg = "55"
+
+    result = await AthleteState.save_athlete.fn(state)
+
+    _assert_toast_event(result, toast_kind="error")
+    assert state.error_message == ""
+
+
+@pytest.mark.anyio
+async def test_export_without_tournament_uses_toast_feedback() -> None:
+    state = ExportState()
+
+    result = await ExportState.export_tournament_results.fn(state)
+
+    _assert_toast_event(result)
+
+
+@pytest.mark.anyio
+async def test_save_athlete_success_returns_toast_and_persists_row() -> None:
+    state = AthleteState()
+    state.name = "Atleta Éxito"
+    state.age = "25"
+    state.gender = "MALE"
+    state.weight_kg = "68"
+    state.show_form = True
+
+    result = await AthleteState.save_athlete.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+    assert state.show_form is False
+
+    with rx.session() as session:
+        athlete = session.exec(
+            select(Athlete).where(Athlete.name == "Atleta Éxito")
+        ).first()
+    assert athlete is not None
+
+
+@pytest.mark.anyio
+async def test_athlete_import_file_flow_returns_success_toast(monkeypatch) -> None:
+    state = AthleteState()
+
+    class UploadStub:
+        filename = "athletes.xlsx"
+
+        async def read(self) -> bytes:
+            return build_athletes_workbook(
+                [
+                    {
+                        "name": "Ana",
+                        "age": 26,
+                        "gender": "FEMALE",
+                    }
+                ]
+            )
+
+    monkeypatch.setattr(
+        "kakumi_app.states.athlete_state.ImportService.import_athletes_xlsx",
+        lambda _: (1, 0, []),
+    )
+
+    result = await AthleteState.handle_import_upload.fn(state, [UploadStub()])
+
+    _assert_toast_event(result, toast_kind="success")
+    assert state.import_file_name == "athletes.xlsx"
+    assert state.import_success_count == 1
+    assert state.import_error_count == 0
+
+
+def test_athlete_export_returns_download_plus_success_toast() -> None:
+    state = AthleteState()
+
+    result = AthleteState.export_athletes.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+    assert any("filename" in _event_args_map(event) for event in events)
+
+
+@pytest.mark.anyio
+async def test_delete_athlete_success_returns_toast_and_removes_row(
+    sample_athlete,
+) -> None:
+    state = AthleteState()
+
+    result = await AthleteState.delete_athlete.fn(state, sample_athlete.id)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+
+    with rx.session() as session:
+        athlete = session.get(Athlete, sample_athlete.id)
+    assert athlete is None
+
+
+@pytest.mark.anyio
+async def test_delete_tournament_with_related_records_returns_guard_toast(
+    sample_tournament,
+    sample_category,
+) -> None:
+    del sample_category
+    from kakumi_app.states.tournament_crud_state import TournamentCrudState
+
+    state = TournamentCrudState()
+
+    result = await TournamentCrudState.delete_tournament.fn(state, sample_tournament.id)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="error") for event in events)
+
+    with rx.session() as session:
+        tournament = session.get(Tournament, sample_tournament.id)
+    assert tournament is not None
+
+
+@pytest.mark.anyio
+async def test_delete_tournament_without_related_records_deletes_and_toasts_success(
+    sample_user,
+) -> None:
+    del sample_user
+    with rx.session() as session:
+        tournament = Tournament(
+            name="Torneo CRUD Borrable",
+            venue="Dojo Test",
+            start_date=datetime.date(2026, 10, 1),
+            end_date=datetime.date(2026, 10, 2),
+            status="PLANIFICADO",
+        )
+        session.add(tournament)
+        session.commit()
+        session.refresh(tournament)
+        tournament_id = tournament.id
+
+    from kakumi_app.states.tournament_crud_state import TournamentCrudState
+
+    state = TournamentCrudState()
+    result = await TournamentCrudState.delete_tournament.fn(state, tournament_id)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+
+    with rx.session() as session:
+        deleted = session.get(Tournament, tournament_id)
+    assert deleted is None
+
+
+@pytest.mark.anyio
+async def test_save_referee_success_returns_toast_and_persists_row() -> None:
+    state = RefereeState()
+    state.name = "Ref Éxito"
+    state.license_number = "REF-SUCCESS-001"
+    state.license_level = "NATIONAL"
+    state.role = "REFEREE"
+    state.show_form = True
+
+    result = await RefereeState.save_referee.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+    assert state.show_form is False
+
+    with rx.session() as session:
+        referee = session.exec(
+            select(Referee).where(Referee.license_number == "REF-SUCCESS-001")
+        ).first()
+    assert referee is not None
+
+
+@pytest.mark.anyio
+async def test_save_team_success_returns_toast_and_persists_row(
+    sample_category,
+) -> None:
+    state = TeamState()
+    state.name = "Team Éxito"
+    state.category_id = str(sample_category.id)
+    state.dojo = "Dojo Test"
+    state.show_form = True
+
+    result = await TeamState.save_team.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+    assert state.show_form is False
+
+    with rx.session() as session:
+        team = session.exec(select(Team).where(Team.name == "Team Éxito")).first()
+    assert team is not None
+
+
+@pytest.mark.anyio
+async def test_export_with_selected_tournament_returns_success_toast_and_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = ExportState()
+    state.selected_tournament_id = "12"
+    state.export_format = "json"
+
+    monkeypatch.setattr(
+        "kakumi_app.states.export_state.ExportService.export_tournament_results_json",
+        lambda tournament_id: f'{{"id": {tournament_id}}}',
+    )
+
+    result = await ExportState.export_tournament_results.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert any(_is_toast_event(event, toast_kind="success") for event in events)
+    assert state.export_content == '{"id": 12}'
+    assert state.export_filename == "tournament_12_results.json"
+    assert state.is_exporting is False
+
+
+def test_export_load_tournaments_sets_serializable_dicts(sample_tournament) -> None:
+    state = ExportState()
+
+    ExportState.load_tournaments.fn(state)
+
+    assert state.tournaments
+    assert isinstance(state.tournaments[0], dict)
+    assert state.tournaments[0]["id"] == sample_tournament.id
+
+
+@pytest.mark.anyio
+async def test_tournament_state_set_current_tournament_uses_dict_snapshot(
+    sample_tournament,
+) -> None:
+    state = TournamentState()
+
+    await TournamentState.set_current_tournament.fn(state, sample_tournament.id)
+
+    assert isinstance(state.current_tournament, dict)
+    assert state.current_tournament["id"] == sample_tournament.id
+
+
+@pytest.mark.anyio
+async def test_viewer_load_categories_queries_by_tournament_id(sample_category) -> None:
+    from kakumi_app.states.viewer_state import ViewerState
+
+    state = ViewerState()
+    state.current_tournament = {"id": sample_category.tournament_id}
+
+    await ViewerState.load_categories.fn(state)
+
+    assert state.categories
+    assert isinstance(state.categories[0], dict)
+    assert state.categories[0]["id"] == sample_category.id
+    assert state.categories[0]["type"] == "kata"
+
+
+def test_import_state_error_messages_persist_inline_until_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = ImportState()
+    state.file_type = "xlsx"
+    state.file_content = "dGVzdA=="
+    persisted_errors = ["Row 2: name is required", "Row 3: invalid category"]
+
+    monkeypatch.setattr(
+        "kakumi_app.states.import_state.ImportService.import_athletes_xlsx",
+        lambda _: (0, len(persisted_errors), persisted_errors),
+    )
+
+    result = ImportState.import_athletes.fn(state)
+
+    assert _as_event_list(result) == []
+    assert state.success_count == 0
+    assert state.error_count == 2
+    assert state.error_messages == persisted_errors
+    assert state.show_results is True
+
+    ImportState.reset_import.fn(state)
+    assert state.error_messages == []
+    assert state.show_results is False

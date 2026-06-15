@@ -108,12 +108,12 @@ def registry_import_panel(
         rx.vstack(
             rx.heading("Importar archivo", size="5"),
             rx.text(
-                "Seleccioná un archivo .xlsx para importar registros con encabezados en español.",
+                "Selecciona un archivo .xlsx para importar registros con encabezados en español.",
             ),
             rx.upload(
                 rx.vstack(
                     rx.icon(tag="upload", color=BRAND_RED),
-                    rx.text("Arrastrá el archivo acá o hacé clic para seleccionarlo"),
+                    rx.text("Arrastra el archivo aquí o haz clic para seleccionarlo"),
                     rx.text("Formato soportado: .xlsx", size="2"),
                     spacing="2",
                     align="center",
