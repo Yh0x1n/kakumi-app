@@ -377,7 +377,7 @@ async def test_auth_login_success_returns_success_toast_then_redirect(
     events = _as_event_list(result)
     assert events
     assert _is_toast_event(events[0], toast_kind="success")
-    assert _is_redirect_event(events[1], path="/")
+    assert _is_redirect_event(events[1], path="/home")
     assert state.access_token == "access-token"
     assert state.refresh_token == "refresh-token"
     assert state.username == ""
@@ -421,6 +421,45 @@ async def test_auth_login_success_sets_serializable_current_user_dict(
         "role": "ADMIN",
         "is_active": True,
     }
+
+
+@pytest.mark.anyio
+async def test_check_auth_redirects_authenticated_to_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GIVEN user authenticated
+    WHEN check_auth() called on /login on_load
+    THEN redirect to /home
+    """
+    state = AuthState()
+
+    def fake_load_user_from_token(self) -> None:
+        self.is_authenticated = True
+
+    monkeypatch.setattr(AuthState, "_load_user_from_token", fake_load_user_from_token)
+
+    result = await AuthState.check_auth.fn(state)
+
+    assert _is_redirect_event(result, path="/home")
+
+
+@pytest.mark.anyio
+async def test_check_change_password_access_redirects_to_home_when_no_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GIVEN user authenticated but needs_password_change=False
+    WHEN check_change_password_access() called
+    THEN redirect to /home
+    """
+    state = AuthState()
+    state.is_authenticated = True
+    state.needs_password_change = False
+
+    result = await AuthState.check_change_password_access.fn(state)
+
+    events = _as_event_list(result)
+    assert events
+    assert _is_redirect_event(events[0], path="/home")
 
 
 @pytest.mark.anyio
