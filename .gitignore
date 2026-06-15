@@ -108,7 +108,8 @@ secrets.json
 # - kakumi_app/ (application code)
 # - alembic/ (DB migrations)
 # - tests/ (test suite)
-# - engram/ (persistent project memory)
+
+.engram/
 sdd/
 CRUD Registros Kakumi/
 # Local Pi runtime state

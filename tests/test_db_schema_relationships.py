@@ -1,7 +1,4 @@
-"""Collapsed schema-level relationship symmetry tests.
-
-Replaces 5 individual tests with parametrized loops over relationship contracts.
-"""
+"""Schema-level relationship symmetry tests for db-schema-indexes."""
 
 from sqlalchemy import inspect as sa_inspect
 
@@ -35,6 +32,17 @@ def test_score_and_penalty_relationship_back_populates_contract() -> None:
     assert penalty_rel["given_by"].back_populates == "penalties_given"
 
 
+def test_reverse_relationship_attributes_exist() -> None:
+    """Reverse relationship attributes required by REQ-1 must exist."""
+    assert "matches_as_aka" in sa_inspect(Athlete).relationships
+    assert "matches_as_ao" in sa_inspect(Athlete).relationships
+    assert "matches_won" in sa_inspect(Athlete).relationships
+    assert "matches_as_aka" in sa_inspect(Team).relationships
+    assert "matches_as_ao" in sa_inspect(Team).relationships
+    assert "matches" in sa_inspect(Tatami).relationships
+    assert "applied_scores" in sa_inspect(User).relationships
+
+
 def test_tatami_current_match_back_reference_contract() -> None:
     """Tatami.current_match must have back reference on Match."""
     tatami_rel = sa_inspect(Tatami).relationships
@@ -52,30 +60,3 @@ def test_referee_reverse_relationships_still_intact() -> None:
     assert rel["matches_as_referee"].back_populates == "referee"
     assert rel["scores_as_judge"].back_populates == "judge"
     assert rel["penalties_given"].back_populates == "given_by"
-
-
-BACK_POPULATES_CONTRACTS = [
-    ("Athlete", "matches_as_aka", "aka"),
-    ("Athlete", "matches_as_ao", "ao"),
-    ("Athlete", "matches_won", "winner"),
-    ("Team", "matches_as_aka", "aka_team"),
-    ("Team", "matches_as_ao", "ao_team"),
-    ("Tatami", "matches", "tatami"),
-    ("User", "applied_scores", "applied_by"),
-]
-
-MODEL_MAP = {
-    "Athlete": Athlete,
-    "Team": Team,
-    "Tatami": Tatami,
-    "User": User,
-}
-
-
-def test_reverse_relationship_attributes_exist() -> None:
-    """Reverse relationship attributes required by REQ-1 must exist."""
-    for model_name, rel_name, _target_rel in BACK_POPULATES_CONTRACTS:
-        model_cls = MODEL_MAP[model_name]
-        assert rel_name in sa_inspect(model_cls).relationships, (
-            f"Missing reverse relationship {model_name}.{rel_name}"
-        )

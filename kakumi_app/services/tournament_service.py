@@ -9,7 +9,7 @@ Patrón: service-first, siguiendo AuthService como referencia.
 
 import datetime
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import reflex as rx
 from sqlmodel import select
@@ -228,9 +228,13 @@ class TournamentService:
                     Athlete.age.between(category.min_age, category.max_age)
                 )
                 if category.gender == CategoryGender.MALE.value:
-                    query = query.where(Athlete.gender == AthleteGender.MALE.value)
+                    query = query.where(
+                        Athlete.gender == AthleteGender.MALE.value
+                    )
                 elif category.gender == CategoryGender.FEMALE.value:
-                    query = query.where(Athlete.gender == AthleteGender.FEMALE.value)
+                    query = query.where(
+                        Athlete.gender == AthleteGender.FEMALE.value
+                    )
 
                 athletes = session.exec(query).all()
 
@@ -243,7 +247,9 @@ class TournamentService:
                         a
                         for a in athletes
                         if a.belt_rank
-                        and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+                        and min_idx
+                        <= BELT_RANK_ORDER.get(a.belt_rank, -1)
+                        <= max_idx
                     ]
 
                 total_athletes = len(athletes)
@@ -506,7 +512,7 @@ class TournamentService:
                 error_code="TRANSITION_IN_PROGRESS",
                 error_message=(
                     "Ya hay una transición en progreso para este torneo. "
-                    "Intenta nuevamente en unos segundos."
+                    "Intentá nuevamente en unos segundos."
                 ),
             )
 

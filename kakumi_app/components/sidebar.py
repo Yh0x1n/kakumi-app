@@ -174,7 +174,7 @@ def sidebar() -> rx.Component:
                                             }
                                         },
                                     ),
-                                    href="/home",
+                                    href="/",
                                     underline="none",
                                 ),
                             ),

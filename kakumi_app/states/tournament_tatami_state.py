@@ -156,7 +156,7 @@ class TournamentTatamiState(CrudStateMixin, rx.State):
     def _validate_form(self) -> Optional[dict[str, Any]]:
         """Validate tatami payload before DB writes."""
         if not self.current_tournament_id:
-            self.error_message = "Selecciona un torneo primero"
+            self.error_message = "Seleccioná un torneo primero"
             return None
 
         if not self.name.strip():

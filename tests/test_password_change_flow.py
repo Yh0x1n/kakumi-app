@@ -15,68 +15,11 @@ from alembic.config import Config as AlembicConfig
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-# =============================================================================
-# Toast/event helpers (previously imported from test_batch3_unified_error_feedback.py)
-# =============================================================================
-
-
-import reflex as rx
-from reflex.event import EventSpec
-
-
-def _as_event_list(result: object) -> list[EventSpec]:
-    if result is None:
-        return []
-    if isinstance(result, EventSpec):
-        return [result]
-    if isinstance(result, (tuple, list)):
-        return [event for event in result if isinstance(event, EventSpec)]
-    return []
-
-
-def _is_toast_event(event: EventSpec, toast_kind: str | None = None) -> bool:
-    def _event_args_map(e: EventSpec) -> dict[str, object]:
-        args_map: dict[str, object] = {}
-        for key_var, value in e.args:
-            key = getattr(key_var, "_js_expr", "")
-            if isinstance(key, str) and key:
-                args_map[key] = value
-        return args_map
-
-    args_map = _event_args_map(event)
-    function_arg = args_map.get("function")
-    function_expr = getattr(function_arg, "_js_expr", "")
-    if "__toast" not in function_expr:
-        return False
-    if toast_kind is None:
-        return True
-    return f'"{toast_kind}"' in function_expr
-
-
-def _is_redirect_event(event: EventSpec, path: str | None = None) -> bool:
-    def _event_args_map(e: EventSpec) -> dict[str, object]:
-        args_map: dict[str, object] = {}
-        for key_var, value in e.args:
-            key = getattr(key_var, "_js_expr", "")
-            if isinstance(key, str) and key:
-                args_map[key] = value
-        return args_map
-
-    args_map = _event_args_map(event)
-    if "path" not in args_map:
-        return False
-    if path is None:
-        return True
-    path_arg = args_map.get("path")
-    return getattr(path_arg, "_var_value", None) == path
-
-
 @pytest.fixture(scope="function")
 def alembic_cfg() -> AlembicConfig:
     """Create alembic config pointing to a temp SQLite DB."""
     fd, db_path = tempfile.mkstemp(suffix=".db", prefix="kakumi-migration-test-")
     import os
-
     os.close(fd)
 
     cfg = AlembicConfig(str(PROJECT_ROOT / "alembic.ini"))
@@ -92,9 +35,7 @@ def alembic_cfg() -> AlembicConfig:
 # =============================================================================
 
 
-def test_migration_adds_force_password_change_column(
-    alembic_cfg: AlembicConfig,
-) -> None:
+def test_migration_adds_force_password_change_column(alembic_cfg: AlembicConfig) -> None:
     """GIVEN fresh DB at head 9a8b7c6d5e4f
     WHEN alembic upgrade head runs new revision
     THEN users has column force_password_change (BOOLEAN, NOT NULL, server_default='0')
@@ -243,7 +184,9 @@ def test_login_user_returns_4tuple_on_failure() -> None:
     )
     assert token is None
     assert refresh is None
-    assert force_change is False, "force_change should be False for failed login"
+    assert force_change is False, (
+        "force_change should be False for failed login"
+    )
     assert error != "", "Should have error message"
 
 
@@ -378,7 +321,9 @@ def test_change_password_updates_hash(db_session) -> None:
         "OldStrongPass123!".encode(), fresh.password_hash.encode()
     )
     # New password SHOULD work
-    assert bcrypt.checkpw("NewStrongPass456!".encode(), fresh.password_hash.encode())
+    assert bcrypt.checkpw(
+        "NewStrongPass456!".encode(), fresh.password_hash.encode()
+    )
 
 
 def test_change_password_user_not_found(db_session) -> None:
@@ -410,6 +355,7 @@ async def test_login_redirects_to_change_password_when_flag_set(
     WHEN AuthState.login executes
     THEN needs_password_change=True and redirect to /change-password
     """
+    from reflex.event import EventSpec
     from kakumi_app.states.auth_state import AuthState
 
     state = AuthState()
@@ -419,10 +365,7 @@ async def test_login_redirects_to_change_password_when_flag_set(
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
         lambda username, password: (
-            "access-token",
-            "refresh-token",
-            True,
-            "",
+            "access-token", "refresh-token", True, "",
         ),
     )
 
@@ -445,6 +388,12 @@ async def test_login_redirects_to_change_password_when_flag_set(
     assert state.refresh_token == "refresh-token"
     assert state.is_logging_in is False
 
+    from tests.test_batch3_unified_error_feedback import (
+        _as_event_list,
+        _is_toast_event,
+        _is_redirect_event,
+    )
+
     events = _as_event_list(result)
     assert events
     assert any(_is_toast_event(event, toast_kind="warning") for event in events)
@@ -460,6 +409,11 @@ async def test_login_does_not_redirect_to_change_password_when_flag_false(
     THEN needs_password_change=False and redirect to /
     """
     from kakumi_app.states.auth_state import AuthState
+    from tests.test_batch3_unified_error_feedback import (
+        _as_event_list,
+        _is_toast_event,
+        _is_redirect_event,
+    )
 
     state = AuthState()
     state.username = "admin"
@@ -468,10 +422,7 @@ async def test_login_does_not_redirect_to_change_password_when_flag_false(
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
         lambda username, password: (
-            "access-token",
-            "refresh-token",
-            False,
-            "",
+            "access-token", "refresh-token", False, "",
         ),
     )
 
@@ -494,7 +445,7 @@ async def test_login_does_not_redirect_to_change_password_when_flag_false(
     events = _as_event_list(result)
     assert events
     assert _is_toast_event(events[0], toast_kind="success")
-    assert _is_redirect_event(events[1], path="/home")
+    assert _is_redirect_event(events[1], path="/")
 
 
 @pytest.mark.anyio
@@ -506,6 +457,11 @@ async def test_change_password_clears_needs_password_change(
     THEN needs_password_change=False, toast success, redirect /
     """
     from kakumi_app.states.auth_state import AuthState
+    from tests.test_batch3_unified_error_feedback import (
+        _as_event_list,
+        _is_toast_event,
+        _is_redirect_event,
+    )
 
     state = AuthState()
     state.needs_password_change = True
@@ -523,10 +479,7 @@ async def test_change_password_clears_needs_password_change(
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
         lambda username, password: (
-            "new-token",
-            "new-refresh",
-            False,
-            "",
+            "new-token", "new-refresh", False, "",
         ),
     )
 
@@ -540,7 +493,7 @@ async def test_change_password_clears_needs_password_change(
     events = _as_event_list(result)
     assert events
     assert _is_toast_event(events[0], toast_kind="success")
-    assert _is_redirect_event(events[1], path="/home")
+    assert _is_redirect_event(events[1], path="/")
 
 
 @pytest.mark.anyio
@@ -552,6 +505,10 @@ async def test_change_password_stays_on_page_on_error(
     THEN toast error, stays on page, needs_password_change remains True
     """
     from kakumi_app.states.auth_state import AuthState
+    from tests.test_batch3_unified_error_feedback import (
+        _as_event_list,
+        _is_toast_event,
+    )
 
     state = AuthState()
     state.needs_password_change = True
@@ -564,14 +521,15 @@ async def test_change_password_stays_on_page_on_error(
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.change_password",
         lambda user_id, old_password, new_password: (
-            False,
-            "Current password is incorrect",
+            False, "Current password is incorrect",
         ),
     )
 
     result = await AuthState.handle_change_password.fn(state)
 
-    assert state.needs_password_change is True, "Flag should remain True on error"
+    assert state.needs_password_change is True, (
+        "Flag should remain True on error"
+    )
     assert state.cp_error == "Current password is incorrect"
 
     events = _as_event_list(result)
@@ -586,6 +544,10 @@ async def test_change_password_mismatch_returns_error() -> None:
     THEN toast error, no call to AuthService
     """
     from kakumi_app.states.auth_state import AuthState
+    from tests.test_batch3_unified_error_feedback import (
+        _as_event_list,
+        _is_toast_event,
+    )
 
     state = AuthState()
     state.needs_password_change = True
@@ -655,9 +617,11 @@ async def test_create_initial_admin_sets_force_password_change(db_session) -> No
     state.admin_created = False
 
     # Run create_initial_admin
+    from kakumi_app.states.auth_state import AuthService
 
     # Mock the password check so the env default "admin123" passes strength
     # We already set strong passwords via env
+    import reflex as rx
     from sqlmodel import select
 
     # First make sure there are NO users in DB
@@ -671,7 +635,9 @@ async def test_create_initial_admin_sets_force_password_change(db_session) -> No
 
     # Verify user has force_password_change=True
     with rx.session() as session:
-        user = session.exec(select(User).where(User.username == admin_username)).first()
+        user = session.exec(
+            select(User).where(User.username == admin_username)
+        ).first()
     assert user is not None, "Admin user should be created"
     assert user.force_password_change is True, (
         "Initial admin should have force_password_change=True"

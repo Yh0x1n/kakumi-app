@@ -1,43 +1,79 @@
-"""Parametrized route-wiring smoke tests for results pages.
-
-Replaces 6 separate UI string snapshot tests with a single parametrized
-route-wiring smoke test that verifies each page factory returns an rx.Component
-and renders without error.
-"""
+"""Behavioral page tests for results routes."""
 
 from __future__ import annotations
 
-import pytest
 import reflex as rx
 
 from kakumi_app.components.sidebar import sidebar_items
-from kakumi_app.pages.results import (
-    category_results,
-    podium_results,
-    results,
-    statistics,
-    tournament_results,
-)
+from kakumi_app.pages.results import results, tournament_results
 
 
-@pytest.mark.parametrize(
-    ("page_factory", "name"),
-    [
-        pytest.param(results, "results_index", id="results_index"),
-        pytest.param(tournament_results, "tournament_results", id="tournament_results"),
-        pytest.param(category_results, "category_results", id="category_results"),
-        pytest.param(podium_results, "podium_results", id="podium_results"),
-        pytest.param(statistics, "statistics", id="statistics"),
-    ],
-)
-def test_results_page_returns_component(page_factory, name: str) -> None:
-    """Each results page factory must return a valid rx.Component."""
-    del name
-    component = page_factory()
-    assert isinstance(component, rx.Component)
+def _flatten_render_strings(node: object) -> list[str]:
+    if isinstance(node, str):
+        return [node]
+    if isinstance(node, dict):
+        values: list[str] = []
+        for value in node.values():
+            values.extend(_flatten_render_strings(value))
+        return values
+    if isinstance(node, list):
+        values: list[str] = []
+        for item in node:
+            values.extend(_flatten_render_strings(item))
+        return values
+    return []
 
 
-def test_sidebar_items_returns_component() -> None:
-    """Sidebar items must return a valid rx.Component."""
-    component = sidebar_items()
-    assert isinstance(component, rx.Component)
+def _rendered_string(component: rx.Component) -> str:
+    return " ".join(
+        value.encode("utf-8").decode("unicode_escape")
+        for value in _flatten_render_strings(component.render())
+    )
+
+
+def test_results_index_page_includes_heading_and_empty_state_copy() -> None:
+    rendered = _rendered_string(results())
+
+    assert "Resultados" in rendered
+    assert "No hay torneos con resultados disponibles todavía" in rendered
+
+
+def test_tournament_results_page_includes_summary_and_categories_sections() -> None:
+    rendered = _rendered_string(tournament_results())
+
+    assert "Resultados del torneo" in rendered
+    assert "Resumen" in rendered
+    assert "Categorías" in rendered
+
+
+def test_category_results_page_shows_heading_and_breadcrumb() -> None:
+    """Category results page shows heading and breadcrumb back to results."""
+    from kakumi_app.pages.results import category_results
+
+    rendered = _rendered_string(category_results())
+
+    assert "Categoría" in rendered
+    assert "/results" in rendered
+
+
+def test_sidebar_items_includes_visible_results_link() -> None:
+    rendered = _rendered_string(sidebar_items())
+
+    assert "Resultados" in rendered
+    assert "/results" in rendered
+
+
+def test_podiums_page_shows_heading() -> None:
+    """Podiums page renders heading."""
+    from kakumi_app.pages.results import podium_results
+
+    rendered = _rendered_string(podium_results())
+    assert "Podios" in rendered
+
+
+def test_statistics_page_shows_heading() -> None:
+    """Statistics page renders heading."""
+    from kakumi_app.pages.results import statistics
+
+    rendered = _rendered_string(statistics())
+    assert "Estadísticas" in rendered

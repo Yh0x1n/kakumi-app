@@ -140,7 +140,7 @@ def export_page() -> rx.Component:
                 ),
                 rx.button(
                     "Go Home",
-                    on_click=rx.redirect("/home"),
+                    on_click=rx.redirect("/"),
                     color_scheme="blue",
                     margin_top="1em",
                 ),

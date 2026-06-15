@@ -61,35 +61,6 @@ def _register_side_effect_pages() -> None:
 
 
 def index() -> rx.Component:
-    return rx.center(
-        rx.vstack(
-            rx.heading("Kakumi", font_size="6xl", weight="bold"),
-            rx.text(
-                "Gestión de torneos de Karate-Do",
-                font_size="xl",
-                color=rx.color("gray", 11),
-            ),
-            rx.spacer(height="1em"),
-            rx.link(
-                rx.button(
-                    "Iniciar Sesión",
-                    size="3",
-                    color_scheme="crimson",
-                ),
-                href="/login",
-            ),
-            spacing="4",
-            align="center",
-            justify="center",
-            min_height="100vh",
-        ),
-        width="100%",
-        height="100vh",
-        background=rx.color("gray", 2),
-    )
-
-
-def dashboard() -> rx.Component:
     content = rx.box(
         rx.vstack(
             rx.hstack(
@@ -140,12 +111,8 @@ def dashboard() -> rx.Component:
 
 app = rx.App(theme=rx.theme(appearance="dark", has_background=True))
 _register_side_effect_pages()
-app.add_page(index, title="Kakumi")
 app.add_page(
-    dashboard,
-    route="/home",
-    title="Kakumi Tournament Manager",
-    on_load=AuthState.check_auth_redirect,
+    index, title="Kakumi Tournament Manager", on_load=AuthState.check_auth_redirect
 )
 app.add_page(registries, title="Kakumi | Registros")
 app.add_page(

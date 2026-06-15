@@ -129,7 +129,9 @@ class AuthState(rx.State):
             self.needs_password_change = True
             self.is_logging_in = False
             return [
-                rx.toast.warning("First login: please change your password"),
+                rx.toast.warning(
+                    "First login: please change your password"
+                ),
                 rx.redirect("/change-password"),
             ]
 
@@ -142,7 +144,7 @@ class AuthState(rx.State):
         self.is_logging_in = False
 
         # Redirect will be handled by frontend (check is_authenticated)
-        return [rx.toast.success("Login successful"), rx.redirect("/home")]
+        return [rx.toast.success("Login successful"), rx.redirect("/")]
 
     @rx.event
     async def logout(self) -> Any:
@@ -205,7 +207,7 @@ class AuthState(rx.State):
         """Check authentication status (called on page load)."""
         self._load_user_from_token()
         if self.is_authenticated:
-            return rx.redirect("/home")
+            return rx.redirect("/")
 
     @rx.event
     async def check_auth_redirect(self) -> Any:
@@ -229,7 +231,7 @@ class AuthState(rx.State):
         """Change user password.
 
         Validates old password, new password strength, and confirmation match.
-        On success, re-issues tokens and redirects to /home.
+        On success, re-issues tokens and redirects to /.
         """
         self.cp_error = ""
 
@@ -274,7 +276,7 @@ class AuthState(rx.State):
 
         return [
             rx.toast.success("Password changed successfully"),
-            rx.redirect("/home"),
+            rx.redirect("/"),
         ]
 
     @rx.event
@@ -300,7 +302,7 @@ class AuthState(rx.State):
         if not self.is_authenticated:
             return [rx.redirect("/login")]
         if not self.needs_password_change:
-            return [rx.redirect("/home")]
+            return [rx.redirect("/")]
         return None
 
     @rx.event
@@ -346,7 +348,8 @@ class AuthState(rx.State):
             session.refresh(user)
         self.admin_created = True
         print(
-            f"Initial admin user '{admin_username}' created. force_password_change=True"
+            f"Initial admin user '{admin_username}' created. "
+            "force_password_change=True"
         )
 
     def _has_permission(self, required_role: str) -> bool:

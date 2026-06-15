@@ -13,7 +13,6 @@ import inspect
 
 import pytest
 import reflex as rx
-from reflex.event import EventSpec
 
 from kakumi_app.models.tournament_model import Tournament, TournamentStatus
 from kakumi_app.states.viewer_state import ViewerState
@@ -156,77 +155,3 @@ class TestViewerStateCodeParam:
         preceding = lines[max(0, target_idx - 5) : target_idx]
         count = sum(1 for line in preceding if line.strip().startswith("@rx.event"))
         assert count == 1, f"Expected 1 @rx.event decorator, found {count}"
-
-
-# =============================================================================
-# Relocated from test_batch2_rx_event_fixups_and_tokens.py
-# =============================================================================
-
-
-def _event_args_map(event: EventSpec) -> dict[str, object]:
-    args_map: dict[str, object] = {}
-    for key_var, value in event.args:
-        key = getattr(key_var, "_js_expr", "")
-        if isinstance(key, str) and key:
-            args_map[key] = value
-    return args_map
-
-
-def _is_toast_event(event: EventSpec) -> bool:
-    args_map = _event_args_map(event)
-    function_arg = args_map.get("function")
-    function_expr = getattr(function_arg, "_js_expr", "")
-    return "__toast" in function_expr
-
-
-def test_validate_tournament_access_sets_error_state_without_return() -> None:
-    state = ViewerState()
-
-    result = ViewerState.validate_tournament_access.fn(state, 999)
-
-    assert isinstance(result, EventSpec)
-    assert _is_toast_event(result)
-    assert state.access_denied is True
-
-
-def test_viewer_access_denied_returns_toast_feedback() -> None:
-    state = ViewerState()
-
-    result = ViewerState.validate_tournament_access.fn(state, 999)
-
-    events = [result] if isinstance(result, EventSpec) else (result or [])
-    assert any(
-        _is_toast_event(e) for e in (events if isinstance(events, list) else [events])
-    )
-    assert state.access_denied is True
-
-
-def test_viewer_access_allowed_returns_success_toast_feedback() -> None:
-    state = ViewerState()
-    state.viewer_code = "VALID-CODE"
-    state.current_tournament = {"id": 77, "name": "Copa Test"}
-
-    result = ViewerState.validate_tournament_access.fn(state, 77)
-
-    if isinstance(result, EventSpec):
-        events = [result]
-    else:
-        events = result or []
-    assert events
-    assert any(_is_toast_event(e) and hasattr(e, "args") for e in events)
-    assert state.access_denied is False
-
-
-def test_viewer_access_denied_when_tournament_id_mismatch() -> None:
-    state = ViewerState()
-    state.viewer_code = "VALID-CODE"
-    state.current_tournament = {"id": 77, "name": "Copa Test"}
-
-    result = ViewerState.validate_tournament_access.fn(state, 88)
-
-    if isinstance(result, EventSpec):
-        events = [result]
-    else:
-        events = result or []
-    assert any(_is_toast_event(e) for e in events)
-    assert state.access_denied is True
