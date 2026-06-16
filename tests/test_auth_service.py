@@ -10,8 +10,7 @@ Merged from:
 
 import pytest
 from datetime import datetime, timedelta
-import jwt
-from kakumi_app.services.auth_service import AuthService, JWT_SECRET_KEY, JWT_ALGORITHM
+from kakumi_app.services.auth_service import AuthService
 from kakumi_app.models.user_model import User
 
 
@@ -170,59 +169,6 @@ def test_reset_failed_attempts(db_session, user_with_password):
 # =============================================================================
 
 
-def test_blacklist_token_and_check(db_session, user_with_password):
-    """Blacklisted token should be detected as blacklisted."""
-    payload = {
-        "sub": str(user_with_password.id),
-        "exp": datetime.utcnow() + timedelta(minutes=10),
-        "type": "access",
-        "jti": "jwtidtest123",
-        "role": user_with_password.role,
-    }
-    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    AuthService.blacklist_token(token, user_with_password.id, reason="LOGOUT")
-    assert AuthService.is_token_blacklisted(token)
-
-
 # =============================================================================
 # Token rotation — from test_authservice_phase2.py and test_token_rotation.py
 # =============================================================================
-
-
-def test_refresh_tokens_rotates(db_session, user_with_password):
-    """Refresh token rotation: old refresh is blacklisted, new tokens issued."""
-    # issue refresh token
-    payload = {
-        "sub": str(user_with_password.id),
-        "exp": datetime.utcnow() + timedelta(days=1),
-        "type": "refresh",
-        "jti": "refreshjti1",
-        "role": user_with_password.role,
-    }
-    refresh = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    access, new_refresh, err = AuthService.refresh_tokens(refresh)
-    assert access is not None and new_refresh is not None and not err
-    # Old refresh must now be blacklisted
-    assert AuthService.is_token_blacklisted(refresh)
-
-
-def test_refresh_token_invalidates_old(db_session, token_user):
-    """Test that refresh token rotation blacklists the old token (from test_token_rotation.py)."""
-    # Create a refresh token manually
-    payload = {
-        "sub": str(token_user.id),
-        "exp": datetime.utcnow() + timedelta(days=1),
-        "type": "refresh",
-        "jti": "old-refresh-jti",
-        "role": token_user.role,
-    }
-    old_refresh = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-    # Call refresh_tokens
-    new_access, new_refresh, error = AuthService.refresh_tokens(old_refresh)
-
-    assert error == ""
-    assert new_access is not None
-    assert new_refresh is not None
-    # Old refresh should be blacklisted
-    assert AuthService.is_token_blacklisted(old_refresh)

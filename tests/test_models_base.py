@@ -178,7 +178,6 @@ class TestAthleteFields:
         assert sample_athlete.gender == "MALE"
 
 
-
 # =============================================================================
 # TOURNAMENT TESTS
 # =============================================================================
@@ -415,7 +414,7 @@ class TestTournamentCategoryEnums:
         """CompetitionSystem enum tiene los valores correctos."""
         assert CompetitionSystem.ROUND_ROBIN.value == "ROUND_ROBIN"
         assert CompetitionSystem.ELIMINATION.value == "ELIMINATION"
-        assert CompetitionSystem.DOUBLE_ELIMINATION.value == "DOUBLE_ELIMINATION"
+        assert len(list(CompetitionSystem)) == 2
 
     def test_category_status_enum_values(self):
         """CategoryStatus enum tiene los valores correctos."""

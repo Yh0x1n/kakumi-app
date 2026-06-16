@@ -85,11 +85,11 @@ def test_has_permission_matrix(
 
 def test_dev_bypass_defaults_to_operator() -> None:
     """GIVEN DEV_AUTH_BYPASS is configured
-    WHEN _load_user_from_token runs
+    WHEN _load_user_from_stored runs
     THEN role is OPERATOR and _has_permission("OPERATOR") is True
     """
     state = AuthState()
-    state._load_user_from_token()
+    state._load_user_from_stored()
 
     if DEV_AUTH_BYPASS:
         assert state.user_role == "OPERATOR"
@@ -340,7 +340,7 @@ async def test_auth_login_error_keeps_inline_error_and_returns_error_toast(
 
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: (None, None, False, "Invalid username or password"),
+        lambda username, password: (None, False, "Invalid username or password"),
     )
 
     result = await AuthState.login.fn(state)
@@ -361,16 +361,17 @@ async def test_auth_login_success_returns_success_toast_then_redirect(
     state.username = "admin"
     state.password = "StrongPass123!"
 
+    fake_user = SimpleNamespace(
+        id=99,
+        username="admin",
+        email="admin@test.dev",
+        role="ADMIN",
+        is_active=True,
+    )
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: ("access-token", "refresh-token", False, ""),
+        lambda username, password: (fake_user, False, ""),
     )
-
-    def fake_load_user_from_token(self) -> None:
-        self.is_authenticated = True
-        self.user_role = "ADMIN"
-
-    monkeypatch.setattr(AuthState, "_load_user_from_token", fake_load_user_from_token)
 
     result = await AuthState.login.fn(state)
 
@@ -378,8 +379,8 @@ async def test_auth_login_success_returns_success_toast_then_redirect(
     assert events
     assert _is_toast_event(events[0], toast_kind="success")
     assert _is_redirect_event(events[1], path="/home")
-    assert state.access_token == "access-token"
-    assert state.refresh_token == "refresh-token"
+    assert state.is_authenticated is True
+    assert state.user_role == "ADMIN"
     assert state.username == ""
     assert state.password == ""
     assert state.login_error == ""
@@ -394,11 +395,6 @@ async def test_auth_login_success_sets_serializable_current_user_dict(
     state.username = "admin"
     state.password = "StrongPass123!"
 
-    monkeypatch.setattr(
-        "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: ("access-token", "refresh-token", False, ""),
-    )
-
     fake_user = SimpleNamespace(
         id=99,
         username="admin",
@@ -407,8 +403,8 @@ async def test_auth_login_success_sets_serializable_current_user_dict(
         is_active=True,
     )
     monkeypatch.setattr(
-        "kakumi_app.states.auth_state.AuthService.get_current_user_from_token",
-        lambda token: fake_user,
+        "kakumi_app.states.auth_state.AuthService.login_user",
+        lambda username, password: (fake_user, False, ""),
     )
 
     await AuthState.login.fn(state)
@@ -433,10 +429,10 @@ async def test_check_auth_redirects_authenticated_to_home(
     """
     state = AuthState()
 
-    def fake_load_user_from_token(self) -> None:
+    def fake_load_user_from_stored(self) -> None:
         self.is_authenticated = True
 
-    monkeypatch.setattr(AuthState, "_load_user_from_token", fake_load_user_from_token)
+    monkeypatch.setattr(AuthState, "_load_user_from_stored", fake_load_user_from_stored)
 
     result = await AuthState.check_auth.fn(state)
 
@@ -467,17 +463,9 @@ async def test_auth_logout_returns_toast_and_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = AuthState()
-    state.access_token = "token-123"
-    state.refresh_token = "refresh-123"
     state.is_authenticated = True
     state.user_role = "ADMIN"
     state.login_error = "something"
-    called_tokens: list[str] = []
-
-    monkeypatch.setattr(
-        "kakumi_app.states.auth_state.AuthService.logout_user",
-        lambda token: called_tokens.append(token) or True,
-    )
 
     result = await AuthState.logout.fn(state)
 
@@ -485,9 +473,6 @@ async def test_auth_logout_returns_toast_and_redirect(
     assert events
     assert _is_toast_event(events[0], toast_kind="info")
     assert _is_redirect_event(events[1], path="/login")
-    assert called_tokens == ["token-123"]
-    assert state.access_token == ""
-    assert state.refresh_token == ""
     assert state.is_authenticated is False
     assert state.user_role == ""
     assert state.login_error == ""
@@ -497,8 +482,6 @@ async def test_auth_logout_returns_toast_and_redirect(
 @pytest.mark.anyio
 async def test_auth_session_timeout_returns_warning_toast_and_redirect() -> None:
     state = AuthState()
-    state.access_token = "token-123"
-    state.refresh_token = "refresh-123"
     state.is_authenticated = True
     state.user_role = "OPERATOR"
     state.last_activity = "2000-01-01T00:00:00"
@@ -509,8 +492,6 @@ async def test_auth_session_timeout_returns_warning_toast_and_redirect() -> None
     assert events
     assert _is_toast_event(events[0], toast_kind="warning")
     assert _is_redirect_event(events[1], path="/login")
-    assert state.access_token == ""
-    assert state.refresh_token == ""
     assert state.is_authenticated is False
     assert state.user_role == ""
     assert state.session_expired is True

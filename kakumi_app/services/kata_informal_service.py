@@ -15,8 +15,13 @@ from kakumi_app.models.kata_model import (
     KataInformalPerformanceStatus,
     KataRoundStanding,
 )
-from kakumi_app.models.tournament_model import Match
-from kakumi_app.models.tournament_model import CategoryStatus, TournamentCategory
+from kakumi_app.models.tournament_model import (
+    CategoryGender,
+    CategoryStatus,
+    Match,
+    TournamentCategory,
+)
+from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 
 
 @dataclass
@@ -256,9 +261,6 @@ class KataInformalService:
     @staticmethod
     def finalize_category(category_id: int) -> TournamentCategory:
         """Finalize informal category and set podium from ranking table."""
-        from kakumi_app.models.tournament_model import CategoryGender
-        from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
-
         with rx.session() as session:
             category = session.get(TournamentCategory, category_id)
             if category is None:

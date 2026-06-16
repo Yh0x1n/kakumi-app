@@ -2,9 +2,8 @@
 
 import datetime
 import json
-import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 import reflex as rx
 from sqlalchemy import or_
@@ -15,7 +14,6 @@ from kakumi_app.models.team_model import TeamMember
 from kakumi_app.models.tournament_model import (
     CompetitionSystem,
     Match,
-    MatchActionLog,
     MatchType,
     MatchScore,
     MatchStatus,
@@ -26,11 +24,9 @@ from kakumi_app.models.tournament_model import (
     ScoreType,
     StandingsDeltaLog,
 )
-from kakumi_app.services.exceptions import PenaltyEscalationError
-from kakumi_app.services.exceptions import PenaltyRemovalNotAllowedError
-from kakumi_app.services.exceptions import ShikkakuRevertError
 from kakumi_app.services.bracket_service import propagate_winner
 from kakumi_app.services.scheduling_service import check_athlete_scheduling_overlap
+from kakumi_app.services.exceptions import AppError
 
 MATCH_STATUS_CANCELLED = "CANCELLED"
 
@@ -96,37 +92,6 @@ def _build_action_snapshot(
         "created_penalty_ids": created_penalty_ids or [],
     }
     return json.dumps(payload)
-
-
-def _with_retry(
-    fn: Callable[[], Penalty],
-    retries: int = 3,
-    base_delay: float = 0.1,
-) -> Penalty:
-    """Execute a DB operation with exponential backoff.
-
-    Args:
-        fn: Operation callback to execute.
-        retries: Maximum total attempts.
-        base_delay: Base delay in seconds for exponential backoff.
-
-    Returns:
-        Penalty: The penalty produced by the callback.
-
-    Raises:
-        Exception: Re-raises final exception after exhausting retries.
-    """
-    for attempt in range(retries):
-        try:
-            return fn()
-        except PenaltyEscalationError:
-            raise
-        except Exception:
-            if attempt == retries - 1:
-                raise
-            time.sleep(base_delay * (2**attempt))
-
-    raise PenaltyEscalationError("Unable to apply penalty after retries")
 
 
 def _count_penalties(session: Session, match_id: int, participant: str) -> int:
@@ -197,12 +162,10 @@ def _assert_match_in_progress(match: Match) -> None:
         match: Match to validate.
 
     Raises:
-        PenaltyRemovalNotAllowedError: If match is not ``IN_PROGRESS``.
+        AppError: If match is not ``IN_PROGRESS``.
     """
     if match.status != MatchStatus.IN_PROGRESS.value:
-        raise PenaltyRemovalNotAllowedError(
-            "Penalty removal only allowed when match is IN_PROGRESS"
-        )
+        raise AppError("Penalty removal only allowed when match is IN_PROGRESS")
 
 
 def _resolve_athlete_id_for_side(match: Match, participant_side: str) -> int:
@@ -216,17 +179,17 @@ def _resolve_athlete_id_for_side(match: Match, participant_side: str) -> int:
         int: Athlete id for the penalized side.
 
     Raises:
-        PenaltyEscalationError: If side is invalid or athlete id is missing.
+        AppError: If side is invalid or athlete id is missing.
     """
     if participant_side == Participant.AKA.value:
         athlete_id = match.aka_id
     elif participant_side == Participant.AO.value:
         athlete_id = match.ao_id
     else:
-        raise PenaltyEscalationError(f"Invalid participant side {participant_side}")
+        raise AppError(f"Invalid participant side {participant_side}")
 
     if athlete_id is None:
-        raise PenaltyEscalationError(
+        raise AppError(
             f"Match {match.id} does not have athlete for side {participant_side}"
         )
     return athlete_id
@@ -268,7 +231,7 @@ def _is_last_rr_match(session: Session, athlete_id: int, current_match_id: int) 
     """
     current_match = session.get(Match, current_match_id)
     if current_match is None:
-        raise PenaltyEscalationError(f"Match {current_match_id} not found")
+        raise AppError(f"Match {current_match_id} not found")
 
     remaining = session.exec(
         select(Match).where(
@@ -308,7 +271,7 @@ def _nullify_rr_previous_scores(
     """
     current_match = session.get(Match, current_match_id)
     if current_match is None:
-        raise PenaltyEscalationError(f"Match {current_match_id} not found")
+        raise AppError(f"Match {current_match_id} not found")
 
     previous_matches = session.exec(
         select(Match).where(
@@ -356,7 +319,7 @@ def _cancel_remaining_rr_matches(
     """
     current_match = session.get(Match, current_match_id)
     if current_match is None:
-        raise PenaltyEscalationError(f"Match {current_match_id} not found")
+        raise AppError(f"Match {current_match_id} not found")
 
     remaining_matches = session.exec(
         select(Match).where(
@@ -410,15 +373,15 @@ def _deserialize_scores_snapshot(snapshot: str) -> list[dict]:
         list[dict]: Parsed snapshot rows.
 
     Raises:
-        ShikkakuRevertError: If payload is not valid list JSON.
+        AppError: If payload is not valid list JSON.
     """
     try:
         decoded = json.loads(snapshot)
     except json.JSONDecodeError as error:
-        raise ShikkakuRevertError("Stored SHIKKAKU snapshot is invalid JSON") from error
+        raise AppError("Stored SHIKKAKU snapshot is invalid JSON") from error
 
     if not isinstance(decoded, list):
-        raise ShikkakuRevertError("Stored SHIKKAKU snapshot must be a list")
+        raise AppError("Stored SHIKKAKU snapshot must be a list")
     return decoded
 
 
@@ -442,7 +405,7 @@ def _apply_shikkaku_round_robin(
     """
     match = session.get(Match, match_id)
     if match is None:
-        raise PenaltyEscalationError(f"Match {match_id} not found")
+        raise AppError(f"Match {match_id} not found")
 
     is_last_match = _is_last_rr_match(session, athlete_id, match_id)
     if not is_last_match:
@@ -483,7 +446,7 @@ def _apply_shikkaku_round_robin(
 
     athlete = session.get(Athlete, athlete_id)
     if athlete is None:
-        raise PenaltyEscalationError(f"Athlete {athlete_id} not found")
+        raise AppError(f"Athlete {athlete_id} not found")
     athlete.is_disqualified = True
     session.add(athlete)
     session.add(match)
@@ -502,7 +465,7 @@ def _apply_shikkaku(session: Session, match_id: int, participant: str) -> None:
     """
     match = session.get(Match, match_id)
     if match is None:
-        raise PenaltyEscalationError(f"Match {match_id} not found")
+        raise AppError(f"Match {match_id} not found")
 
     is_team_match = (
         match.category.modality == Modality.KUMITE_TEAM.value
@@ -517,7 +480,7 @@ def _apply_shikkaku(session: Session, match_id: int, participant: str) -> None:
             else match.ao_team_id
         )
         if team_id is None:
-            raise PenaltyEscalationError(
+            raise AppError(
                 f"Match {match_id} does not have team for side {participant}"
             )
 
@@ -547,7 +510,7 @@ def _apply_shikkaku(session: Session, match_id: int, participant: str) -> None:
 
     athlete = session.get(Athlete, athlete_id)
     if athlete is None:
-        raise PenaltyEscalationError(f"Athlete {athlete_id} not found")
+        raise AppError(f"Athlete {athlete_id} not found")
     athlete.is_disqualified = True
     _complete_forfeit_match(match, participant)
     session.add(athlete)
@@ -572,16 +535,14 @@ def apply_penalty(
         Penalty: The created penalty row.
 
     Raises:
-        PenaltyEscalationError: If match is missing or not in progress.
+        AppError: If match is missing or not in progress.
     """
 
-    return _with_retry(
-        lambda: _apply_penalty_with_rollback(
-            session=session,
-            match_id=match_id,
-            participant=participant,
-            penalty_type=penalty_type,
-        )
+    return _apply_penalty_with_rollback(
+        session=session,
+        match_id=match_id,
+        participant=participant,
+        penalty_type=penalty_type,
     )
 
 
@@ -660,12 +621,12 @@ def _apply_penalty_operation(
     stmt = select(Match).where(Match.id == match_id).with_for_update()
     match = session.exec(stmt).first()
     if match is None:
-        raise PenaltyEscalationError(f"Match {match_id} not found")
+        raise AppError(f"Match {match_id} not found")
 
     try:
         _assert_match_in_progress(match)
-    except PenaltyRemovalNotAllowedError as error:
-        raise PenaltyEscalationError(
+    except AppError as error:
+        raise AppError(
             f"Cannot apply penalty to match with status {match.status}"
         ) from error
 
@@ -732,12 +693,12 @@ def remove_last_penalty(
         The deleted penalty object.
 
     Raises:
-        PenaltyRemovalNotAllowedError: If match is not ``IN_PROGRESS``.
+        AppError: If match is not ``IN_PROGRESS``.
         ValueError: If side has no penalties.
     """
     match = session.get(Match, match_id)
     if match is None:
-        raise PenaltyRemovalNotAllowedError(
+        raise AppError(
             f"Penalty removal only allowed when match is IN_PROGRESS: {match_id}"
         )
 
@@ -775,15 +736,13 @@ def revert_shikkaku(
             e.g. "shikkaku-match-{match_id}".
 
     Raises:
-        ShikkakuRevertError: If no delta log found for the given change_key.
+        AppError: If no delta log found for the given change_key.
     """
     delta_log = session.exec(
         select(StandingsDeltaLog).where(StandingsDeltaLog.change_key == change_key)
     ).first()
     if delta_log is None:
-        raise ShikkakuRevertError(
-            f"No SHIKKAKU delta log found for change_key={change_key}"
-        )
+        raise AppError(f"No SHIKKAKU delta log found for change_key={change_key}")
 
     snapshot_records = _deserialize_scores_snapshot(delta_log.before_snapshot)
 
@@ -794,9 +753,7 @@ def revert_shikkaku(
 
         match = session.get(Match, match_id)
         if match is None:
-            raise ShikkakuRevertError(
-                f"Match {match_id} not found during SHIKKAKU revert"
-            )
+            raise AppError(f"Match {match_id} not found during SHIKKAKU revert")
 
         match.aka_score = int(record.get("aka_score", 0))
         match.ao_score = int(record.get("ao_score", 0))
@@ -808,7 +765,7 @@ def revert_shikkaku(
 
     athlete = session.get(Athlete, delta_log.athlete_id)
     if athlete is None:
-        raise ShikkakuRevertError(
+        raise AppError(
             f"Athlete {delta_log.athlete_id} not found during SHIKKAKU revert"
         )
     athlete.is_disqualified = False
@@ -971,18 +928,13 @@ class KumiteScoringService:
             session.add(match_score)
             session.flush()
 
-            session.add(
-                MatchActionLog(
-                    match_id=match.id,
-                    applied_by_id=applied_by_id,
-                    action_kind="SCORE_APPLY",
-                    participant=participant_value,
-                    before_snapshot=_build_action_snapshot(
-                        pre_match_snapshot=pre_match_snapshot,
-                        created_score_ids=[match_score.id],
-                    ),
-                )
+            match.last_action_snapshot = _build_action_snapshot(
+                pre_match_snapshot=pre_match_snapshot,
+                created_score_ids=[match_score.id]
+                if match_score.id is not None
+                else [],
             )
+            session.add(match)
             session.commit()
 
             if winner is not None:
@@ -1220,19 +1172,12 @@ class KumiteScoringService:
             session.add(match)
             session.flush()
 
-            session.add(
-                MatchActionLog(
-                    match_id=match.id,
-                    applied_by_id=applied_by_id,
-                    action_kind="PENALTY_APPLY",
-                    participant=participant_value,
-                    before_snapshot=_build_action_snapshot(
-                        pre_match_snapshot=pre_match_snapshot,
-                        created_score_ids=created_score_ids,
-                        created_penalty_ids=[penalty.id],
-                    ),
-                )
+            match.last_action_snapshot = _build_action_snapshot(
+                pre_match_snapshot=pre_match_snapshot,
+                created_score_ids=created_score_ids,
+                created_penalty_ids=[penalty.id] if penalty.id is not None else [],
             )
+            session.add(match)
             session.commit()
 
             if winner is not None:
@@ -1313,16 +1258,12 @@ class KumiteScoringService:
             if not match:
                 return MatchResult(False, False, None, "Match no encontrado")
 
-            action_log = session.exec(
-                select(MatchActionLog)
-                .where(MatchActionLog.match_id == match_id)
-                .order_by(MatchActionLog.id.desc())
-            ).first()
-            if action_log is None:
+            snapshot_raw = match.last_action_snapshot
+            if not snapshot_raw:
                 return MatchResult(False, False, None, "No hay acciones para deshacer")
 
             try:
-                payload = _load_action_snapshot(action_log.before_snapshot)
+                payload = _load_action_snapshot(snapshot_raw)
             except (ValueError, json.JSONDecodeError):
                 return MatchResult(False, False, None, "Snapshot inválido para undo")
 
@@ -1338,7 +1279,7 @@ class KumiteScoringService:
                 if penalty_row is not None:
                     session.delete(penalty_row)
 
-            session.delete(action_log)
+            match.last_action_snapshot = None
             session.add(match)
             session.commit()
             return MatchResult(True, False, None, "Acción revertida")

@@ -10,7 +10,7 @@ from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from kakumi_app.models.tournament_model import Match, MatchStatus
-from kakumi_app.services.exceptions import AthleteSchedulingConflictError
+from kakumi_app.services.exceptions import AppError
 
 
 def _compute_overlap_window(
@@ -103,7 +103,7 @@ def check_athlete_scheduling_overlap(
             candidate.start_time < protected_end
             and candidate_window_end > protected_start
         ):
-            raise AthleteSchedulingConflictError(
+            raise AppError(
                 f"Athlete {athlete_id} has overlapping match {candidate.id} "
                 f"on tatami {candidate.tatami_id} "
                 f"({candidate.start_time} - {candidate_window_end}) within "

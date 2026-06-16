@@ -43,7 +43,6 @@ class CompetitionSystem(str, Enum):
 
     ROUND_ROBIN = "ROUND_ROBIN"
     ELIMINATION = "ELIMINATION"
-    DOUBLE_ELIMINATION = "DOUBLE_ELIMINATION"
 
 
 class CategoryStatus(str, Enum):
@@ -390,11 +389,8 @@ class Match(rx.Model, table=True):
         sa_relationship_kwargs={"foreign_keys": "[MatchScore.match_id]"},
     )
 
-    # Log de acciones para soporte de undo
-    action_logs: List["MatchActionLog"] = Relationship(
-        back_populates="match",
-        sa_relationship_kwargs={"foreign_keys": "[MatchActionLog.match_id]"},
-    )
+    # Snapshot de última acción para soporte de undo
+    last_action_snapshot: Optional[str] = Field(default=None, max_length=65535)
 
 
 # ==============================================================================
@@ -440,30 +436,6 @@ class MatchScore(rx.Model, table=True):
     applied_by: Optional["User"] = Relationship(
         back_populates="applied_scores",
         sa_relationship_kwargs={"foreign_keys": "[MatchScore.applied_by_id]"},
-    )
-
-
-class MatchActionLog(rx.Model, table=True):
-    """Log persistido de acciones para rollback seguro de último evento."""
-
-    __tablename__ = "match_action_logs"
-
-    # Foreign Keys
-    match_id: int = Field(foreign_key="matches.id", index=True)
-    applied_by_id: Optional[int] = Field(default=None, foreign_key="users.id")
-
-    # Metadatos de acción
-    action_kind: str = Field(max_length=50, index=True)  # SCORE_APPLY/PENALTY_APPLY
-    participant: Optional[str] = Field(default=None, max_length=10)
-    before_snapshot: str = Field()  # JSON serializado
-
-    # Timestamp
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
-
-    # Relaciones
-    match: "Match" = Relationship(
-        back_populates="action_logs",
-        sa_relationship_kwargs={"foreign_keys": "[MatchActionLog.match_id]"},
     )
 
 

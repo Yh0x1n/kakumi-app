@@ -3,6 +3,7 @@
 import datetime
 
 import pytest
+from kakumi_app.services.exceptions import AppError
 from sqlmodel import Session
 
 from kakumi_app.models.athlete_model import Athlete
@@ -15,7 +16,6 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
     TournamentStatus,
 )
-from kakumi_app.services.exceptions import AthleteSchedulingConflictError
 from kakumi_app.services.scheduling_service import check_athlete_scheduling_overlap
 
 
@@ -129,7 +129,7 @@ def test_overlap_detected_within_gap(in_memory_session: Session) -> None:
         start_time=datetime.datetime(2026, 8, 1, 10, 2, 0),
     )
 
-    with pytest.raises(AthleteSchedulingConflictError):
+    with pytest.raises(AppError):
         check_athlete_scheduling_overlap(
             session=in_memory_session,
             athlete_id=athlete.id,
@@ -242,7 +242,7 @@ def test_custom_gap_respected(in_memory_session: Session) -> None:
         gap_seconds=30,
     )
 
-    with pytest.raises(AthleteSchedulingConflictError):
+    with pytest.raises(AppError):
         check_athlete_scheduling_overlap(
             session=in_memory_session,
             athlete_id=athlete.id,

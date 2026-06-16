@@ -15,29 +15,20 @@ from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.referee_model import Referee
 from kakumi_app.models.team_model import Team
 from kakumi_app.states.athlete_state import AthleteState
-from kakumi_app.states.base_crud_state import CrudStateMixin
 from kakumi_app.states.referee_state import RefereeState
 from kakumi_app.states.team_state import TeamState
 
 
 @pytest.mark.parametrize("state_cls", [AthleteState, RefereeState, TeamState])
-def test_mixin_mro_and_shared_default_vars(state_cls: type) -> None:
-    """Child states must use mixin MRO and shared defaults."""
-    mro = state_cls.__mro__
-    assert CrudStateMixin in mro
-    assert rx.State in mro
-    assert mro.index(CrudStateMixin) < mro.index(rx.State)
-
+def test_crud_default_vars(state_cls: type) -> None:
+    """Each CRUD state must have shared default vars (was mixin)."""
     state = state_cls()
     assert state.is_editing is False
     assert state.show_form is False
     assert state.error_message == ""
     assert state.search_query == ""
-
-
-def test_crud_mixin_stays_pure_python_not_rx_state_subclass() -> None:
-    """Mixin must be rx.State-free to avoid Reflex inheritance hazards."""
-    assert issubclass(CrudStateMixin, rx.State) is False
+    assert state.current_page == 1
+    assert state.page_size == 10
 
 
 @pytest.mark.parametrize("state_cls", [AthleteState, RefereeState, TeamState])

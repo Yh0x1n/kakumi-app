@@ -4,6 +4,7 @@ import datetime
 
 import pytest
 import reflex as rx
+from kakumi_app.services.exceptions import AppError
 from sqlmodel import Session, select
 
 from kakumi_app.models.athlete_model import Athlete
@@ -21,7 +22,6 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
     TournamentStatus,
 )
-from kakumi_app.services.exceptions import PenaltyRemovalNotAllowedError
 from kakumi_app.services.kumite_scoring_service import remove_last_penalty
 
 
@@ -191,7 +191,7 @@ def test_remove_last_penalty_completed_raises(in_memory_session: Session) -> Non
     match = _create_match(in_memory_session, MatchStatus.COMPLETED.value)
 
     with rx.session() as session:
-        with pytest.raises(PenaltyRemovalNotAllowedError):
+        with pytest.raises(AppError):
             remove_last_penalty(session, match.id, Participant.AKA.value)
 
 
@@ -200,7 +200,7 @@ def test_remove_last_penalty_disqualified_raises(in_memory_session: Session) -> 
     match = _create_match(in_memory_session, MatchStatus.DISQUALIFIED.value)
 
     with rx.session() as session:
-        with pytest.raises(PenaltyRemovalNotAllowedError):
+        with pytest.raises(AppError):
             remove_last_penalty(session, match.id, Participant.AKA.value)
 
 

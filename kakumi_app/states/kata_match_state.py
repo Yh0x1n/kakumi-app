@@ -29,6 +29,8 @@ from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 class KataMatchState(rx.State):
     """Live Kata orchestration state with exhibition/tournament split."""
 
+    JUDGE_SLOTS: tuple[str, ...] = ("J1", "J2", "J3", "J4", "J5")
+
     match_id: int = 0
     has_active_match: bool = False
     is_exhibition_mode: bool = False
@@ -484,8 +486,10 @@ class KataMatchState(rx.State):
             raise ValueError("Panel de jueces inválido")
         return size
 
-    def _panel_slots(self) -> Iterable[str]:
-        return (f"J{index}" for index in range(1, self.judge_panel_size + 1))
+    def _panel_slots(self) -> tuple[str, ...] | Iterable[str]:
+        if self.judge_panel_size == 5:
+            return self.JUDGE_SLOTS
+        return tuple(f"J{index}" for index in range(1, self.judge_panel_size + 1))
 
     def _resolve_panel_complete(self) -> bool:
         if self.is_flag_mode:

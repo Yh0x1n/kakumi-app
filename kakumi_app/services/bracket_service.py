@@ -5,7 +5,6 @@ from __future__ import annotations
 import random
 from collections.abc import Sequence
 from math import log2
-from typing import Any
 
 import reflex as rx
 from sqlmodel import Session, select
@@ -153,151 +152,162 @@ def _build_round_robin(
     return matches
 
 
-class BracketService:
-    """Generate matches for supported tournament competition systems."""
-
-    def __init__(
-        self,
-        tournament_id: int,
-        category_id: int,
-        session: Session | None = None,
-    ) -> None:
-        self.tournament_id = tournament_id
-        self.category_id = category_id
-        self._session = session
-
-    def _existing_match_query(self) -> Any:
-        return select(Match).where(
-            Match.tournament_id == self.tournament_id,
-            Match.category_id == self.category_id,
-        )
-
-    def _check_existing_matches(self, session: Session) -> bool:
-        return session.exec(self._existing_match_query()).first() is not None
-
-    def _load_category(self, session: Session) -> TournamentCategory:
-        category = session.get(TournamentCategory, self.category_id)
-        if category is None or category.tournament_id != self.tournament_id:
-            raise ValidationError(
-                code="CATEGORY_NOT_FOUND",
-                message="Tournament category not found for bracket generation.",
+def _check_existing_matches(
+    tournament_id: int,
+    category_id: int,
+    session: Session,
+) -> bool:
+    return (
+        session.exec(
+            select(Match).where(
+                Match.tournament_id == tournament_id,
+                Match.category_id == category_id,
             )
-        return category
+        ).first()
+        is not None
+    )
 
-    def _is_team_modality(self, modality: str) -> bool:
-        return modality in {Modality.KATA_TEAM.value, Modality.KUMITE_TEAM.value}
 
-    def _matched_athlete_ids(
-        self,
-        category: TournamentCategory,
-        session: Session,
-    ) -> list[int]:
-        """Return athlete IDs whose age/gender/belt match category criteria."""
-        query = select(Athlete).where(
-            Athlete.age.between(category.min_age, category.max_age)
-        )
-        if category.gender == CategoryGender.MALE.value:
-            query = query.where(Athlete.gender == AthleteGender.MALE.value)
-        elif category.gender == CategoryGender.FEMALE.value:
-            query = query.where(Athlete.gender == AthleteGender.FEMALE.value)
-        # MIXED = no gender filter
-
-        athletes = session.exec(query).all()
-
-        if category.min_belt_rank or category.max_belt_rank:
-            min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
-            max_idx = BELT_RANK_ORDER.get(
-                category.max_belt_rank, len(BELT_RANKS) - 1
-            )
-            athletes = [
-                a
-                for a in athletes
-                if a.belt_rank
-                and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
-            ]
-
-        return [a.id for a in athletes]
-
-    def _participant_ids(
-        self,
-        session: Session,
-        category: TournamentCategory,
-    ) -> tuple[list[int], bool]:
-        if category.modality in {
-            Modality.KATA_INDIVIDUAL.value,
-            Modality.KUMITE_INDIVIDUAL.value,
-        }:
-            return self._matched_athlete_ids(category, session), False
-
-        teams = session.exec(
-            select(Team.id).where(Team.category_id == category.id)
-        ).all()
-        return teams, True
-
-    def _build_matches(
-        self,
-        category: TournamentCategory,
-        participants: list[int],
-        *,
-        is_team: bool,
-    ) -> list[Match]:
-        seeded = _shuffle_participants(participants)
-
-        if category.competition_system == CompetitionSystem.ELIMINATION.value:
-            return _build_elimination(
-                seeded,
-                self.tournament_id,
-                self.category_id,
-                is_team=is_team,
-            )
-
-        if category.competition_system == CompetitionSystem.ROUND_ROBIN.value:
-            return _build_round_robin(
-                seeded,
-                self.tournament_id,
-                self.category_id,
-                is_team=is_team,
-            )
-
+def _load_category(
+    tournament_id: int,
+    category_id: int,
+    session: Session,
+) -> TournamentCategory:
+    category = session.get(TournamentCategory, category_id)
+    if category is None or category.tournament_id != tournament_id:
         raise ValidationError(
-            code="UNSUPPORTED_SYSTEM",
-            message="Competition system is not supported for bracket generation.",
+            code="CATEGORY_NOT_FOUND",
+            message="Tournament category not found for bracket generation.",
+        )
+    return category
+
+
+# ponytail: simple boolean check, no abstraction needed
+def _is_team_modality(modality: str) -> bool:
+    return modality in {Modality.KATA_TEAM.value, Modality.KUMITE_TEAM.value}
+
+
+def _matched_athlete_ids(
+    category: TournamentCategory,
+    session: Session,
+) -> list[int]:
+    """Return athlete IDs whose age/gender/belt match category criteria."""
+    query = select(Athlete).where(
+        Athlete.age.between(category.min_age, category.max_age)
+    )
+    if category.gender == CategoryGender.MALE.value:
+        query = query.where(Athlete.gender == AthleteGender.MALE.value)
+    elif category.gender == CategoryGender.FEMALE.value:
+        query = query.where(Athlete.gender == AthleteGender.FEMALE.value)
+    # MIXED = no gender filter
+
+    athletes = session.exec(query).all()
+
+    if category.min_belt_rank or category.max_belt_rank:
+        min_idx = BELT_RANK_ORDER.get(category.min_belt_rank, 0)
+        max_idx = BELT_RANK_ORDER.get(category.max_belt_rank, len(BELT_RANKS) - 1)
+        athletes = [
+            a
+            for a in athletes
+            if a.belt_rank
+            and min_idx <= BELT_RANK_ORDER.get(a.belt_rank, -1) <= max_idx
+        ]
+
+    return [a.id for a in athletes]
+
+
+def _participant_ids(
+    session: Session,
+    category: TournamentCategory,
+) -> tuple[list[int], bool]:
+    if category.modality in {
+        Modality.KATA_INDIVIDUAL.value,
+        Modality.KUMITE_INDIVIDUAL.value,
+    }:
+        return _matched_athlete_ids(category, session), False
+
+    teams = session.exec(select(Team.id).where(Team.category_id == category.id)).all()
+    return teams, True
+
+
+def _build_matches(
+    tournament_id: int,
+    category_id: int,
+    category: TournamentCategory,
+    participants: list[int],
+    *,
+    is_team: bool,
+) -> list[Match]:
+    seeded = _shuffle_participants(participants)
+
+    if category.competition_system == CompetitionSystem.ELIMINATION.value:
+        return _build_elimination(
+            seeded,
+            tournament_id,
+            category_id,
+            is_team=is_team,
         )
 
-    def _generate_with_session(self, session: Session) -> dict[str, int | str]:
-        if self._check_existing_matches(session):
-            raise ValidationError(
-                code="BRACKET_ALREADY_EXISTS",
-                message=BRACKET_ALREADY_EXISTS_MESSAGE,
-            )
+    if category.competition_system == CompetitionSystem.ROUND_ROBIN.value:
+        return _build_round_robin(
+            seeded,
+            tournament_id,
+            category_id,
+            is_team=is_team,
+        )
 
-        category = self._load_category(session)
-        participants, is_team = self._participant_ids(session, category)
+    raise ValidationError(
+        code="UNSUPPORTED_SYSTEM",
+        message="Competition system is not supported for bracket generation.",
+    )
 
-        if len(participants) < 2:
-            raise ValidationError(
-                code="INSUFFICIENT_PARTICIPANTS",
-                message="At least two participants are required to generate a bracket.",
-            )
 
-        matches = self._build_matches(category, participants, is_team=is_team)
-        session.add_all(matches)
-        session.commit()
+def _generate_with_session(
+    tournament_id: int,
+    category_id: int,
+    session: Session,
+) -> dict[str, int | str]:
+    if _check_existing_matches(tournament_id, category_id, session):
+        raise ValidationError(
+            code="BRACKET_ALREADY_EXISTS",
+            message=BRACKET_ALREADY_EXISTS_MESSAGE,
+        )
 
-        return {
-            "tournament_id": self.tournament_id,
-            "category_id": self.category_id,
-            "match_count": len(matches),
-            "status": "generated",
-        }
+    category = _load_category(tournament_id, category_id, session)
+    participants, is_team = _participant_ids(session, category)
 
-    def generate_bracket(self) -> dict[str, int | str]:
-        """Generate and persist bracket matches as the source-of-truth bracket."""
-        if self._session is not None:
-            return self._generate_with_session(self._session)
+    if len(participants) < 2:
+        raise ValidationError(
+            code="INSUFFICIENT_PARTICIPANTS",
+            message="At least two participants are required to generate a bracket.",
+        )
 
-        with rx.session() as session:
-            return self._generate_with_session(session)
+    matches = _build_matches(
+        tournament_id, category_id, category, participants, is_team=is_team
+    )
+    session.add_all(matches)
+    session.commit()
+
+    return {
+        "tournament_id": tournament_id,
+        "category_id": category_id,
+        "match_count": len(matches),
+        "status": "generated",
+    }
+
+
+def generate_bracket(
+    tournament_id: int,
+    category_id: int,
+    *,
+    session: Session | None = None,
+) -> dict[str, int | str]:
+    """Generate and persist bracket matches as the source-of-truth bracket."""
+    if session is not None:
+        return _generate_with_session(tournament_id, category_id, session)
+
+    with rx.session() as session:
+        return _generate_with_session(tournament_id, category_id, session)
 
 
 def propagate_winner(

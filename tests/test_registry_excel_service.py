@@ -8,9 +8,11 @@ import openpyxl
 import pytest
 
 from kakumi_app.services.registry_excel_service import (
-    ATHLETE_WORKBOOK_ADAPTER,
-    REFEREE_WORKBOOK_ADAPTER,
+    ATHLETE_COLUMNS,
+    ATHLETE_SHEET_NAME,
+    REFEREE_COLUMNS,
     RegistryWorkbookError,
+    _col_headers,
     build_athletes_workbook,
     build_referees_workbook,
     parse_athletes_workbook,
@@ -36,9 +38,9 @@ def test_build_athlete_workbook_uses_spanish_headers() -> None:
     )
 
     workbook = openpyxl.load_workbook(filename=BytesIO(workbook_bytes))
-    sheet = workbook[ATHLETE_WORKBOOK_ADAPTER.sheet_name]
+    sheet = workbook[ATHLETE_SHEET_NAME]
 
-    assert [cell.value for cell in sheet[1]] == list(ATHLETE_WORKBOOK_ADAPTER.headers)
+    assert [cell.value for cell in sheet[1]] == list(_col_headers(ATHLETE_COLUMNS))
     assert [cell.value for cell in sheet[2]][0] == "Ana Gómez"
     assert [cell.value for cell in sheet[2]][2] == "26"
 
@@ -76,7 +78,7 @@ def test_parse_referee_workbook_normalizes_rows() -> None:
 def test_parse_athlete_workbook_requires_expected_headers() -> None:
     workbook = openpyxl.Workbook()
     sheet = workbook.active
-    sheet.title = ATHLETE_WORKBOOK_ADAPTER.sheet_name
+    sheet.title = ATHLETE_SHEET_NAME
     sheet.append(["Nombre", "Correo electrónico"])
 
     buffer = BytesIO()
@@ -110,7 +112,7 @@ def test_parse_empty_workbook_skips_blank_rows() -> None:
 
 
 def test_referee_headers_stay_human_readable_spanish() -> None:
-    assert list(REFEREE_WORKBOOK_ADAPTER.headers) == [
+    assert list(_col_headers(REFEREE_COLUMNS)) == [
         "Nombre",
         "Número de licencia",
         "Nivel de licencia",

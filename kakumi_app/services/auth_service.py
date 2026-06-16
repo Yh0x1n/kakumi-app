@@ -1,42 +1,23 @@
 """
 Authentication Service for Kakumi App
 
-Handles user password hashing, login attempt tracking, lockout, JWT management,
-token blacklisting with TTL, refresh rotation and password strength checks.
+Handles user password hashing, login attempt tracking, lockout,
+password strength checks, and role-based authorization.
 """
 
-import bcrypt
-import jwt
 import re
-import os
-import secrets
-import warnings
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
 
+import bcrypt
 import reflex as rx
 from sqlmodel import select
 
-from kakumi_app.models.user_model import User
-from kakumi_app.models.login_attempt import LoginAttempt
-from kakumi_app.models.token_blacklist import TokenBlacklist
 from kakumi_app.models.audit_log import AuditLog
+from kakumi_app.models.login_attempt import LoginAttempt
+from kakumi_app.models.user_model import User
 
-# -- JWT Configuration --
-# Load secret from environment or generate secure fallback (32+ bytes for HS256).
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or secrets.token_urlsafe(32)
-# Warn when a provided secret is shorter than recommended minimum
-if len(JWT_SECRET_KEY) < 32:
-    warnings.warn(
-        "JWT secret key length < 32 characters. Use at least 32 bytes for HS256.",
-        UserWarning,
-    )
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_MINUTES = 15
-REFRESH_TOKEN_DAYS = 1
 LOCKOUT_ATTEMPTS = 5
 LOCKOUT_DURATION = timedelta(minutes=15)
-
 
 # Role hierarchy for RBAC
 ROLE_HIERARCHY = {
@@ -51,14 +32,11 @@ class AuthService:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """
-        Hash a password with bcrypt.
-        """
-        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-        return hashed.decode()
+        """Hash a password with bcrypt."""
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     @staticmethod
-    def validate_password_strength(password: str) -> Tuple[bool, str]:
+    def validate_password_strength(password: str) -> tuple[bool, str]:
         """
         Check PW: min 8chars, uppercase, number, special char.
         Returns (is_valid, message).
@@ -83,17 +61,15 @@ class AuthService:
         full_name: str,
         role: str = "OPERATOR",
         is_active: bool = True,
-    ) -> Tuple[Optional[User], str]:
+    ) -> tuple[User | None, str]:
         """Create user with password validation.
 
         Returns a tuple: (user, error_message).
         """
-        # Validate password strength
         is_valid, msg = AuthService.validate_password_strength(password)
         if not is_valid:
             return None, f"Weak password: {msg}"
 
-        # Check if username or email already exists
         with rx.session() as db:
             existing = db.exec(
                 select(User).where((User.username == username) | (User.email == email))
@@ -103,7 +79,6 @@ class AuthService:
                     return None, "Username already exists"
                 return None, "Email already exists"
 
-            # Create user
             user = User(
                 username=username,
                 email=email,
@@ -119,7 +94,11 @@ class AuthService:
 
     @staticmethod
     def record_login_attempt(
-        username: str, ip: str, user_agent: str, success: bool, reason: str = None
+        username: str,
+        ip: str,
+        user_agent: str,
+        success: bool,
+        reason: str | None = None,
     ) -> None:
         """
         Record a login attempt and handle lockout/fail increment.
@@ -128,7 +107,6 @@ class AuthService:
         with rx.session() as db:
             user = db.exec(select(User).where(User.username == username)).first()
 
-            # Only update if user exists in this session
             if user is not None:
                 if not success:
                     user.failed_attempts += 1
@@ -151,16 +129,13 @@ class AuthService:
             db.commit()
 
     @staticmethod
-    def get_user_by_username(username: str) -> Optional[User]:
-        """
-        Fetch a user by username.
-        """
+    def get_user_by_username(username: str) -> User | None:
+        """Fetch a user by username."""
         with rx.session() as db:
-            user = db.exec(select(User).where(User.username == username)).first()
-            return user
+            return db.exec(select(User).where(User.username == username)).first()
 
     @staticmethod
-    def is_account_locked(user: User) -> Tuple[bool, Optional[datetime]]:
+    def is_account_locked(user: User) -> tuple[bool, datetime | None]:
         """
         Check lockout status. Unlock if expired, persist.
         Returns (is_locked, unlock_time or None)
@@ -181,9 +156,7 @@ class AuthService:
 
     @staticmethod
     def reset_failed_attempts(user: User) -> None:
-        """
-        Clear failed_attempts and lockout for a user.
-        """
+        """Clear failed_attempts and lockout for a user."""
         with rx.session() as db:
             fresh = db.get(User, user.id)
             if fresh:
@@ -193,162 +166,31 @@ class AuthService:
                 db.commit()
 
     @staticmethod
-    def blacklist_token(token: str, user_id: int, reason: str = "LOGOUT") -> bool:
-        """
-        Blacklist a JWT (access or refresh).
-        Returns True if added, False if already present.
-        """
-        try:
-            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-            jti = payload.get("jti")
-            token_type = payload.get("type", "access")
-            exp = payload.get("exp")
-            expires_at = (
-                datetime.utcfromtimestamp(exp)
-                if exp
-                else (datetime.utcnow() + timedelta(minutes=15))
-            )
-        except Exception:
-            return False
-        with rx.session() as db:
-            exists = db.exec(
-                select(TokenBlacklist).where(TokenBlacklist.token_jti == jti)
-            ).first()
-            if exists:
-                return False
-            entry = TokenBlacklist(
-                token_jti=jti,
-                user_id=user_id,
-                token_type=token_type,
-                expires_at=expires_at,
-                reason=reason,
-            )
-            db.add(entry)
-            db.commit()
-            return True
+    def login_user(username: str, password: str) -> tuple[User | None, bool, str]:
+        """Authenticate user and return user info.
 
-    @staticmethod
-    def is_token_blacklisted(token: str) -> bool:
-        """
-        Check if a token's JTI is blacklisted & not expired.
-        """
-        try:
-            payload = jwt.decode(
-                token,
-                JWT_SECRET_KEY,
-                algorithms=[JWT_ALGORITHM],
-                options={"verify_exp": False},
-            )
-            jti = payload.get("jti")
-        except Exception:
-            return True  # treat decode error as blacklisted (safer)
-        now = datetime.utcnow()
-        with rx.session() as db:
-            entry = db.exec(
-                select(TokenBlacklist)
-                .where(TokenBlacklist.token_jti == jti)
-                .where(TokenBlacklist.expires_at > now)
-            ).first()
-            return entry is not None
-
-    @staticmethod
-    def refresh_tokens(refresh_token: str) -> Tuple[Optional[str], Optional[str], str]:
-        """
-        Rotate refresh token: blacklist old, issue new + new access.
-        Returns (access_token, refresh_token, error_message)
-        """
-        try:
-            payload = jwt.decode(
-                refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM]
-            )
-            if payload.get("type") != "refresh":
-                return None, None, "Not a refresh token"
-            user_id = int(payload.get("sub"))
-        except Exception as e:
-            return None, None, "Invalid token: " + str(e)
-        if AuthService.is_token_blacklisted(refresh_token):
-            return None, None, "Token is blacklisted"
-        AuthService.blacklist_token(refresh_token, user_id, reason="ROTATED")
-        user = None
-        with rx.session() as db:
-            user = db.get(User, user_id)
-        if not user:
-            return None, None, "User not found"
-        new_access = AuthService._generate_access_token(user)
-        new_refresh = AuthService._generate_refresh_token(user)
-        return new_access, new_refresh, ""
-
-    @staticmethod
-    def _generate_access_token(user: User) -> str:
-        """
-        Create a new access token for the given user.
-        """
-        now = datetime.utcnow()
-        payload = {
-            "sub": str(user.id),
-            "exp": now + timedelta(minutes=ACCESS_TOKEN_MINUTES),
-            "type": "access",
-            "jti": AuthService._random_jti(),
-            "role": user.role,
-        }
-        return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-    @staticmethod
-    def _generate_refresh_token(user: User) -> str:
-        """
-        Create a new refresh token for the given user.
-        """
-        now = datetime.utcnow()
-        payload = {
-            "sub": str(user.id),
-            "exp": now + timedelta(days=REFRESH_TOKEN_DAYS),
-            "type": "refresh",
-            "jti": AuthService._random_jti(),
-            "role": user.role,
-        }
-        return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-    @staticmethod
-    def _random_jti(length: int = 32) -> str:
-        """
-        Generate a random JWT ID (JTI).
-        """
-        import random
-        import string
-
-        return "".join(random.choices(string.ascii_letters + string.digits, k=length))
-
-    @staticmethod
-    def login_user(
-        username: str, password: str
-    ) -> Tuple[Optional[str], Optional[str], bool, str]:
-        """Authenticate user and return tokens.
-
-        Returns: (access_token, refresh_token, force_password_change, error_message).
+        Returns: (user, force_password_change, error_message).
         force_password_change is True when the user must change their password.
+        On error, user is None and error_message describes the issue.
         """
-        # Get user by username
         user = AuthService.get_user_by_username(username)
         if not user:
             AuthService.record_login_attempt(
                 username, "", "", False, reason="USER_NOT_FOUND"
             )
-            return None, None, False, "Invalid username or password"
+            return None, False, "Invalid username or password"
 
-        # Check if account is locked
         locked, unlock_at = AuthService.is_account_locked(user)
         if locked:
             AuthService.record_login_attempt(
                 username, "", "", False, reason="ACCOUNT_LOCKED"
             )
-            return None, None, False, f"Account is locked. Try again after {unlock_at}"
+            return None, False, f"Account is locked. Try again after {unlock_at}"
 
-        # Verify password
         if not bcrypt.checkpw(password.encode(), user.password_hash.encode()):
             AuthService.record_login_attempt(
                 username, "", "", False, reason="INVALID_PASS"
             )
-            # Log to audit_log
             with rx.session() as db:
                 audit_entry = AuditLog(
                     event_type="LOGIN_FAILED",
@@ -358,27 +200,23 @@ class AuthService:
                 )
                 db.add(audit_entry)
                 db.commit()
-            return None, None, False, "Invalid username or password"
+            return None, False, "Invalid username or password"
 
-        # Success - reset failed attempts
+        # Success
         AuthService.record_login_attempt(username, "", "", True, reason="LOGIN_SUCCESS")
         AuthService.reset_failed_attempts(user)
-
-        # Generate tokens
-        access_token = AuthService._generate_access_token(user)
-        refresh_token = AuthService._generate_refresh_token(user)
 
         # Re-fetch user to get fresh force_password_change flag
         with rx.session() as db:
             fresh_user = db.get(User, user.id)
             force_change = fresh_user.force_password_change if fresh_user else False
 
-        return access_token, refresh_token, force_change, ""
+        return user, force_change, ""
 
     @staticmethod
     def change_password(
         user_id: int, old_password: str, new_password: str
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Change user password.
 
         Validates old password, strength-checks new password, updates hash,
@@ -391,48 +229,19 @@ class AuthService:
             if not user:
                 return False, "User not found"
 
-            # Verify old password
             if not bcrypt.checkpw(old_password.encode(), user.password_hash.encode()):
                 return False, "Current password is incorrect"
 
-            # Strength-check new password
             is_valid, msg = AuthService.validate_password_strength(new_password)
             if not is_valid:
                 return False, msg
 
-            # Update password hash
             user.password_hash = AuthService.hash_password(new_password)
             user.force_password_change = False
             db.add(user)
             db.commit()
 
         return True, ""
-
-    @staticmethod
-    def logout_user(token: str) -> bool:
-        """Invalidate a token by blacklisting it. Returns True if successful."""
-        try:
-            payload = jwt.decode(
-                token,
-                JWT_SECRET_KEY,
-                algorithms=[JWT_ALGORITHM],
-                options={"verify_exp": False},
-            )
-            user_id = int(payload.get("sub"))
-            success = AuthService.blacklist_token(token, user_id, reason="LOGOUT")
-            if success:
-                # Log to audit_log
-                with rx.session() as db:
-                    audit_entry = AuditLog(
-                        event_type="LOGOUT",
-                        user_id=user_id,
-                        details="User logged out",
-                    )
-                    db.add(audit_entry)
-                    db.commit()
-            return success
-        except Exception:
-            return False
 
     @staticmethod
     def check_permission(user_role: str, required_role: str) -> bool:
@@ -455,30 +264,3 @@ class AuthService:
         user_level = ROLE_HIERARCHY.get(user_role, 0)
         required_level = ROLE_HIERARCHY.get(required_role, 999)
         return user_level >= required_level
-
-    @staticmethod
-    def validate_token(token: str) -> Optional[dict]:
-        """Validate JWT token and return payload if valid."""
-        try:
-            payload = jwt.decode(
-                token,
-                JWT_SECRET_KEY,
-                algorithms=[JWT_ALGORITHM],
-            )
-            return payload
-        except jwt.ExpiredSignatureError:
-            return None
-        except jwt.InvalidTokenError:
-            return None
-
-    @staticmethod
-    def get_current_user_from_token(token: str) -> Optional[User]:
-        """Get user from JWT token."""
-        payload = AuthService.validate_token(token)
-        if not payload:
-            return None
-        user_id = payload.get("sub")
-        if not user_id:
-            return None
-        with rx.session() as db:
-            return db.get(User, int(user_id))

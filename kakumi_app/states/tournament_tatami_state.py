@@ -9,15 +9,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from kakumi_app.models.tournament_model import Match, Tatami, Tournament
-from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class TournamentTatamiState(CrudStateMixin, rx.State):
+class TournamentTatamiState(rx.State):
     """Manage tatami rows for selected tournament workspace."""
 
-    is_editing: bool = CrudStateMixin.is_editing
-    show_form: bool = CrudStateMixin.show_form
-    error_message: str = CrudStateMixin.error_message
+    is_editing: bool = False
+    show_form: bool = False
+    error_message: str = ""
+    search_query: str = ""
+    current_page: int = 1
+    page_size: int = 10
 
     current_tournament_id: int = 0
     current_tournament_name: str = ""
@@ -29,6 +31,30 @@ class TournamentTatamiState(CrudStateMixin, rx.State):
     name: str = ""
     location: str = ""
 
+
+    def _set_form_open(self, editing: bool) -> None:
+        """Open form with desired mode and clean inline errors."""
+        self.is_editing = editing
+        self.show_form = True
+        self.error_message = ""
+
+    def apply_search_query(self, value: str) -> None:
+        """Normalize search value and reset pagination cursor."""
+        self.search_query = value.strip()
+        self.current_page = 1
+
+    def paginate_rows(self, rows: list[dict]) -> list[dict]:
+        """Return a deterministic page slice for in-memory rows."""
+        if self.page_size <= 0:
+            return rows
+        start = max(self.current_page - 1, 0) * self.page_size
+        end = start + self.page_size
+        return rows[start:end]
+
+    def reset_filters(self) -> None:
+        """Reset default filter controls used by CRUD pages."""
+        self.search_query = ""
+        self.current_page = 1
     @rx.var
     def has_selected_tournament_context(self) -> bool:
         """Whether tatami workspace has selected tournament context."""
@@ -151,7 +177,8 @@ class TournamentTatamiState(CrudStateMixin, rx.State):
     @rx.event
     def cancel_tatami_form(self) -> None:
         """Close tatami form and clear transient errors."""
-        CrudStateMixin.cancel_form(self)
+        self.show_form = False
+        self.error_message = ""
 
     def _validate_form(self) -> Optional[dict[str, Any]]:
         """Validate tatami payload before DB writes."""

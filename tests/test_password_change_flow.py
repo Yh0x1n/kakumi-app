@@ -172,15 +172,14 @@ def test_migration_rollback_drops_column(alembic_cfg: AlembicConfig) -> None:
 # =============================================================================
 
 
-def test_login_user_returns_4tuple_on_success(db_session) -> None:
+def test_login_user_returns_3tuple_on_success(db_session) -> None:
     """GIVEN user with force_password_change=True
     WHEN login_user succeeds
-    THEN returns (token, refresh, True, "")
+    THEN returns (user, True, "")
     """
     from kakumi_app.models.user_model import User, UserRole
     from kakumi_app.services.auth_service import AuthService
 
-    # Create user with force_password_change=True
     user = User(
         username="force-change-user",
         email="force@test.dev",
@@ -193,11 +192,11 @@ def test_login_user_returns_4tuple_on_success(db_session) -> None:
     db_session.add(user)
     db_session.commit()
 
-    token, refresh, force_change, error = AuthService.login_user(
+    result_user, force_change, error = AuthService.login_user(
         "force-change-user", "StrongPass123!"
     )
-    assert token is not None, "Should return access token"
-    assert refresh is not None, "Should return refresh token"
+    assert result_user is not None, "Should return user"
+    assert result_user.id == user.id
     assert force_change is True, "Should return force_change=True"
     assert error == "", "Error should be empty"
 
@@ -222,27 +221,26 @@ def test_login_user_returns_force_change_false_when_not_set(db_session) -> None:
     db_session.add(user)
     db_session.commit()
 
-    token, refresh, force_change, error = AuthService.login_user(
+    result_user, force_change, error = AuthService.login_user(
         "normal-user", "StrongPass123!"
     )
-    assert token is not None
-    assert refresh is not None
+    assert result_user is not None
+    assert result_user.id == user.id
     assert force_change is False
     assert error == ""
 
 
-def test_login_user_returns_4tuple_on_failure() -> None:
+def test_login_user_returns_3tuple_on_failure() -> None:
     """GIVEN invalid credentials
     WHEN login_user fails
-    THEN returns (None, None, False, "error message")
+    THEN returns (None, False, "error message")
     """
     from kakumi_app.services.auth_service import AuthService
 
-    token, refresh, force_change, error = AuthService.login_user(
+    result_user, force_change, error = AuthService.login_user(
         "nonexistent", "wrongpass"
     )
-    assert token is None
-    assert refresh is None
+    assert result_user is None
     assert force_change is False, "force_change should be False for failed login"
     assert error != "", "Should have error message"
 
@@ -406,43 +404,28 @@ def test_change_password_user_not_found(db_session) -> None:
 async def test_login_redirects_to_change_password_when_flag_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GIVEN login_user returns (token, refresh, True, "")
+    """GIVEN login_user returns (user, True, "")
     WHEN AuthState.login executes
     THEN needs_password_change=True and redirect to /change-password
     """
+    from types import SimpleNamespace
     from kakumi_app.states.auth_state import AuthState
 
+    fake_user = SimpleNamespace(
+        id=1, username="admin", email="", role="ADMIN", is_active=True
+    )
     state = AuthState()
     state.username = "admin"
     state.password = "StrongPass123!"
 
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: (
-            "access-token",
-            "refresh-token",
-            True,
-            "",
-        ),
+        lambda username, password: (fake_user, True, ""),
     )
-
-    def fake_load_user(self) -> None:
-        self.is_authenticated = True
-        self.user_role = "ADMIN"
-        self.current_user = {
-            "id": 1,
-            "username": "admin",
-            "role": "ADMIN",
-            "is_active": True,
-        }
-
-    monkeypatch.setattr(AuthState, "_load_user_from_token", fake_load_user)
 
     result = await AuthState.login.fn(state)
 
     assert state.needs_password_change is True
-    assert state.access_token == "access-token"
-    assert state.refresh_token == "refresh-token"
     assert state.is_logging_in is False
 
     events = _as_event_list(result)
@@ -455,24 +438,23 @@ async def test_login_redirects_to_change_password_when_flag_set(
 async def test_login_does_not_redirect_to_change_password_when_flag_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GIVEN login_user returns (token, refresh, False, "")
+    """GIVEN login_user returns (user, False, "")
     WHEN AuthState.login executes
     THEN needs_password_change=False and redirect to /
     """
+    from types import SimpleNamespace
     from kakumi_app.states.auth_state import AuthState
 
+    fake_user = SimpleNamespace(
+        id=1, username="admin", email="", role="ADMIN", is_active=True
+    )
     state = AuthState()
     state.username = "admin"
     state.password = "StrongPass123!"
 
     monkeypatch.setattr(
         "kakumi_app.states.auth_state.AuthService.login_user",
-        lambda username, password: (
-            "access-token",
-            "refresh-token",
-            False,
-            "",
-        ),
+        lambda username, password: (fake_user, False, ""),
     )
 
     def fake_load_user(self) -> None:
@@ -485,7 +467,7 @@ async def test_login_does_not_redirect_to_change_password_when_flag_false(
             "is_active": True,
         }
 
-    monkeypatch.setattr(AuthState, "_load_user_from_token", fake_load_user)
+    monkeypatch.setattr(AuthState, "_load_user_from_stored", fake_load_user)
 
     result = await AuthState.login.fn(state)
 
@@ -684,16 +666,15 @@ async def test_create_initial_admin_sets_force_password_change(db_session) -> No
     del os.environ["ADMIN_FULL_NAME"]
 
 
-def test_login_user_4tuple_shape_unchanged_on_error() -> None:
+def test_login_user_3tuple_shape_on_error() -> None:
     """GIVEN login_user called with bad password
-    THEN return has consistent 4-tuple shape
+    THEN return has consistent 3-tuple shape
     """
     from kakumi_app.services.auth_service import AuthService
 
     result = AuthService.login_user("does-not-exist", "bad-password")
     assert isinstance(result, tuple)
-    assert len(result) == 4
-    assert result[0] is None  # access_token
-    assert result[1] is None  # refresh_token
-    assert result[2] is False  # force_password_change
-    assert result[3] != ""  # error_message
+    assert len(result) == 3
+    assert result[0] is None  # user
+    assert result[1] is False  # force_password_change
+    assert result[2] != ""  # error_message

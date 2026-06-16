@@ -6,7 +6,6 @@ from sqlmodel import select
 from kakumi_app.models.tournament_model import (
     CompetitionSystem,
     Match,
-    MatchActionLog,
     MatchScore,
     MatchStatus,
     Participant,
@@ -47,14 +46,11 @@ def _set_match_competition_system(match_id: int, competition_system: str) -> Non
         session.commit()
 
 
-def _count_action_logs(match_id: int) -> int:
-    """Cuenta filas de log de acciones para un match."""
+def _has_action_snapshot(match_id: int) -> bool:
+    """Checks if a match has a last_action_snapshot."""
     with rx.session() as session:
-        return len(
-            session.exec(
-                select(MatchActionLog).where(MatchActionLog.match_id == match_id)
-            ).all()
-        )
+        match = session.get(Match, match_id)
+        return match is not None and match.last_action_snapshot is not None
 
 
 def test_yuko_adds_1_point(sample_match, sample_user):
@@ -700,7 +696,7 @@ def test_undo_last_score_action_restores_points_and_deletes_audit(
         applied_by_id=sample_user.id,
     )
     assert apply_result.success is True
-    assert _count_action_logs(match.id) == 1
+    assert _has_action_snapshot(match.id)
 
     undo_result = KumiteScoringService.undo_last_action(match.id)
     assert undo_result.success is True
@@ -714,7 +710,7 @@ def test_undo_last_score_action_restores_points_and_deletes_audit(
         ).all()
         assert scores == []
 
-    assert _count_action_logs(match.id) == 0
+    assert not _has_action_snapshot(match.id)
 
 
 def test_undo_hansoku_rolls_back_terminal_status_and_bonus_yuko(
@@ -877,28 +873,3 @@ def test_scenario_2_with_for_update_noop_sqlite(
         )
 
         assert penalty.penalty_type == "C1"
-
-
-from unittest.mock import patch
-
-
-def test_scenario_3_retry_backoff_called_on_contention() -> None:
-    """_with_retry retries once after OperationalError and then succeeds."""
-    from sqlalchemy.exc import OperationalError
-    from kakumi_app.services.kumite_scoring_service import _with_retry
-
-    operation_error = OperationalError("statement", {}, Exception("locked"))
-    call_count = {"count": 0}
-
-    def flaky_operation() -> str:
-        call_count["count"] += 1
-        if call_count["count"] == 1:
-            raise operation_error
-        return "ok"
-
-    with patch("kakumi_app.services.kumite_scoring_service.time.sleep") as sleep_mock:
-        result = _with_retry(flaky_operation)
-
-    assert result == "ok"
-    assert call_count["count"] == 2
-    sleep_mock.assert_called_once()

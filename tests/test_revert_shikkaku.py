@@ -5,6 +5,7 @@ import json
 
 import pytest
 import reflex as rx
+from kakumi_app.services.exceptions import AppError
 from sqlmodel import Session, select
 
 from kakumi_app.models.athlete_model import Athlete
@@ -23,7 +24,6 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
     TournamentStatus,
 )
-from kakumi_app.services.exceptions import ShikkakuRevertError
 from kakumi_app.services.kumite_scoring_service import apply_penalty, revert_shikkaku
 
 
@@ -286,7 +286,7 @@ def test_revert_shikkaku_removes_delta_log(rr_fixture: dict[str, int]) -> None:
 def test_revert_shikkaku_missing_key_raises() -> None:
     """Revert must fail when change key is missing."""
     with rx.session() as session:
-        with pytest.raises(ShikkakuRevertError):
+        with pytest.raises(AppError):
             revert_shikkaku(session=session, change_key="nonexistent-key")
 
 

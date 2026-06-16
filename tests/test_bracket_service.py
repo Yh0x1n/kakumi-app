@@ -34,7 +34,7 @@ from kakumi_app.models.tournament_model import (
 )
 from kakumi_app.services.bracket_service import (
     _build_elimination,
-    BracketService,
+    generate_bracket,
     propagate_winner,
 )
 from kakumi_app.services.exceptions import ValidationError
@@ -209,10 +209,10 @@ class TestElimination:
             prefix="kata-eight",
         )
 
-        result = BracketService(
+        result = generate_bracket(
             tournament_id=tournament.id,
             category_id=category.id,
-        ).generate_bracket()
+        )
 
         matches = _persisted_matches(category.id)
 
@@ -239,10 +239,10 @@ class TestElimination:
             prefix="kumite-five",
         )
 
-        result = BracketService(
+        result = generate_bracket(
             tournament_id=tournament.id,
             category_id=category.id,
-        ).generate_bracket()
+        )
 
         matches = _persisted_matches(category.id)
         bye_matches = [
@@ -275,10 +275,10 @@ class TestElimination:
             prefix="draw-order",
         )
 
-        BracketService(
+        generate_bracket(
             tournament_id=tournament.id,
             category_id=category.id,
-        ).generate_bracket()
+        )
 
         round_one_matches = _round_matches(_persisted_matches(category.id), 1)
         persisted_positions = [match.position for match in round_one_matches]
@@ -309,26 +309,36 @@ class TestElimination:
             prefix="regen",
         )
 
-        service = BracketService(
+        generate_bracket(
             tournament_id=tournament.id,
             category_id=category.id,
         )
-        service.generate_bracket()
 
         with pytest.raises(ValidationError) as exc_info:
-            service.generate_bracket()
+            generate_bracket(
+                tournament_id=tournament.id,
+                category_id=category.id,
+            )
 
         assert exc_info.value.code == "BRACKET_ALREADY_EXISTS"
 
     @staticmethod
     def test_unsupported_system_returns_stable_error_code() -> None:
         tournament = _create_tournament("Bracket Unsupported System")
-        category = _create_category(
-            tournament.id,
-            name="Double Elimination Deferred",
-            modality=Modality.KUMITE_INDIVIDUAL,
-            system=CompetitionSystem.DOUBLE_ELIMINATION,
-        )
+        with rx.session() as session:
+            category = TournamentCategory(
+                name="Unknown System",
+                modality=Modality.KUMITE_INDIVIDUAL.value,
+                gender=CategoryGender.MIXED.value,
+                min_age=10,
+                max_age=35,
+                competition_system="DOUBLE_ELIMINATION",
+                bracket_size=8,
+                tournament_id=tournament.id,
+            )
+            session.add(category)
+            session.commit()
+            session.refresh(category)
         _create_athletes(
             category_id=category.id,
             modality=Modality.KUMITE_INDIVIDUAL,
@@ -337,10 +347,10 @@ class TestElimination:
         )
 
         with pytest.raises(ValidationError) as exc_info:
-            BracketService(
+            generate_bracket(
                 tournament_id=tournament.id,
                 category_id=category.id,
-            ).generate_bracket()
+            )
 
         assert exc_info.value.code == "UNSUPPORTED_SYSTEM"
 
@@ -361,10 +371,10 @@ class TestElimination:
         )
 
         with pytest.raises(ValidationError) as exc_info:
-            BracketService(
+            generate_bracket(
                 tournament_id=tournament.id,
                 category_id=category.id,
-            ).generate_bracket()
+            )
 
         assert exc_info.value.code == "INSUFFICIENT_PARTICIPANTS"
 
@@ -384,10 +394,10 @@ class TestElimination:
             prefix="no-bronze",
         )
 
-        BracketService(
+        generate_bracket(
             tournament_id=tournament.id,
             category_id=category.id,
-        ).generate_bracket()
+        )
 
         matches = _persisted_matches(category.id)
 
@@ -421,10 +431,10 @@ class TestRoundRobin:
             prefix="rr-four",
         )
 
-        result = BracketService(
+        result = generate_bracket(
             tournament_id=tournament.id,
             category_id=category.id,
-        ).generate_bracket()
+        )
 
         matches = _persisted_matches(category.id)
         expected_pairs = len(athletes) * (len(athletes) - 1) // 2
@@ -918,11 +928,6 @@ class TestCriticalFixes:
         """generate_bracket() must re-check and block regeneration."""
         from kakumi_app.models.tournament_model import Match
 
-        bracket_module = importlib.import_module(
-            "kakumi_app.services" + ".bracket_service"
-        )
-        BracketService = bracket_module.BracketService
-
         engine = create_engine("sqlite:///:memory:")
         SQLModel.metadata.create_all(engine)
 
@@ -939,13 +944,11 @@ class TestCriticalFixes:
             _add_category_athletes(session, category_id)
             session.flush()
 
-            service = BracketService(
+            generate_bracket(
                 tournament_id=tournament_id,
                 category_id=category_id,
                 session=session,
             )
-
-            service.generate_bracket()
 
             session.add(
                 Match(
@@ -959,7 +962,11 @@ class TestCriticalFixes:
             session.commit()
 
             with pytest.raises(ValidationError) as exc_info:
-                service.generate_bracket()
+                generate_bracket(
+                    tournament_id=tournament_id,
+                    category_id=category_id,
+                    session=session,
+                )
 
         assert exc_info.value.code == "BRACKET_ALREADY_EXISTS"
 

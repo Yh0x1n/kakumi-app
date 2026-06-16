@@ -15,7 +15,6 @@ from sqlmodel import select
 
 from kakumi_app.models.tournament_model import (
     Match,
-    MatchActionLog,
     MatchStatus,
     Participant,
     Penalty,
@@ -25,8 +24,7 @@ from kakumi_app.models.tournament_model import (
 )
 from kakumi_app.services.kumite_scoring_service import KumiteScoringService
 from kakumi_app.services.exceptions import (
-    AthleteSchedulingConflictError,
-    PenaltyRemovalNotAllowedError,
+    AppError,
 )
 from kakumi_app.states.kumite_match_state import KumiteMatchState
 
@@ -224,7 +222,7 @@ async def test_scheduling_conflict_shows_toast(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.kumite_scoring_service.apply_penalty",
-        Mock(side_effect=AthleteSchedulingConflictError("Tatami overlap detected")),
+        Mock(side_effect=AppError("Tatami overlap detected")),
     )
 
     toast_error = Mock(return_value="toast-error")
@@ -254,7 +252,7 @@ async def test_remove_penalty_guard_shows_toast(
     monkeypatch.setattr(
         "kakumi_app.states.kumite_match_state.kumite_scoring_service.remove_last_penalty",
         Mock(
-            side_effect=PenaltyRemovalNotAllowedError(
+            side_effect=AppError(
                 "Penalty removal only allowed when match is IN_PROGRESS"
             )
         ),
@@ -531,10 +529,8 @@ async def test_undo_last_action_syncs_state_after_service_undo(
     assert state.aka_score == 0
 
     with rx.session() as session:
-        logs = session.exec(
-            select(MatchActionLog).where(MatchActionLog.match_id == sample_match.id)
-        ).all()
-        assert logs == []
+        match = session.get(Match, sample_match.id)
+        assert match is None or match.last_action_snapshot is None
 
 
 @pytest.mark.asyncio

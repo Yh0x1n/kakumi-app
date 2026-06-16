@@ -7,7 +7,6 @@ Implementa las reglas de negocio WKF 2026 para flujos de estado.
 Patrón: service-first, siguiendo AuthService como referencia.
 """
 
-import datetime
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -25,7 +24,7 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
     TournamentStatus,
 )
-from kakumi_app.services.bracket_service import BracketService
+from kakumi_app.services.bracket_service import generate_bracket
 from kakumi_app.services.exceptions import ValidationError
 
 # =============================================================================
@@ -67,40 +66,17 @@ MIN_ATHLETES_PER_CATEGORY = 2
 
 
 @dataclass
-class Warning:
-    """Advertencia de validación — no bloquea la transición."""
-
-    code: str
-    message: str
-
-
-@dataclass
 class ValidationResult:
-    """
-    Resultado completo de validación de pre-condiciones.
-
-    can_proceed: si la transición puede ejecutarse (sin errores REQUIRED).
-    valid: alias semántico de can_proceed.
-    """
+    """Resultado de validación de pre-condiciones."""
 
     valid: bool
-    transition: str = ""
     errors: List[ValidationError] = field(default_factory=list)
-    warnings: List[Warning] = field(default_factory=list)
-    can_proceed: bool = True
-
-    def __post_init__(self) -> None:
-        """Sincronizar can_proceed con valid."""
-        self.can_proceed = self.valid
+    warnings: List[str] = field(default_factory=list)
 
 
 @dataclass
 class TransitionResult:
-    """
-    Resultado expresivo de una transición de estado.
-
-    Permite extender con warnings/audit sin romper la firma.
-    """
+    """Resultado de una transición de estado."""
 
     success: bool
     tournament_id: int
@@ -108,8 +84,7 @@ class TransitionResult:
     new_status: Optional[TournamentStatus] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
-    warnings: List[Warning] = field(default_factory=list)
-    timestamp: datetime.datetime = field(default_factory=datetime.datetime.utcnow)
+    warnings: List[str] = field(default_factory=list)
 
 
 # =============================================================================
@@ -207,14 +182,14 @@ class TournamentService:
     @staticmethod
     def _validate_en_curso(
         tournament_id: int,
-    ) -> tuple[List[ValidationError], List[Warning]]:
+    ) -> tuple[List[ValidationError], List[str]]:
         """Valida pre-condiciones para VERIFICACION → EN_CURSO."""
         from kakumi_app.models.athlete_model import Athlete, AthleteGender
         from kakumi_app.models.tournament_model import CategoryGender
         from kakumi_app.utils import BELT_RANKS, BELT_RANK_ORDER
 
         errors: List[ValidationError] = []
-        warnings: List[Warning] = []
+        warnings: List[str] = []
 
         with rx.session() as session:
             categories = session.exec(
@@ -285,17 +260,15 @@ class TournamentService:
             )
 
         if not has_schedule:
-            warnings.append(
-                Warning(
-                    code="NO_SCHEDULE",
-                    message="El horario del torneo no está configurado",
-                )
-            )
+            warnings.append("El horario del torneo no está configurado")
 
         return errors, warnings
 
     @staticmethod
     def _generate_brackets_for_tournament(tournament_id: int) -> None:
+        # ponytail: separate session from transition_to parent session.
+        # Creates minor TOCTOU if a category is added between lock and here.
+        # Acceptable for MVP — consolidate sessions if category races arise.
         with rx.session() as session:
             categories = session.exec(
                 select(TournamentCategory).where(
@@ -309,11 +282,11 @@ class TournamentService:
                 }:
                     continue
                 try:
-                    BracketService(
+                    generate_bracket(
                         tournament_id=tournament_id,
                         category_id=category.id,
                         session=session,
-                    ).generate_bracket()
+                    )
                 except ValidationError as exc:
                     if exc.code == "BRACKET_ALREADY_EXISTS":
                         continue
@@ -417,8 +390,7 @@ class TournamentService:
             ValidationResult con errores y warnings detallados.
         """
         errors: List[ValidationError] = []
-        warnings: List[Warning] = []
-        transition = f"→ {to_status.value}"
+        warnings: List[str] = []
 
         if to_status == TournamentStatus.VERIFICACION:
             errors = TournamentService._validate_verificacion(tournament_id)
@@ -431,7 +403,6 @@ class TournamentService:
         is_valid = len(errors) == 0
         return ValidationResult(
             valid=is_valid,
-            transition=transition,
             errors=errors,
             warnings=warnings,
         )
@@ -560,7 +531,7 @@ class TournamentService:
             tournament_id=tournament_id,
             to_status=new_status,
         )
-        if not validation.can_proceed:
+        if not validation.valid:
             error_msgs = "; ".join(e.message for e in validation.errors)
             return TransitionResult(
                 success=False,
