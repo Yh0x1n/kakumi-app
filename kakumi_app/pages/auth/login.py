@@ -37,10 +37,27 @@ def login_page() -> rx.Component:
                                 width="100%",
                                 margin_bottom="1em",
                             ),
-                            rx.input(
-                                placeholder="Contraseña",
-                                type_="password",
-                                on_change=AuthState.set_password,
+                            rx.hstack(
+                                rx.input(
+                                    placeholder="Contraseña",
+                                    type=rx.cond(
+                                        AuthState.show_password, "text", "password"
+                                    ),
+                                    on_change=AuthState.set_password,
+                                    style={"flex": "1"},
+                                ),
+                                rx.button(
+                                    rx.cond(
+                                        AuthState.show_password,
+                                        rx.icon(tag="eye-off", size=18),
+                                        rx.icon(tag="eye", size=18),
+                                    ),
+                                    on_click=AuthState.toggle_show_password,
+                                    type="button",
+                                    variant="ghost",
+                                    style={"display": "flex", "align-items": "center"},
+                                ),
+                                align="center",
                                 width="100%",
                                 margin_bottom="1em",
                             ),

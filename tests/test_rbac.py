@@ -420,12 +420,12 @@ async def test_auth_login_success_sets_serializable_current_user_dict(
 
 
 @pytest.mark.anyio
-async def test_check_auth_redirects_authenticated_to_home(
+async def test_check_auth_does_not_redirect_authenticated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GIVEN user authenticated
     WHEN check_auth() called on /login on_load
-    THEN redirect to /home
+    THEN should NOT redirect — user must always provide credentials
     """
     state = AuthState()
 
@@ -436,7 +436,7 @@ async def test_check_auth_redirects_authenticated_to_home(
 
     result = await AuthState.check_auth.fn(state)
 
-    assert _is_redirect_event(result, path="/home")
+    assert result is None
 
 
 @pytest.mark.anyio

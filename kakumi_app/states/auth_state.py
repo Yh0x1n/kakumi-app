@@ -47,6 +47,7 @@ class AuthState(rx.State):
     # Login form fields
     username: str = ""
     password: str = ""
+    show_password: bool = False
 
     # Password change flow
     needs_password_change: bool = False
@@ -196,8 +197,8 @@ class AuthState(rx.State):
     async def check_auth(self) -> Any:
         """Check authentication status (called on page load)."""
         self._load_user_from_stored()
-        if self.is_authenticated:
-            return rx.redirect("/home")
+        # ponytail: removed auto-redirect — login page always shows form
+        return None
 
     @rx.event
     async def check_auth_redirect(self) -> Any:
@@ -215,6 +216,11 @@ class AuthState(rx.State):
     def set_password(self, value: str) -> None:
         """Set login password field value."""
         self.password = value
+
+    @rx.event
+    def toggle_show_password(self) -> None:
+        """Toggle password visibility."""
+        self.show_password = not self.show_password
 
     @rx.event
     async def handle_change_password(self) -> Any:
