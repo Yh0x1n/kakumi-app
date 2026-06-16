@@ -282,7 +282,7 @@ class TournamentState(rx.State):
             # Recargar el torneo desde DB para reflejar el nuevo estado
             await self.set_current_tournament(tournament_id)
             # Capturar warnings si existen
-            self.validation_warnings = [w.message for w in result.warnings]
+            self.validation_warnings = list(result.warnings)
             if self.validation_warnings:
                 yield rx.toast.warning(
                     "; ".join(self.validation_warnings), duration=5000

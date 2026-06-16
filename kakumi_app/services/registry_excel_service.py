@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from openpyxl import Workbook, load_workbook
 
@@ -35,7 +35,9 @@ ROLE_TRANSLATION: dict[str, str] = {
 
 # Reverse maps (Español → DB para import)
 GENDER_REVERSE: dict[str, str] = {v: k for k, v in GENDER_TRANSLATION.items()}
-LICENSE_LEVEL_REVERSE: dict[str, str] = {v: k for k, v in LICENSE_LEVEL_TRANSLATION.items()}
+LICENSE_LEVEL_REVERSE: dict[str, str] = {
+    v: k for k, v in LICENSE_LEVEL_TRANSLATION.items()
+}
 ROLE_REVERSE: dict[str, str] = {v: k for k, v in ROLE_TRANSLATION.items()}
 
 
@@ -68,109 +70,85 @@ def _normalize_cell_value(value: Any) -> str:
 CellSerializer = Callable[[Mapping[str, Any]], str]
 
 
-@dataclass(frozen=True)
-class RegistryColumn:
-    """Workbook column contract for a registry entity."""
-
-    field_name: str
-    header: str
-    required: bool = False
-    serializer: CellSerializer | None = None
-
-    def serialize(self, row: Mapping[str, Any]) -> str:
-        """Return export-safe string for this column and row."""
-        if self.serializer is not None:
-            return self.serializer(row)
-        return _serialize_cell_value(row.get(self.field_name))
-
-
-@dataclass(frozen=True)
-class RegistryWorkbookAdapter:
-    """Adapter describing one registry workbook schema."""
-
-    sheet_name: str
-    columns: tuple[RegistryColumn, ...]
-
-    @property
-    def headers(self) -> tuple[str, ...]:
-        """Return ordered workbook headers."""
-        return tuple(column.header for column in self.columns)
-
-
-def _text_serializer(field_name: str) -> CellSerializer:
-    """Create default text serializer for a field name."""
-
-    def _serializer(row: Mapping[str, Any]) -> str:
-        return _serialize_cell_value(row.get(field_name))
-
-    return _serializer
-
-
-def _translation_serializer(
-    translation_map: dict[str, str],
-    field_name: str,
-) -> CellSerializer:
-    """Create a serializer that translates DB values to Español for export."""
-
-    def _serializer(row: Mapping[str, Any]) -> str:
-        raw = row.get(field_name)
-        return translation_map.get(raw, _serialize_cell_value(raw))
-
-    return _serializer
-
-
-ATHLETE_WORKBOOK_ADAPTER = RegistryWorkbookAdapter(
-    sheet_name="Atletas",
-    columns=(
-        RegistryColumn("name", "Nombre", required=True),
-        RegistryColumn("email", "Correo electrónico"),
-        RegistryColumn("age", "Edad", required=True),
-        RegistryColumn(
-            "gender", "Género", required=True,
-            serializer=_translation_serializer(GENDER_TRANSLATION, "gender"),
+# ponytail: flat column tuples replace RegistryColumn/RegistryWorkbookAdapter
+ATHLETE_SHEET_NAME = "Atletas"
+ATHLETE_COLUMNS: tuple[tuple[str, str, bool, CellSerializer | None], ...] = (
+    ("name", "Nombre", True, None),
+    ("email", "Correo electrónico", False, None),
+    ("age", "Edad", True, None),
+    (
+        "gender",
+        "Género",
+        True,
+        lambda row: GENDER_TRANSLATION.get(
+            str(row.get("gender", "")), str(row.get("gender", ""))
         ),
-        RegistryColumn("weight_kg", "Peso (kg)"),
-        RegistryColumn("belt_rank", "Grado"),
-        RegistryColumn("dojo", "Dojo"),
-        RegistryColumn("nationality", "Nacionalidad (ISO3)"),
-        RegistryColumn("license_number", "Número de licencia"),
     ),
+    ("weight_kg", "Peso (kg)", False, None),
+    ("belt_rank", "Grado", False, None),
+    ("dojo", "Dojo", False, None),
+    ("nationality", "Nacionalidad (ISO3)", False, None),
+    ("license_number", "Número de licencia", False, None),
+)
+
+REFEREE_SHEET_NAME = "Árbitros"
+REFEREE_COLUMNS: tuple[tuple[str, str, bool, CellSerializer | None], ...] = (
+    ("name", "Nombre", True, None),
+    ("license_number", "Número de licencia", True, None),
+    (
+        "license_level",
+        "Nivel de licencia",
+        True,
+        lambda row: LICENSE_LEVEL_TRANSLATION.get(
+            str(row.get("license_level", "")), str(row.get("license_level", ""))
+        ),
+    ),
+    (
+        "role",
+        "Rol",
+        True,
+        lambda row: ROLE_TRANSLATION.get(
+            str(row.get("role", "")), str(row.get("role", ""))
+        ),
+    ),
+    (
+        "is_available",
+        "Disponible",
+        False,
+        lambda row: _serialize_cell_value(row.get("is_available")),
+    ),
+    ("dojo", "Dojo", False, None),
+    ("email", "Correo electrónico", False, None),
+    ("phone", "Teléfono", False, None),
 )
 
 
-REFEREE_WORKBOOK_ADAPTER = RegistryWorkbookAdapter(
-    sheet_name="Árbitros",
-    columns=(
-        RegistryColumn("name", "Nombre", required=True),
-        RegistryColumn("license_number", "Número de licencia", required=True),
-        RegistryColumn(
-            "license_level", "Nivel de licencia", required=True,
-            serializer=_translation_serializer(LICENSE_LEVEL_TRANSLATION, "license_level"),
-        ),
-        RegistryColumn(
-            "role", "Rol", required=True,
-            serializer=_translation_serializer(ROLE_TRANSLATION, "role"),
-        ),
-        RegistryColumn("is_available", "Disponible", serializer=_text_serializer("is_available")),
-        RegistryColumn("dojo", "Dojo"),
-        RegistryColumn("email", "Correo electrónico"),
-        RegistryColumn("phone", "Teléfono"),
-    ),
-)
+def _col_headers(
+    columns: tuple[tuple[str, str, bool, CellSerializer | None], ...],
+) -> tuple[str, ...]:
+    """Return ordered workbook headers from column tuples."""
+    return tuple(c[1] for c in columns)
 
 
 def build_registry_workbook(
-    adapter: RegistryWorkbookAdapter,
+    sheet_name: str,
+    columns: tuple[tuple[str, str, bool, CellSerializer | None], ...],
     rows: Sequence[Mapping[str, Any]],
 ) -> bytes:
-    """Build an .xlsx workbook for a registry adapter."""
+    """Build an .xlsx workbook for a registry."""
     workbook = Workbook()
     worksheet = workbook.active
-    worksheet.title = adapter.sheet_name
-    worksheet.append(list(adapter.headers))
+    worksheet.title = sheet_name
+    worksheet.append(list(_col_headers(columns)))
 
     for row in rows:
-        worksheet.append([column.serialize(row) for column in adapter.columns])
+        cell_values: list[str] = []
+        for field_name, _, _, serializer in columns:
+            if serializer is not None:
+                cell_values.append(serializer(row))
+            else:
+                cell_values.append(_serialize_cell_value(row.get(field_name)))
+        worksheet.append(cell_values)
 
     buffer = BytesIO()
     workbook.save(buffer)
@@ -179,7 +157,8 @@ def build_registry_workbook(
 
 def parse_registry_workbook(
     workbook_bytes: bytes,
-    adapter: RegistryWorkbookAdapter,
+    sheet_name: str,
+    columns: tuple[tuple[str, str, bool, CellSerializer | None], ...],
 ) -> list[dict[str, str]]:
     """Parse an .xlsx workbook into canonical service row dictionaries."""
     if not workbook_bytes:
@@ -191,9 +170,7 @@ def parse_registry_workbook(
         raise RegistryWorkbookError("Invalid XLSX workbook") from exc
 
     worksheet = (
-        workbook[adapter.sheet_name]
-        if adapter.sheet_name in workbook.sheetnames
-        else workbook.active
+        workbook[sheet_name] if sheet_name in workbook.sheetnames else workbook.active
     )
 
     header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
@@ -201,12 +178,10 @@ def parse_registry_workbook(
     if not any(headers):
         raise RegistryWorkbookError("XLSX workbook is missing headers")
 
-    header_to_column = {column.header: column for column in adapter.columns}
-    missing_headers = [
-        column.header
-        for column in adapter.columns
-        if column.required and column.header not in headers
-    ]
+    header_to_column: dict[str, tuple[str, str, bool, CellSerializer | None]] = {
+        c[1]: c for c in columns
+    }
+    missing_headers = [c[1] for c in columns if c[2] and c[1] not in headers]
     if missing_headers:
         joined = ", ".join(missing_headers)
         raise RegistryWorkbookError(f"XLSX missing required headers: {joined}")
@@ -215,11 +190,11 @@ def parse_registry_workbook(
     for row_values in worksheet.iter_rows(min_row=2, values_only=True):
         row_dict: dict[str, str] = {}
         for index, header in enumerate(headers):
-            column = header_to_column.get(header)
-            if column is None:
+            col = header_to_column.get(header)
+            if col is None:
                 continue
             cell_value = row_values[index] if index < len(row_values) else None
-            row_dict[column.field_name] = _normalize_cell_value(cell_value)
+            row_dict[col[0]] = _normalize_cell_value(cell_value)
 
         if any(value for value in row_dict.values()):
             parsed_rows.append(row_dict)
@@ -229,19 +204,19 @@ def parse_registry_workbook(
 
 def build_athletes_workbook(rows: Sequence[Mapping[str, Any]]) -> bytes:
     """Build athlete registry workbook bytes."""
-    return build_registry_workbook(ATHLETE_WORKBOOK_ADAPTER, rows)
+    return build_registry_workbook(ATHLETE_SHEET_NAME, ATHLETE_COLUMNS, rows)
 
 
 def parse_athletes_workbook(workbook_bytes: bytes) -> list[dict[str, str]]:
     """Parse athlete workbook bytes into import rows."""
-    return parse_registry_workbook(workbook_bytes, ATHLETE_WORKBOOK_ADAPTER)
+    return parse_registry_workbook(workbook_bytes, ATHLETE_SHEET_NAME, ATHLETE_COLUMNS)
 
 
 def build_referees_workbook(rows: Sequence[Mapping[str, Any]]) -> bytes:
     """Build referee registry workbook bytes."""
-    return build_registry_workbook(REFEREE_WORKBOOK_ADAPTER, rows)
+    return build_registry_workbook(REFEREE_SHEET_NAME, REFEREE_COLUMNS, rows)
 
 
 def parse_referees_workbook(workbook_bytes: bytes) -> list[dict[str, str]]:
     """Parse referee workbook bytes into import rows."""
-    return parse_registry_workbook(workbook_bytes, REFEREE_WORKBOOK_ADAPTER)
+    return parse_registry_workbook(workbook_bytes, REFEREE_SHEET_NAME, REFEREE_COLUMNS)

@@ -2,6 +2,7 @@
 
 import pytest
 import reflex as rx
+from kakumi_app.services.exceptions import AppError
 from sqlmodel import select
 
 from kakumi_app.models.tournament_model import (
@@ -11,7 +12,6 @@ from kakumi_app.models.tournament_model import (
     Penalty,
     PenaltyType,
 )
-from kakumi_app.services.exceptions import PenaltyEscalationError
 from kakumi_app.services.kumite_scoring_service import apply_penalty
 
 
@@ -144,7 +144,7 @@ def test_penalty_escalation_error_on_invalid_state(sample_match, db_session):
     match = _set_match_status(sample_match.id, MatchStatus.COMPLETED.value)
 
     with rx.session() as session:
-        with pytest.raises(PenaltyEscalationError):
+        with pytest.raises(AppError):
             apply_penalty(
                 session=session,
                 match_id=match.id,

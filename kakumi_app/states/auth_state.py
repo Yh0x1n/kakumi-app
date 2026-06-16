@@ -3,10 +3,11 @@ Authentication State
 Manages login/logout, token storage, user info, and role-based permissions.
 """
 
+import json
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import reflex as rx
 
@@ -29,12 +30,12 @@ if DEV_AUTH_BYPASS:
 class AuthState(rx.State):
     """State for authentication management."""
 
-    # Token storage (persists across page reloads)
-    access_token: str = rx.LocalStorage()
-    refresh_token: str = rx.LocalStorage()
+    # User info persisted as JSON string in browser localStorage
+    # (rx.LocalStorage is always str, so we store serialized JSON)
+    stored_user_json: str = rx.LocalStorage("")
 
-    # Current user info (derived from token)
-    current_user: Optional[dict[str, Any]] = None
+    # Runtime user info (rehydrated from stored_user_json on page load)
+    current_user: dict[str, Any] | None = None
     is_authenticated: bool = False
     user_role: str = ""
 
@@ -65,8 +66,7 @@ class AuthState(rx.State):
 
     def _clear_auth_session(self) -> None:
         """Clear local auth/session data from state."""
-        self.access_token = ""
-        self.refresh_token = ""
+        self.stored_user_json = ""
         self.current_user = None
         self.is_authenticated = False
         self.user_role = ""
@@ -79,7 +79,7 @@ class AuthState(rx.State):
 
     def refresh_auth(self) -> None:
         """Re-evaluate auth state (idempotent, safe to call from other states)."""
-        self._load_user_from_token()
+        self._load_user_from_stored()
 
     def update_last_activity(self) -> None:
         """Update the last activity timestamp."""
@@ -107,22 +107,26 @@ class AuthState(rx.State):
         self.is_logging_in = True
         self.login_error = ""
 
-        # Attempt authentication — 4-tuple: (access, refresh, force_change, error)
-        access_token, refresh_token, force_change, error = AuthService.login_user(
-            self.username, self.password
-        )
+        # Attempt authentication — 3-tuple: (user, force_change, error)
+        user, force_change, error = AuthService.login_user(self.username, self.password)
 
-        if error:
+        if error or user is None:
             self.login_error = error
             self.is_logging_in = False
             return rx.toast.error(error)
 
-        # Store tokens
-        self.access_token = access_token
-        self.refresh_token = refresh_token
-
-        # Load user info
-        self._load_user_from_token()
+        # Store user info in state and persist as JSON in localStorage
+        user_dict = {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "is_active": user.is_active,
+        }
+        self.stored_user_json = json.dumps(user_dict)
+        self.current_user = user_dict
+        self.is_authenticated = True
+        self.user_role = user.role
 
         # Handle force password change
         if force_change:
@@ -147,19 +151,14 @@ class AuthState(rx.State):
     @rx.event
     async def logout(self) -> Any:
         """Log out current user."""
-        # Invalidate token on server side (optional)
-        if self.access_token:
-            AuthService.logout_user(self.access_token)
-
-        # Clear local storage
         self._clear_auth_session()
         self.session_expired = False
         return [rx.toast.info("Logged out"), rx.redirect("/login")]
 
-    def _load_user_from_token(self) -> None:
-        """Load user information from stored access token."""
+    def _load_user_from_stored(self) -> None:
+        """Load user information from stored localStorage JSON."""
         # DEV AUTH BYPASS: skip real auth when env flag is set
-        if DEV_AUTH_BYPASS:
+        if DEV_AUTH_BYPASS and not self.stored_user_json:
             self.is_authenticated = True
             self.user_role = "OPERATOR"
             self.current_user = {
@@ -172,45 +171,38 @@ class AuthState(rx.State):
             self.update_last_activity()
             return
 
-        if not self.access_token:
-            self.is_authenticated = False
+        if not self.stored_user_json:
             self.current_user = None
+            self.is_authenticated = False
             self.user_role = ""
             return
 
-        # Validate token and get user
-        user = AuthService.get_current_user_from_token(self.access_token)
-        if user:
-            self.current_user = {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "role": user.role,
-                "is_active": user.is_active,
-            }
+        try:
+            parsed = json.loads(self.stored_user_json)
+            if not isinstance(parsed, dict):
+                self.current_user = None
+                self.is_authenticated = False
+                self.user_role = ""
+                return
+            self.current_user = parsed
             self.is_authenticated = True
-            self.user_role = user.role
-            # Update last activity on successful token load
-            self.update_last_activity()
-        else:
-            # Token invalid or expired
-            self.access_token = ""
-            self.refresh_token = ""
-            self.is_authenticated = False
+            self.user_role = parsed.get("role", "")
+        except (json.JSONDecodeError, TypeError):
             self.current_user = None
+            self.is_authenticated = False
             self.user_role = ""
 
     @rx.event
     async def check_auth(self) -> Any:
         """Check authentication status (called on page load)."""
-        self._load_user_from_token()
+        self._load_user_from_stored()
         if self.is_authenticated:
             return rx.redirect("/home")
 
     @rx.event
     async def check_auth_redirect(self) -> Any:
         """Redirect to /login if not authenticated (called on index on_load)."""
-        self._load_user_from_token()
+        self._load_user_from_stored()
         if not self.is_authenticated:
             return rx.redirect("/login")
 
@@ -229,11 +221,10 @@ class AuthState(rx.State):
         """Change user password.
 
         Validates old password, new password strength, and confirmation match.
-        On success, re-issues tokens and redirects to /home.
+        On success, clears force_change flag and redirects to /home.
         """
         self.cp_error = ""
 
-        # Validate new password vs confirm
         if self.cp_new_password != self.cp_confirm_password:
             self.cp_error = "Passwords do not match"
             return rx.toast.error("Passwords do not match")
@@ -245,7 +236,6 @@ class AuthState(rx.State):
         if not user_id:
             return rx.toast.error("User not found")
 
-        # Call AuthService.change_password
         success, error_msg = AuthService.change_password(
             user_id=int(user_id),
             old_password=self.cp_current_password,
@@ -256,18 +246,8 @@ class AuthState(rx.State):
             self.cp_error = error_msg
             return rx.toast.error(error_msg)
 
-        # Clear the force change flag
         self.needs_password_change = False
 
-        # Re-issue tokens by re-logging in internally
-        new_token, new_refresh, _, re_login_error = AuthService.login_user(
-            self.current_user["username"], self.cp_new_password
-        )
-        if not re_login_error and new_token:
-            self.access_token = new_token
-            self.refresh_token = new_refresh or ""
-
-        # Clear form fields
         self.cp_current_password = ""
         self.cp_new_password = ""
         self.cp_confirm_password = ""

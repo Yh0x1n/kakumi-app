@@ -331,8 +331,8 @@ class TestTransitionResult:
         assert result.error_message is not None
         assert len(result.error_message) > 0
 
-    def test_transition_result_has_timestamp(self):
-        """TransitionResult incluye timestamp de cuando ocurrió."""
+    def test_transition_result_has_warnings(self):
+        """TransitionResult incluye lista de warnings."""
         from kakumi_app.services.tournament_service import TransitionResult
 
         result = TransitionResult(
@@ -342,8 +342,7 @@ class TestTransitionResult:
             new_status=TournamentStatus.INSCRIPCION,
         )
 
-        assert result.timestamp is not None
-        assert isinstance(result.timestamp, datetime.datetime)
+        assert result.warnings == []
 
 
 # =============================================================================
@@ -369,10 +368,8 @@ class TestValidatePreconditionsStub:
 
         assert result is not None
 
-    def test_validate_preconditions_result_has_can_proceed_attr(
-        self, sample_tournament
-    ):
-        """ValidationResult tiene atributo can_proceed (bool)."""
+    def test_validate_preconditions_result_has_valid_attr(self, sample_tournament):
+        """ValidationResult tiene atributo valid (bool)."""
         from kakumi_app.services.tournament_service import TournamentService
 
         result = TournamentService.validate_preconditions(
@@ -380,8 +377,8 @@ class TestValidatePreconditionsStub:
             to_status=TournamentStatus.VERIFICACION,
         )
 
-        assert hasattr(result, "can_proceed")
-        assert isinstance(result.can_proceed, bool)
+        assert hasattr(result, "valid")
+        assert isinstance(result.valid, bool)
 
     def test_validate_preconditions_result_has_errors_list(self, sample_tournament):
         """ValidationResult tiene lista de errors."""
@@ -405,19 +402,16 @@ class TestValidationResultClasses:
     """Tests de ValidationResult y ValidationError como estructuras de datos."""
 
     def test_validation_result_success_structure(self):
-        """Un ValidationResult exitoso tiene can_proceed=True y errors vacíos."""
+        """Un ValidationResult exitoso tiene valid=True y errors vacíos."""
         from kakumi_app.services.tournament_service import ValidationResult
 
         result = ValidationResult(
             valid=True,
-            transition="PLANIFICADO → INSCRIPCION",
             errors=[],
             warnings=[],
-            can_proceed=True,
         )
 
         assert result.valid is True
-        assert result.can_proceed is True
         assert len(result.errors) == 0
 
     def test_validation_error_structure(self):
@@ -611,13 +605,12 @@ class TestValidatePreconditionsLogic:
         """Sin categorías, INSCRIPCION → VERIFICACION debe fallar con NO_CATEGORIES."""
         from kakumi_app.services.tournament_service import TournamentService
 
-        # sample_tournament no tiene categorías
         result = TournamentService.validate_preconditions(
             tournament_id=sample_tournament.id,
             to_status=TournamentStatus.VERIFICACION,
         )
 
-        assert result.can_proceed is False
+        assert result.valid is False
         error_codes = [e.code for e in result.errors]
         assert "NO_CATEGORIES" in error_codes
 
@@ -632,7 +625,7 @@ class TestValidatePreconditionsLogic:
             to_status=TournamentStatus.VERIFICACION,
         )
 
-        assert result.can_proceed is True
+        assert result.valid is True
         error_codes = [e.code for e in result.errors]
         assert "NO_CATEGORIES" not in error_codes
 
@@ -642,13 +635,12 @@ class TestValidatePreconditionsLogic:
         """Sin árbitros, VERIFICACION → EN_CURSO falla con NO_ARBITERS."""
         from kakumi_app.services.tournament_service import TournamentService
 
-        # Asegurar que hay una categoría pero sin árbitros
         result = TournamentService.validate_preconditions(
             tournament_id=sample_tournament.id,
             to_status=TournamentStatus.EN_CURSO,
         )
 
-        assert result.can_proceed is False
+        assert result.valid is False
         error_codes = [e.code for e in result.errors]
         assert "NO_ARBITERS" in error_codes
 
@@ -663,7 +655,7 @@ class TestValidatePreconditionsLogic:
             to_status=TournamentStatus.INSCRIPCION,
         )
 
-        assert result.can_proceed is True
+        assert result.valid is True
         assert len(result.errors) == 0
 
     def test_archivado_transition_has_no_preconditions(self, sample_tournament):
@@ -675,7 +667,7 @@ class TestValidatePreconditionsLogic:
             to_status=TournamentStatus.ARCHIVADO,
         )
 
-        assert result.can_proceed is True
+        assert result.valid is True
 
 
 # =============================================================================
@@ -875,8 +867,8 @@ class TestTournamentWorkspaceState:
         auth_state.user_role = "OPERATOR"
         auth_state.current_user = {"id": 77, "role": "OPERATOR"}
 
-        # Prevent _load_user_from_token from resetting test-set values
-        monkeypatch.setattr(AuthState, "_load_user_from_token", lambda self: None)
+        # Prevent auth reload from resetting test-set values
+        monkeypatch.setattr(AuthState, "_load_user_from_stored", lambda self: None)
 
         async def fake_get_state(self, state_cls):
             assert state_cls is AuthState
@@ -937,7 +929,10 @@ class TestTournamentWorkspaceState:
         state = TournamentState()
         state._current_user_role = "OPERATOR"
 
-        state.current_tournament = {"id": 1, "status": TournamentStatus.PLANIFICADO.value}
+        state.current_tournament = {
+            "id": 1,
+            "status": TournamentStatus.PLANIFICADO.value,
+        }
         assert state.show_open_registrations_action is True
         assert state.show_close_registrations_action is False
         assert state.show_start_competition_action is False
@@ -946,18 +941,27 @@ class TestTournamentWorkspaceState:
         assert state.show_reopen_registrations_action is False
         assert state.show_cancel_tournament_action is False
 
-        state.current_tournament = {"id": 1, "status": TournamentStatus.INSCRIPCION.value}
+        state.current_tournament = {
+            "id": 1,
+            "status": TournamentStatus.INSCRIPCION.value,
+        }
         assert state.show_open_registrations_action is False
         assert state.show_close_registrations_action is True
         assert state.show_reopen_registrations_action is True
 
-        state.current_tournament = {"id": 1, "status": TournamentStatus.VERIFICACION.value}
+        state.current_tournament = {
+            "id": 1,
+            "status": TournamentStatus.VERIFICACION.value,
+        }
         assert state.show_start_competition_action is True
 
         state.current_tournament = {"id": 1, "status": TournamentStatus.EN_CURSO.value}
         assert state.show_finish_competition_action is True
 
-        state.current_tournament = {"id": 1, "status": TournamentStatus.FINALIZADO.value}
+        state.current_tournament = {
+            "id": 1,
+            "status": TournamentStatus.FINALIZADO.value,
+        }
         assert state.show_archive_tournament_action is True
 
     def test_admin_only_cancel_action_hidden_for_operator(self):
@@ -965,7 +969,10 @@ class TestTournamentWorkspaceState:
         from kakumi_app.states.tournament_state import TournamentState
 
         state = TournamentState()
-        state.current_tournament = {"id": 1, "status": TournamentStatus.PLANIFICADO.value}
+        state.current_tournament = {
+            "id": 1,
+            "status": TournamentStatus.PLANIFICADO.value,
+        }
 
         state._current_user_role = "OPERATOR"
         assert state.show_cancel_tournament_action is False
@@ -980,7 +987,7 @@ class TestTournamentWorkspaceState:
         monkeypatch,
     ):
         """UI/state debe delegar a service owner y propagar warnings."""
-        from kakumi_app.services.tournament_service import TransitionResult, Warning
+        from kakumi_app.services.tournament_service import TransitionResult
         from kakumi_app.states.tournament_state import TournamentState
 
         state = TournamentState()
@@ -998,7 +1005,7 @@ class TestTournamentWorkspaceState:
                 tournament_id=tournament_id,
                 old_status=TournamentStatus.PLANIFICADO,
                 new_status=TournamentStatus.INSCRIPCION,
-                warnings=[Warning(code="REMINDER", message="Configurar horario")],
+                warnings=["Configurar horario"],
             )
 
         monkeypatch.setattr(
@@ -1016,13 +1023,9 @@ class TestTournamentWorkspaceState:
             session.add(tournament)
             session.commit()
 
-        events = [
-            event async for event in TournamentState.open_registrations.fn(state)
-        ]
+        events = [event async for event in TournamentState.open_registrations.fn(state)]
 
-        assert calls == [
-            (sample_tournament.id, TournamentStatus.INSCRIPCION, 9)
-        ]
+        assert calls == [(sample_tournament.id, TournamentStatus.INSCRIPCION, 9)]
         assert state.validation_warnings == ["Configurar horario"]
         assert state.transition_error == ""
         assert state.current_tournament is not None
@@ -1124,7 +1127,6 @@ class TestValidationPassesReadyToStart:
         from kakumi_app.models.athlete_model import Athlete
         from kakumi_app.models.referee_model import Referee
 
-        # Crear 3 árbitros disponibles
         with rx.session() as session:
             for i in range(3):
                 ref = Referee(
@@ -1138,7 +1140,6 @@ class TestValidationPassesReadyToStart:
                 )
                 session.add(ref)
 
-            # Crear 4 atletas en la categoría (mínimo WKF)
             for i in range(4):
                 athlete = Athlete(
                     name=f"Atleta {i}",
@@ -1160,7 +1161,7 @@ class TestValidationPassesReadyToStart:
             to_status=TournamentStatus.EN_CURSO,
         )
 
-        assert result.can_proceed is True
+        assert result.valid is True
         error_codes = [e.code for e in result.errors]
         assert "NO_ARBITERS" not in error_codes
         assert "INSUFFICIENT_ATHLETES" not in error_codes
@@ -1178,7 +1179,6 @@ class TestValidationPassesReadyToFinish:
         """Con todos los matches en COMPLETED, EN_CURSO → FINALIZADO debe pasar."""
         from kakumi_app.services.tournament_service import TournamentService
 
-        # Marcar el match como completado
         with rx.session() as session:
             from kakumi_app.models.tournament_model import Match, MatchStatus
 
@@ -1192,7 +1192,7 @@ class TestValidationPassesReadyToFinish:
             to_status=TournamentStatus.FINALIZADO,
         )
 
-        assert result.can_proceed is True
+        assert result.valid is True
         error_codes = [e.code for e in result.errors]
         assert "MATCHES_INCOMPLETE" not in error_codes
 
@@ -1271,11 +1271,10 @@ class TestInsufficientAthletesOneCategory:
             to_status=TournamentStatus.EN_CURSO,
         )
 
-        assert result.can_proceed is False
+        assert result.valid is False
         error_codes = [e.code for e in result.errors]
         assert "INSUFFICIENT_ATHLETES" in error_codes
 
-        # Verificar que el error incluye el nombre de la categoría
         insufficient_errors = [
             e for e in result.errors if e.code == "INSUFFICIENT_ATHLETES"
         ]
@@ -1331,7 +1330,7 @@ class TestMultipleValidationFailures:
             to_status=TournamentStatus.EN_CURSO,
         )
 
-        assert result.can_proceed is False
+        assert result.valid is False
         assert len(result.errors) >= 2
         error_codes = [e.code for e in result.errors]
         assert "INSUFFICIENT_ATHLETES" in error_codes
@@ -1353,7 +1352,7 @@ class TestIncompleteMatchesPreventFinish:
             to_status=TournamentStatus.FINALIZADO,
         )
 
-        assert result.can_proceed is False
+        assert result.valid is False
         error_codes = [e.code for e in result.errors]
         assert "MATCHES_INCOMPLETE" in error_codes
 
@@ -1424,30 +1423,19 @@ class TestWarningOnlyValidation:
     """
 
     def test_validation_result_with_warnings_allows_proceeding(self):
-        """Un ValidationResult con warnings (sin errors) tiene can_proceed=True."""
-        from kakumi_app.services.tournament_service import (
-            ValidationResult,
-            Warning as ServiceWarning,
-        )
+        """Un ValidationResult con warnings (sin errors) tiene valid=True."""
+        from kakumi_app.services.tournament_service import ValidationResult
 
         result = ValidationResult(
             valid=True,
-            transition="VERIFICACION → EN_CURSO",
             errors=[],
-            warnings=[
-                ServiceWarning(
-                    code="NO_SCHEDULE",
-                    message="El horario del torneo no está configurado",
-                )
-            ],
-            can_proceed=True,
+            warnings=["El horario del torneo no está configurado"],
         )
 
-        # can_proceed debe ser True aún con warnings
-        assert result.can_proceed is True
+        assert result.valid is True
         assert len(result.errors) == 0
         assert len(result.warnings) == 1
-        assert result.warnings[0].code == "NO_SCHEDULE"
+        assert result.warnings[0] == "El horario del torneo no está configurado"
 
     def test_warnings_do_not_block_transition_with_required_passing(
         self, sample_tournament, sample_category, sample_user
@@ -1497,8 +1485,8 @@ class TestWarningOnlyValidation:
             to_status=TournamentStatus.EN_CURSO,
         )
 
-        # can_proceed es True cuando todas las REQUIRED pasan
-        assert result.can_proceed is True
+        # valid es True cuando todas las REQUIRED pasan
+        assert result.valid is True
         assert len(result.errors) == 0
 
 
@@ -1555,11 +1543,10 @@ class TestAllCategoriesInsufficientAthletes:
             to_status=TournamentStatus.EN_CURSO,
         )
 
-        assert result.can_proceed is False
+        assert result.valid is False
         insufficient_errors = [
             e for e in result.errors if e.code == "INSUFFICIENT_ATHLETES"
         ]
-        # Debe haber 1 error por cada categoría con insuficientes atletas (2)
         assert len(insufficient_errors) == 2
 
 

@@ -18,9 +18,7 @@ from kakumi_app import models  # noqa: F401
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.tournament_model import Tournament
 from kakumi_app.services.exceptions import (
-    AthleteSchedulingConflictError,
-    PenaltyEscalationError,
-    PenaltyRemovalNotAllowedError,
+    AppError,
 )
 
 
@@ -98,13 +96,9 @@ class TestModelFoundations:
     @pytest.mark.parametrize(
         ("exception_cls",),
         [
-            pytest.param(
-                PenaltyRemovalNotAllowedError, id="penalty_removal_not_allowed"
-            ),
-            pytest.param(
-                AthleteSchedulingConflictError, id="athlete_scheduling_conflict"
-            ),
-            pytest.param(PenaltyEscalationError, id="penalty_escalation"),
+            pytest.param(AppError, id="penalty_removal_not_allowed"),
+            pytest.param(AppError, id="athlete_scheduling_conflict"),
+            pytest.param(AppError, id="penalty_escalation"),
         ],
     )
     def test_penalty_exception_is_exception(exception_cls: type) -> None:

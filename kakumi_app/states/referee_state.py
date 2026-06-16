@@ -15,19 +15,18 @@ from sqlmodel import select
 from kakumi_app.models.referee_model import Referee
 from kakumi_app.services.export_service import ExportService
 from kakumi_app.services.import_service import ImportService
-from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class RefereeState(CrudStateMixin, rx.State):
+class RefereeState(rx.State):
     """State for referee management."""
 
     # Shared CRUD UI vars (mirrored for Reflex state registration)
-    is_editing: bool = CrudStateMixin.is_editing
-    show_form: bool = CrudStateMixin.show_form
-    error_message: str = CrudStateMixin.error_message
-    search_query: str = CrudStateMixin.search_query
-    current_page: int = CrudStateMixin.current_page
-    page_size: int = CrudStateMixin.page_size
+    is_editing: bool = False
+    show_form: bool = False
+    error_message: str = ""
+    search_query: str = ""
+    current_page: int = 1
+    page_size: int = 10
 
     referees: list[dict[str, Any]] = []
     current_referee: Optional[dict[str, Any]] = None
@@ -55,6 +54,30 @@ class RefereeState(CrudStateMixin, rx.State):
 
     # ── Translation helpers ──────────────────────────────────────────
 
+
+    def _set_form_open(self, editing: bool) -> None:
+        """Open form with desired mode and clean inline errors."""
+        self.is_editing = editing
+        self.show_form = True
+        self.error_message = ""
+
+    def apply_search_query(self, value: str) -> None:
+        """Normalize search value and reset pagination cursor."""
+        self.search_query = value.strip()
+        self.current_page = 1
+
+    def paginate_rows(self, rows: list[dict]) -> list[dict]:
+        """Return a deterministic page slice for in-memory rows."""
+        if self.page_size <= 0:
+            return rows
+        start = max(self.current_page - 1, 0) * self.page_size
+        end = start + self.page_size
+        return rows[start:end]
+
+    def reset_filters(self) -> None:
+        """Reset default filter controls used by CRUD pages."""
+        self.search_query = ""
+        self.current_page = 1
     @staticmethod
     def _normalize_license_level(level: str) -> str:
         """Convert display Español license_level to DB English."""
@@ -336,7 +359,8 @@ class RefereeState(CrudStateMixin, rx.State):
     @rx.event
     def cancel_form(self) -> None:
         """Cancel form and hide it using shared mixin logic."""
-        CrudStateMixin.cancel_form(self)
+        self.show_form = False
+        self.error_message = ""
 
     @rx.event
     async def import_referees(self) -> Any:

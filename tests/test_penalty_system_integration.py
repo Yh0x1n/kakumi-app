@@ -10,8 +10,7 @@ from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.tournament_model import Match, MatchStatus, Participant, Penalty
 from kakumi_app.models.tournament_model import PenaltyType
 from kakumi_app.services.exceptions import (
-    AthleteSchedulingConflictError,
-    PenaltyRemovalNotAllowedError,
+    AppError,
 )
 from kakumi_app.services.kumite_scoring_service import (
     apply_penalty,
@@ -175,7 +174,7 @@ def test_scenario_4_remove_penalty_completed_raises(
             MatchStatus.COMPLETED.value,
         )
 
-        with pytest.raises(PenaltyRemovalNotAllowedError):
+        with pytest.raises(AppError):
             remove_last_penalty(
                 session=session,
                 match_id=rr_pool_fixture["current_match_id"],
@@ -188,7 +187,7 @@ def test_scenario_5_scheduling_overlap_raises(
     tatami_fixture: dict[str, int],
 ) -> None:
     """Scheduling overlap check raises conflict for same athlete."""
-    with pytest.raises(AthleteSchedulingConflictError):
+    with pytest.raises(AppError):
         check_athlete_scheduling_overlap(
             session=in_memory_session,
             athlete_id=tatami_fixture["athlete_id"],

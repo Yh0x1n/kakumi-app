@@ -5,7 +5,7 @@ Manages CRUD operations for athletes.
 
 import base64
 import binascii
-from typing import Any, Optional
+from typing import Any
 
 import reflex as rx
 from sqlalchemy.exc import SQLAlchemyError
@@ -14,22 +14,21 @@ from sqlmodel import select
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.services.export_service import ExportService
 from kakumi_app.services.import_service import ImportService
-from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
-class AthleteState(CrudStateMixin, rx.State):
+class AthleteState(rx.State):
     """State for athlete management."""
 
-    # Shared CRUD UI vars (mirrored for Reflex state registration)
-    is_editing: bool = CrudStateMixin.is_editing
-    show_form: bool = CrudStateMixin.show_form
-    error_message: str = CrudStateMixin.error_message
-    search_query: str = CrudStateMixin.search_query
-    current_page: int = CrudStateMixin.current_page
-    page_size: int = CrudStateMixin.page_size
+    # CRUD UI state vars
+    is_editing: bool = False
+    show_form: bool = False
+    error_message: str = ""
+    search_query: str = ""
+    current_page: int = 1
+    page_size: int = 10
 
     athletes: list[dict[str, Any]] = []
-    current_athlete: Optional[dict[str, Any]] = None
+    current_athlete: dict[str, Any] | None = None
 
     # Form fields
     name: str = ""
@@ -52,6 +51,30 @@ class AthleteState(CrudStateMixin, rx.State):
     import_error_count: int = 0
     import_error_messages: list[str] = []
     export_content: str = ""
+
+    def _set_form_open(self, editing: bool) -> None:
+        """Open form with desired mode and clean inline errors."""
+        self.is_editing = editing
+        self.show_form = True
+        self.error_message = ""
+
+    def apply_search_query(self, value: str) -> None:
+        """Normalize search value and reset pagination cursor."""
+        self.search_query = value.strip()
+        self.current_page = 1
+
+    def paginate_rows(self, rows: list[dict]) -> list[dict]:
+        """Return a deterministic page slice for in-memory rows."""
+        if self.page_size <= 0:
+            return rows
+        start = max(self.current_page - 1, 0) * self.page_size
+        end = start + self.page_size
+        return rows[start:end]
+
+    def reset_filters(self) -> None:
+        """Reset default filter controls used by CRUD pages."""
+        self.search_query = ""
+        self.current_page = 1
 
     @staticmethod
     def _normalize_gender(gender: str) -> str:
@@ -154,7 +177,7 @@ class AthleteState(CrudStateMixin, rx.State):
     def set_form_values(
         self,
         _: Any,
-        athlete: Optional[dict[str, Any]] = None,
+        athlete: dict[str, Any] | None = None,
     ) -> None:
         """Set form values for editing or creating."""
         if athlete:
@@ -340,8 +363,9 @@ class AthleteState(CrudStateMixin, rx.State):
 
     @rx.event
     def cancel_form(self) -> None:
-        """Cancel form and hide it using shared mixin logic."""
-        CrudStateMixin.cancel_form(self)
+        """Cancel form and hide it."""
+        self.show_form = False
+        self.error_message = ""
 
     @rx.event
     async def import_athletes(self) -> Any:
@@ -365,8 +389,9 @@ class AthleteState(CrudStateMixin, rx.State):
             return rx.toast.error(self.error_message)
 
         uploaded_file = files[0]
-        self.import_file_name = uploaded_file.filename
-        filename = uploaded_file.filename.lower()
+        file_name = uploaded_file.filename or ""
+        self.import_file_name = file_name
+        filename = file_name.lower()
         if filename.endswith(".xlsx"):
             self.import_file_type = "xlsx"
         else:

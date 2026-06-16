@@ -18,12 +18,9 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
     TournamentStatus,
 )
-from kakumi_app.states.base_crud_state import CrudStateMixin
 
 
 # ── Date format helpers (module-level) ──
-
-
 def _iso_to_display(iso_str: str) -> str:
     """Convert '2026-06-07' → '07/06/2026'. Return '' on failure."""
     if not iso_str:
@@ -96,13 +93,39 @@ def _build_day_cells(
     return cells
 
 
-class TournamentCrudState(CrudStateMixin, rx.State):
+class TournamentCrudState(rx.State):
     """State for tournament CRUD screens in registries module."""
 
-    is_editing: bool = CrudStateMixin.is_editing
-    show_form: bool = CrudStateMixin.show_form
-    error_message: str = CrudStateMixin.error_message
-    search_query: str = CrudStateMixin.search_query
+    is_editing: bool = False
+    show_form: bool = False
+    error_message: str = ""
+    search_query: str = ""
+    current_page: int = 1
+    page_size: int = 10
+
+    def _set_form_open(self, editing: bool) -> None:
+        """Open form with desired mode and clean inline errors."""
+        self.is_editing = editing
+        self.show_form = True
+        self.error_message = ""
+
+    def apply_search_query(self, value: str) -> None:
+        """Normalize search value and reset pagination cursor."""
+        self.search_query = value.strip()
+        self.current_page = 1
+
+    def paginate_rows(self, rows: list[dict]) -> list[dict]:
+        """Return a deterministic page slice for in-memory rows."""
+        if self.page_size <= 0:
+            return rows
+        start = max(self.current_page - 1, 0) * self.page_size
+        end = start + self.page_size
+        return rows[start:end]
+
+    def reset_filters(self) -> None:
+        """Reset default filter controls used by CRUD pages."""
+        self.search_query = ""
+        self.current_page = 1
 
     tournaments: list[dict[str, Any]] = []
     current_tournament: dict[str, Any] | None = None
@@ -442,4 +465,5 @@ class TournamentCrudState(CrudStateMixin, rx.State):
     @rx.event
     def cancel_form(self) -> None:
         """Cancel tournament form using shared mixin behavior."""
-        CrudStateMixin.cancel_form(self)
+        self.show_form = False
+        self.error_message = ""
