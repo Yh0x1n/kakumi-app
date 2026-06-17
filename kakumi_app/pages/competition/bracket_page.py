@@ -5,6 +5,7 @@ from __future__ import annotations
 import reflex as rx
 
 from kakumi_app.components.bracket_round import bracket_round
+from kakumi_app.components.kata_informal_table import kata_informal_table
 from kakumi_app.states.bracket_state import BracketState
 from kakumi_app.utils import BracketCategoryData, BracketRoundData
 
@@ -30,14 +31,22 @@ def _category_section(category: BracketCategoryData) -> rx.Component:
                 align="center",
             ),
             rx.cond(
-                rounds.length() == 0,
-                rx.text("No hay encuentros generados aún"),
-                rx.hstack(
-                    rx.foreach(rounds, bracket_round),
-                    spacing="6",
-                    width="100%",
-                    align="start",
-                    overflow_x="auto",
+                category["kata_flow_mode"] == "INFORMAL",
+                rx.cond(
+                    category["standings"].length() > 0,
+                    kata_informal_table(category["standings"]),
+                    rx.text("No hay puntuaciones registradas aún"),
+                ),
+                rx.cond(
+                    rounds.length() == 0,
+                    rx.text("No hay encuentros generados aún"),
+                    rx.hstack(
+                        rx.foreach(rounds, bracket_round),
+                        spacing="6",
+                        width="100%",
+                        align="start",
+                        overflow_x="auto",
+                    ),
                 ),
             ),
             spacing="4",

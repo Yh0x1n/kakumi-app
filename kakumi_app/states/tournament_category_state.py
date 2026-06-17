@@ -43,6 +43,9 @@ class TournamentCategoryState(rx.State):
     max_belt_rank: str = ""
     competition_system: str = CompetitionSystem.ELIMINATION.value
     bracket_size: str = "8"
+    form_judge_panel_size: str = "3"
+    form_kata_flow_mode: str = "STANDARD"
+    form_scoring_type: str = "average-with-discard"
 
     # ── Display maps for localized selects ──────────────────────────
     # Internal → Spanish display maps (BIJECTIVE for round-trip safety)
@@ -182,6 +185,22 @@ class TournamentCategoryState(rx.State):
         """Set bracket size field."""
         self.bracket_size = value
 
+    def set_judge_panel_size(self, value: str) -> None:
+        """Set judge panel size field."""
+        self.form_judge_panel_size = value
+
+    def set_kata_flow_mode(self, value: str) -> None:
+        """Set kata flow mode; auto-resets scoring_type on toggle."""
+        self.form_kata_flow_mode = value
+        if value == "INFORMAL":
+            self.form_scoring_type = "INFORMAL"
+        else:
+            self.form_scoring_type = "average-with-discard"
+
+    def set_scoring_type(self, value: str) -> None:
+        """Set scoring type field."""
+        self.form_scoring_type = value
+
     def reset_form(self) -> None:
         """Reset category form to manual defaults."""
         self.name = ""
@@ -195,6 +214,9 @@ class TournamentCategoryState(rx.State):
             CompetitionSystem.ELIMINATION.value
         )
         self.bracket_size = "8"
+        self.form_judge_panel_size = "3"
+        self.form_kata_flow_mode = "STANDARD"
+        self.form_scoring_type = "average-with-discard"
         self.current_category = None
 
     def _serialize_category(self, category: TournamentCategory) -> dict[str, Any]:
@@ -212,6 +234,9 @@ class TournamentCategoryState(rx.State):
                 category.competition_system
             ),
             "bracket_size": category.bracket_size,
+            "judge_panel_size": category.judge_panel_size,
+            "kata_flow_mode": category.kata_flow_mode,
+            "scoring_type": category.scoring_type,
             "status": category.status,
         }
 
@@ -278,6 +303,13 @@ class TournamentCategoryState(rx.State):
                 )
             )
             self.bracket_size = str(category.get("bracket_size", 8))
+            self.form_judge_panel_size = str(category.get("judge_panel_size", 3))
+            self.form_kata_flow_mode = category.get(
+                "kata_flow_mode", "STANDARD"
+            )
+            self.form_scoring_type = category.get(
+                "scoring_type", "average-with-discard"
+            )
             return
 
         self.reset_form()
@@ -336,8 +368,27 @@ class TournamentCategoryState(rx.State):
             self.error_message = "Bracket inválido"
             return None
 
+        # Validate kata-specific fields
+        if self._normalize_modality(self.modality) in {
+            Modality.KATA_INDIVIDUAL.value,
+            Modality.KATA_TEAM.value,
+        }:
+            if self.form_judge_panel_size not in {"3", "5", "7"}:
+                self.error_message = "Panel de jueces debe ser 3, 5 o 7"
+                return None
+            if self.form_kata_flow_mode not in {"STANDARD", "INFORMAL"}:
+                self.error_message = "Modo de flujo kata inválido"
+                return None
+            if self.form_scoring_type not in {
+                "average-with-discard",
+                "majority-by-judge",
+                "INFORMAL",
+            }:
+                self.error_message = "Tipo de puntuación inválido"
+                return None
+
         self.error_message = ""
-        return {
+        payload: dict[str, Any] = {
             "name": self.name.strip(),
             "modality": self._normalize_modality(self.modality),
             "gender": self._normalize_gender(self.gender),
@@ -351,6 +402,15 @@ class TournamentCategoryState(rx.State):
             "bracket_size": int(self.bracket_size),
             "tournament_id": self.current_tournament_id,
         }
+        # Include kata fields when modality is kata
+        if payload["modality"] in {
+            Modality.KATA_INDIVIDUAL.value,
+            Modality.KATA_TEAM.value,
+        }:
+            payload["judge_panel_size"] = int(self.form_judge_panel_size)
+            payload["kata_flow_mode"] = self.form_kata_flow_mode
+            payload["scoring_type"] = self.form_scoring_type
+        return payload
 
     @rx.event
     async def save_category(self) -> Any:

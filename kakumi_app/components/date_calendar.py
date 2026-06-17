@@ -28,6 +28,7 @@ def _render_day_cell(cell: dict[str, Any]) -> rx.Component:
         rx.button(
             cell["label"],
             on_click=_make_on_click(cell["day"]),
+            type="button",
             width="32px",
             height="32px",
             padding="0",
@@ -78,6 +79,7 @@ def date_calendar_popover(
         rx.button(
             "\u2039",
             on_click=state.calendar_prev_month,
+            type="button",
             variant="ghost",
             padding="0 8px",
         ),
@@ -85,6 +87,7 @@ def date_calendar_popover(
         rx.button(
             "\u203a",
             on_click=state.calendar_next_month,
+            type="button",
             variant="ghost",
             padding="0 8px",
         ),
@@ -154,6 +157,7 @@ def date_calendar_popover(
             ),
         ),
         on_click=lambda: state.toggle_calendar(target),
+        type="button",
         variant="surface",
         width="100%",
         justify="start",

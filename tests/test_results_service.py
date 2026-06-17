@@ -45,6 +45,7 @@ def _create_category(
     status: str = CategoryStatus.PENDING.value,
     modality: str = Modality.KUMITE_INDIVIDUAL.value,
     competition_system: str = CompetitionSystem.ELIMINATION.value,
+    kata_flow_mode: str | None = None,
 ) -> TournamentCategory:
     with rx.session() as session:
         category = TournamentCategory(
@@ -58,6 +59,8 @@ def _create_category(
             status=status,
             tournament_id=tournament_id,
         )
+        if kata_flow_mode is not None:
+            category.kata_flow_mode = kata_flow_mode
         session.add(category)
         session.commit()
         session.refresh(category)
@@ -144,10 +147,104 @@ def test_get_tournament_view_invalid_id_raises_value_error(invalid_id: int) -> N
         ResultsService.get_tournament_view(invalid_id)
 
 
+def test_get_tournament_view_marks_informal_category() -> None:
+    """INFORMAL categories get is_informal=True and zero match counts."""
+    tournament = _create_tournament(name="Torneo Informal Mark")
+    _create_category(
+        tournament.id,
+        name="Kata Informal",
+        modality=Modality.KATA_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ROUND_ROBIN.value,
+        kata_flow_mode="INFORMAL",
+    )
+    _create_category(
+        tournament.id,
+        name="Kata Standard",
+        modality=Modality.KATA_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+    )
+
+    view = ResultsService.get_tournament_view(tournament.id)
+    categories = view["categories"]
+
+    informal_cat = next(c for c in categories if c["name"] == "Kata Informal")
+    assert informal_cat.get("is_informal") is True
+    assert informal_cat["total_match_count"] == 0
+    assert informal_cat["completed_match_count"] == 0
+
+    standard_cat = next(c for c in categories if c["name"] == "Kata Standard")
+    assert standard_cat.get("is_informal") is False
+
+
+def test_get_tournament_view_returns_podium_names() -> None:
+    """COMPLETED category enriches rows with first_place_name, second_place_name, third_place_display."""
+    tournament = _create_tournament(name="Torneo Podium Names")
+    a1 = _create_athlete_for_test(name="Oro Athlete")
+    a2 = _create_athlete_for_test(name="Plata Athlete")
+    a3 = _create_athlete_for_test(name="Bronce Athlete")
+    category = _create_category(
+        tournament.id,
+        name="Kata Ind",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KATA_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = a1.id
+        db_cat.second_place_id = a2.id
+        db_cat.third_place_ids = str([a3.id])
+        session.add(db_cat)
+        session.commit()
+
+    view = ResultsService.get_tournament_view(tournament.id)
+    rows = view["categories"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["podium_status"] == "available"
+    assert row["first_place_name"] == "Oro Athlete"
+    assert row["second_place_name"] == "Plata Athlete"
+    assert row["third_place_display"] == "Bronce Athlete"
+
+
+def test_get_tournament_view_informal_podium() -> None:
+    """INFORMAL COMPLETED category shows podium names."""
+    tournament = _create_tournament(name="Torneo Informal Podium")
+    a1 = _create_athlete_for_test(name="Informal Oro")
+    a2 = _create_athlete_for_test(name="Informal Plata")
+    category = _create_category(
+        tournament.id,
+        name="Kata Informal",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KATA_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ROUND_ROBIN.value,
+        kata_flow_mode="INFORMAL",
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = a1.id
+        db_cat.second_place_id = a2.id
+        session.add(db_cat)
+        session.commit()
+
+    view = ResultsService.get_tournament_view(tournament.id)
+    rows = view["categories"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["is_informal"] is True
+    assert row["podium_status"] == "available"
+    assert row["first_place_name"] == "Informal Oro"
+    assert row["second_place_name"] == "Informal Plata"
+    assert row["total_match_count"] == 0
+    assert row["completed_match_count"] == 0
+
+
 def test_get_category_view_returns_kata_informal_standings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Kata informal category uses KataInformalService.rank_category()."""
+    """Kata informal category uses KataInformalService.rank_category() with kata_flow_mode."""
     tournament = _create_tournament(name="Torneo Kata")
     category = _create_category(
         tournament.id,
@@ -155,11 +252,16 @@ def test_get_category_view_returns_kata_informal_standings(
         status=CategoryStatus.PENDING.value,
         modality=Modality.KATA_INDIVIDUAL.value,
         competition_system=CompetitionSystem.ROUND_ROBIN.value,
+        kata_flow_mode="INFORMAL",
     )
 
+    # Create athletes that match the fake standings IDs
+    a1 = _create_athlete_for_test(name="Alice")
+    a2 = _create_athlete_for_test(name="Bob")
+    # Ensure fake standings reference real athlete IDs
     fake_standings = [
-        {"athlete_id": 1, "name": "Athlete A", "total_score": 25.5},
-        {"athlete_id": 2, "name": "Athlete B", "total_score": 24.0},
+        {"athlete_id": a1.id, "final_score": 25.5, "victory_points": 6, "needs_extra_kata": False},
+        {"athlete_id": a2.id, "final_score": 24.0, "victory_points": 3, "needs_extra_kata": False},
     ]
 
     monkeypatch.setattr(
@@ -174,7 +276,13 @@ def test_get_category_view_returns_kata_informal_standings(
     assert result["category"]["name"] == "Kata Informal RR"
     assert result["category"]["modality"] == Modality.KATA_INDIVIDUAL.value
     assert result["category"]["competition_system"] == CompetitionSystem.ROUND_ROBIN.value
-    assert result["standings"] == fake_standings
+    # Verify enriched standings with names
+    assert result["standings"] is not None
+    assert len(result["standings"]) == 2
+    assert result["standings"][0]["name"] == "Alice"
+    assert result["standings"][0]["total_score"] == "25.500"
+    assert result["standings"][1]["name"] == "Bob"
+    assert result["standings"][1]["total_score"] == "24.000"
     assert result["matches"] == []
 
 

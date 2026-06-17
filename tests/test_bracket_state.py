@@ -6,7 +6,15 @@ from reflex.istate.data import PageData
 from sqlmodel import Session as SQLModelSession
 
 from kakumi_app.models.athlete_model import Athlete
-from kakumi_app.models.tournament_model import Match, MatchType, TournamentCategory
+from kakumi_app.models.kata_model import KataInformalPerformance
+from kakumi_app.models.tournament_model import (
+    CategoryGender,
+    CompetitionSystem,
+    Match,
+    MatchType,
+    Modality,
+    TournamentCategory,
+)
 from kakumi_app.states.bracket_state import BracketState
 
 
@@ -160,3 +168,145 @@ async def test_load_bracket_db_failure_sets_generic_safe_error(
     assert state.categories == []
     assert state.error_message == "Error cargando datos"
     assert state.is_loading is False
+
+
+@pytest.mark.anyio
+async def test_load_bracket_informal_category_has_kata_flow_mode(
+    sample_tournament,
+    sample_category,
+) -> None:
+    """INFORMAL category gets kata_flow_mode field in bracket data."""
+    with rx.session() as session:
+        cat = session.get(TournamentCategory, sample_category.id)
+        cat.kata_flow_mode = "INFORMAL"
+        session.add(cat)
+        session.commit()
+
+    state = BracketState()
+    _set_route_param(state, "id", str(sample_tournament.id))
+
+    await BracketState.load_bracket.fn(state)
+
+    assert state.error_message == ""
+    assert len(state.categories) == 1
+    assert state.categories[0]["kata_flow_mode"] == "INFORMAL"
+
+
+@pytest.mark.anyio
+async def test_load_bracket_informal_category_without_performances_empty_standings(
+    sample_tournament,
+) -> None:
+    """INFORMAL category with no performances has empty standings list."""
+    with rx.session() as session:
+        cat = TournamentCategory(
+            name="Kata Informal Empty",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender=CategoryGender.MIXED.value,
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            kata_flow_mode="INFORMAL",
+        )
+        session.add(cat)
+        session.commit()
+        session.refresh(cat)
+
+    state = BracketState()
+    _set_route_param(state, "id", str(sample_tournament.id))
+
+    await BracketState.load_bracket.fn(state)
+
+    assert state.error_message == ""
+    assert len(state.categories) == 1
+    assert state.categories[0]["kata_flow_mode"] == "INFORMAL"
+    assert state.categories[0]["standings"] == []
+
+
+@pytest.mark.anyio
+async def test_load_bracket_informal_category_with_performances_shows_standings(
+    sample_tournament,
+) -> None:
+    """INFORMAL category with performances loads standings with athlete names."""
+    with rx.session() as session:
+        cat = TournamentCategory(
+            name="Kata Informal With Data",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender=CategoryGender.MIXED.value,
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            kata_flow_mode="INFORMAL",
+        )
+        session.add(cat)
+        session.commit()
+        session.refresh(cat)
+
+        athlete = Athlete(
+            name="Atleta Uno",
+            age=20,
+            gender="MALE",
+            email="atleta-uno-bracket@test.local",
+            license_number="LIC-BRACKET-001",
+        )
+        session.add(athlete)
+        session.commit()
+        session.refresh(athlete)
+
+        perf = KataInformalPerformance(
+            category_id=cat.id,
+            athlete_id=athlete.id,
+            judge_scores="7.5,7.8,8.0,7.6,7.9",
+            final_score=7.75,
+            lowest_score=7.5,
+            highest_score=8.0,
+            max_judge_score=7.9,
+            status="COMPLETED",
+        )
+        session.add(perf)
+        session.commit()
+
+    state = BracketState()
+    _set_route_param(state, "id", str(sample_tournament.id))
+
+    await BracketState.load_bracket.fn(state)
+
+    assert state.error_message == ""
+    assert len(state.categories) == 1
+    assert state.categories[0]["kata_flow_mode"] == "INFORMAL"
+    standings = state.categories[0]["standings"]
+    assert len(standings) > 0
+    assert standings[0]["athlete_name"] == "Atleta Uno"
+    assert standings[0]["rank"] == 1
+    assert "final_score" in standings[0]
+    assert "needs_extra_kata" in standings[0]
+
+
+@pytest.mark.anyio
+async def test_load_bracket_standard_category_unaffected_by_standings_logic(
+    sample_tournament,
+    sample_category,
+) -> None:
+    """STANDARD category does not get standings or kata_flow_mode=INFORMAL."""
+    _create_match_with_participants(
+        sample_category.id,
+        sample_tournament.id,
+        aka_name="Aka Standard",
+        ao_name="Ao Standard",
+    )
+    state = BracketState()
+    _set_route_param(state, "id", str(sample_tournament.id))
+
+    await BracketState.load_bracket.fn(state)
+
+    assert state.error_message == ""
+    assert len(state.categories) == 1
+    assert state.categories[0]["kata_flow_mode"] == "STANDARD"
+    assert state.categories[0]["standings"] == []
+    assert len(state.categories[0]["rounds"]) > 0
+    assert state.categories[0]["rounds"][0]["matches"][0]["aka_label"] == "Aka Standard"

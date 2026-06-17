@@ -338,3 +338,133 @@ async def test_delete_category_rejects_cross_tournament_delete(
     assert result == "Categoría fuera del torneo seleccionado"
     assert state.error_message == "Categoría fuera del torneo seleccionado"
     assert persisted is not None
+
+
+@pytest.mark.anyio
+async def test_validate_form_kata_fields_valid(
+    sample_tournament,
+) -> None:
+    """_validate_form() succeeds with valid kata-specific fields."""
+    state = TournamentCategoryState()
+    await TournamentCategoryState.set_tournament_context.fn(state, sample_tournament.id)
+    state.name = "Kata Valid Test"
+    state.modality = "Kata Individual"
+    state.gender = "Masculino"
+    state.min_age = "18"
+    state.max_age = "35"
+    state.competition_system = "Eliminación Directa"
+    state.bracket_size = "8"
+    state.form_judge_panel_size = "5"
+    state.form_kata_flow_mode = "STANDARD"
+    state.form_scoring_type = "average-with-discard"
+
+    payload = state._validate_form()
+
+    assert payload is not None
+    assert payload["name"] == "Kata Valid Test"
+    assert payload["judge_panel_size"] == 5
+    assert payload["kata_flow_mode"] == "STANDARD"
+    assert payload["scoring_type"] == "average-with-discard"
+
+
+@pytest.mark.anyio
+async def test_validate_form_rejects_invalid_judge_panel_size(
+    sample_tournament,
+) -> None:
+    """_validate_form() rejects judge_panel_size not in {3,5,7}."""
+    state = TournamentCategoryState()
+    await TournamentCategoryState.set_tournament_context.fn(state, sample_tournament.id)
+    state.name = "Kata Invalid Panel"
+    state.modality = "Kata Individual"
+    state.gender = "Masculino"
+    state.min_age = "18"
+    state.max_age = "35"
+    state.competition_system = "Eliminación Directa"
+    state.bracket_size = "8"
+    state.form_judge_panel_size = "2"
+
+    payload = state._validate_form()
+
+    assert payload is None
+    assert state.error_message == "Panel de jueces debe ser 3, 5 o 7"
+
+
+@pytest.mark.anyio
+async def test_validate_form_rejects_invalid_scoring_type(
+    sample_tournament,
+) -> None:
+    """_validate_form() rejects invalid scoring_type for STANDARD flow."""
+    state = TournamentCategoryState()
+    await TournamentCategoryState.set_tournament_context.fn(state, sample_tournament.id)
+    state.name = "Kata Invalid Score"
+    state.modality = "Kata Individual"
+    state.gender = "Masculino"
+    state.min_age = "18"
+    state.max_age = "35"
+    state.competition_system = "Eliminación Directa"
+    state.bracket_size = "8"
+    state.form_judge_panel_size = "3"
+    state.form_kata_flow_mode = "STANDARD"
+    state.form_scoring_type = "INVALID"
+
+    payload = state._validate_form()
+
+    assert payload is None
+    assert state.error_message == "Tipo de puntuación inválido"
+
+
+@pytest.mark.anyio
+async def test_validate_form_informal_flow_uses_informal_scoring(
+    sample_tournament,
+) -> None:
+    """INFORMAL kata_flow_mode forces scoring_type to INFORMAL."""
+    state = TournamentCategoryState()
+    await TournamentCategoryState.set_tournament_context.fn(state, sample_tournament.id)
+    state.name = "Kata Informal"
+    state.modality = "Kata Individual"
+    state.gender = "Masculino"
+    state.min_age = "18"
+    state.max_age = "35"
+    state.competition_system = "Eliminación Directa"
+    state.bracket_size = "8"
+    state.form_judge_panel_size = "3"
+    state.form_kata_flow_mode = "INFORMAL"
+    state.form_scoring_type = "INFORMAL"
+
+    payload = state._validate_form()
+
+    assert payload is not None
+    assert payload["kata_flow_mode"] == "INFORMAL"
+    assert payload["scoring_type"] == "INFORMAL"
+
+
+@pytest.mark.anyio
+async def test_serialize_category_includes_kata_fields(
+    sample_tournament,
+) -> None:
+    """_serialize_category() includes judge_panel_size, kata_flow_mode, scoring_type."""
+    with rx.session() as session:
+        category = TournamentCategory(
+            name="Kata Serialize Test",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender="MALE",
+            min_age=18,
+            max_age=35,
+            competition_system=CompetitionSystem.ELIMINATION.value,
+            bracket_size=8,
+            tournament_id=sample_tournament.id,
+            judge_panel_size=5,
+            kata_flow_mode="INFORMAL",
+            scoring_type="INFORMAL",
+        )
+        session.add(category)
+        session.commit()
+        session.refresh(category)
+
+    state = TournamentCategoryState()
+    result = state._serialize_category(category)
+
+    assert result["judge_panel_size"] == 5
+    assert result["kata_flow_mode"] == "INFORMAL"
+    assert result["scoring_type"] == "INFORMAL"
+    assert result["name"] == "Kata Serialize Test"

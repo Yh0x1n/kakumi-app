@@ -224,9 +224,8 @@ class TournamentCategory(rx.Model, table=True):
     # Campos opcionales para Kata
     min_belt_rank: Optional[str] = Field(default=None, max_length=10)
     max_belt_rank: Optional[str] = Field(default=None, max_length=10)
-    flag_count: Optional[int] = Field(default=None)  # 1-3 flags
     has_bunkai: bool = Field(default=False)
-    judge_panel_size: int = Field(default=3)  # 3..5
+    judge_panel_size: int = Field(default=3)  # 3..7
     scoring_type: Optional[str] = Field(default=None)  # STANDARD, FLAG
     kata_decision_rule: str = Field(default=KataDecisionRule.AVERAGE_WITH_DISCARD.value)
     kata_flow_mode: str = Field(default=KataFlowMode.STANDARD.value)
