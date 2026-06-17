@@ -67,6 +67,8 @@ class BracketCategoryData(TypedDict):
     competition_system: str
     status: str
     rounds: list[BracketRoundData]
+    kata_flow_mode: str
+    standings: list[dict[str, object]]
 
 
 class TournamentBracketData(TypedDict):

@@ -9,8 +9,17 @@ import reflex as rx
 from reflex.istate.data import PageData
 from sqlmodel import select
 
+from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.kata_model import KataJudgeScore
-from kakumi_app.models.tournament_model import Match, MatchStatus
+from kakumi_app.models.tournament_model import (
+    CategoryGender,
+    CategoryStatus,
+    CompetitionSystem,
+    Match,
+    MatchStatus,
+    Modality,
+    TournamentCategory,
+)
 from kakumi_app.services.kata_scoring_service import KataScoringService
 from kakumi_app.states.kata_match_state import KataMatchState
 
@@ -693,3 +702,370 @@ def test_publish_display_snapshot_skipped_when_viewer_disconnected(
     assert publish_calls == []
     assert state.public_display_key == "kata-key"
     assert state.display_status == ""
+
+
+# ── Helpers for informal category tests ──
+
+
+def _create_informal_cat(
+    tournament_id: int, *, judge_panel_size: int = 5
+) -> TournamentCategory:
+    """Helper: create an informal tournament category in the DB."""
+    with rx.session() as session:
+        cat = TournamentCategory(
+            name="Kata Informal TDD",
+            modality=Modality.KATA_INDIVIDUAL.value,
+            gender=CategoryGender.MIXED.value,
+            min_age=16,
+            max_age=40,
+            competition_system=CompetitionSystem.ROUND_ROBIN.value,
+            bracket_size=8,
+            status=CategoryStatus.IN_PROGRESS.value,
+            tournament_id=tournament_id,
+            judge_panel_size=judge_panel_size,
+            kata_flow_mode="INFORMAL",
+        )
+        session.add(cat)
+        session.commit()
+        session.refresh(cat)
+        return cat
+
+
+def _create_athlete(name: str, email: str) -> Athlete:
+    """Helper: create a generic test athlete in the DB."""
+    with rx.session() as session:
+        athlete = Athlete(
+            name=name,
+            age=26,
+            gender="MALE",
+            email=email,
+            belt_rank="Negro",
+            is_active=True,
+        )
+        session.add(athlete)
+        session.commit()
+        session.refresh(athlete)
+        return athlete
+
+
+# ── mount_informal_category tests ──
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_mount_informal_category_sets_kata_mode(sample_tournament) -> None:
+    """mount_informal_category sets kata_mode=INFORMAL and is_exhibition=False."""
+    category = _create_informal_cat(sample_tournament.id)
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    assert state.kata_mode == "INFORMAL"
+    assert state.is_exhibition_mode is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_mount_informal_category_loads_roster(sample_tournament) -> None:
+    """mount_informal_category populates roster and standings."""
+    category = _create_informal_cat(sample_tournament.id)
+    _create_athlete("Mount Athlete", "mount@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    assert state.informal_category_id == category.id
+    assert len(state.informal_roster) == 1
+    assert state.informal_roster[0]["name"] == "Mount Athlete"
+    assert isinstance(state.informal_standings, list)
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_mount_informal_category_sets_judge_panel_size(sample_tournament) -> None:
+    """mount_informal_category reads judge_panel_size from category."""
+    category = _create_informal_cat(sample_tournament.id, judge_panel_size=3)
+    _create_athlete("Panel Athlete", "panel@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    assert state.judge_panel_size == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_informal_roster_labels_show_only_name(sample_tournament) -> None:
+    """informal_roster_labels contains only athlete names, no 'ID - ' prefix."""
+    category = _create_informal_cat(sample_tournament.id)
+    _create_athlete("Maria", "maria@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    labels = state.informal_roster_labels
+    assert len(labels) == 1
+    assert labels[0] == "Maria"
+    assert " - " not in labels[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_informal_selected_athlete_label_shows_name(sample_tournament) -> None:
+    """informal_selected_athlete_label returns athlete name only."""
+    category = _create_informal_cat(sample_tournament.id)
+    athlete = _create_athlete("Juan", "juan@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    label = state.informal_selected_athlete_label
+    assert label == "Juan"
+    assert " - " not in label
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_select_informal_athlete_by_name(sample_tournament) -> None:
+    """select_informal_athlete_from_label matches by name, not ID prefix."""
+    category = _create_informal_cat(sample_tournament.id)
+    _create_athlete("Alpha", "alpha@test.local")
+    athlete_beta = _create_athlete("Beta", "beta@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    await _event_fn(KataMatchState.select_informal_athlete_from_label)(state, "Beta")
+
+    assert state.informal_selected_athlete_id == athlete_beta.id
+    assert state.error_message == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_finalize_category_without_category_errors(sample_tournament) -> None:
+    """finalize_category errors when no informal category is active."""
+    state = KataMatchState()
+    state.informal_category_id = 0
+
+    events = [event async for event in state.finalize_category()]
+
+    assert state.error_message != ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_finalize_category_success(sample_tournament) -> None:
+    """finalize_category succeeds when all athletes have been scored."""
+    from kakumi_app.services.kata_informal_service import KataInformalService
+
+    category = _create_informal_cat(sample_tournament.id)
+    a1 = _create_athlete("F A1", "fa1@test.local")
+    a2 = _create_athlete("F A2", "fa2@test.local")
+    a3 = _create_athlete("F A3", "fa3@test.local")
+
+    for athlete in (a1, a2, a3):
+        KataInformalService.save_performance(
+            category_id=category.id,
+            athlete_id=athlete.id,
+            judge_scores=[8.0, 8.0, 8.0, 8.0, 8.0],
+        )
+
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    events = [event async for event in state.finalize_category()]
+
+    assert state.error_message == ""
+    assert state.result_message != ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_mount_informal_category_invalid_id_handles_gracefully(
+    sample_tournament,
+) -> None:
+    """mount_informal_category with non-existent category sets empty state."""
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, 99999)
+
+    assert state.informal_category_id == 0
+    assert state.informal_roster == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_informal_roster_labels_multiple_athletes(sample_tournament) -> None:
+    """All roster labels show name only regardless of athlete count."""
+    category = _create_informal_cat(sample_tournament.id)
+    _create_athlete("Alpha", "alpha2@test.local")
+    _create_athlete("Beta", "beta2@test.local")
+    _create_athlete("Gamma", "gamma@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    labels = state.informal_roster_labels
+    assert len(labels) == 3
+    for label in labels:
+        assert " - " not in label, f"Label '{label}' should not contain ' - '"
+    assert "Alpha" in labels
+    assert "Beta" in labels
+    assert "Gamma" in labels
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_select_informal_athlete_nonexistent_name_resets_selection(
+    sample_tournament,
+) -> None:
+    """Selecting a non-existent name resets selected_athlete_id to 0."""
+    category = _create_informal_cat(sample_tournament.id)
+    _create_athlete("Only", "only@test.local")
+    state = KataMatchState()
+
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    await _event_fn(KataMatchState.select_informal_athlete_from_label)(
+        state, "NonExistent"
+    )
+
+    assert state.informal_selected_athlete_id == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_finalize_category_errors_when_not_all_scored(
+    sample_tournament,
+) -> None:
+    """finalize_category errors when some athletes lack scores."""
+    from kakumi_app.services.kata_informal_service import KataInformalService
+
+    category = _create_informal_cat(sample_tournament.id)
+    a1 = _create_athlete("Scored Once", "scored1@test.local")
+    a2 = _create_athlete("Scored Twice", "scored2@test.local")
+    a3 = _create_athlete("Unscored", "noscore@test.local")
+
+    # Score only 2 of 3 athletes
+    KataInformalService.save_performance(
+        category_id=category.id,
+        athlete_id=a1.id,
+        judge_scores=[8.0, 8.0, 8.0, 8.0, 8.0],
+    )
+    KataInformalService.save_performance(
+        category_id=category.id,
+        athlete_id=a2.id,
+        judge_scores=[7.0, 7.0, 7.0, 7.0, 7.0],
+    )
+
+    state = KataMatchState()
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    events = [event async for event in state.finalize_category()]
+
+    assert state.error_message != ""
+    assert "sin puntuar" in state.error_message
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_finalize_informal_performance_auto_finalizes_when_all_scored(
+    sample_tournament,
+) -> None:
+    """Scoring the last athlete auto-finalizes the category."""
+    from kakumi_app.services.kata_informal_service import KataInformalService
+    from kakumi_app.models.tournament_model import CategoryStatus
+
+    category = _create_informal_cat(sample_tournament.id)
+    a1 = _create_athlete("A1 AutoFinal", "af1@test.local")
+    a2 = _create_athlete("A2 AutoFinal", "af2@test.local")
+    a3 = _create_athlete("A3 AutoFinal", "af3@test.local")
+
+    state = KataMatchState()
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    # Get roster order (randomized)
+    roster_ids = [row["id"] for row in state.informal_roster if "id" in row]
+    assert len(roster_ids) == 3
+    first_id, second_id, third_id = roster_ids
+
+    # Score first athlete
+    state.informal_selected_athlete_id = first_id
+    for slot in ("J1", "J2", "J3", "J4", "J5"):
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.0")
+    events = [event async for event in state.finalize_match()]
+
+    # Category should NOT be finalized yet — other athletes still unscored
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        assert db_cat.status != CategoryStatus.COMPLETED.value
+    assert state.informal_selected_athlete_id == second_id
+
+    # Score second athlete
+    state.informal_selected_athlete_id = second_id
+    for slot in ("J1", "J2", "J3", "J4", "J5"):
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "7.5")
+    events = [event async for event in state.finalize_match()]
+
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        assert db_cat.status != CategoryStatus.COMPLETED.value
+    assert state.informal_selected_athlete_id == third_id
+
+    # Score third athlete — last -> auto-finalize
+    state.informal_selected_athlete_id = third_id
+    for slot in ("J1", "J2", "J3", "J4", "J5"):
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "7.0")
+    events = [event async for event in state.finalize_match()]
+
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        assert db_cat.status == CategoryStatus.COMPLETED.value
+
+    assert state.error_message == ""
+    assert state.result_message != ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_finalize_informal_performance_advances_when_more_remain(
+    sample_tournament,
+) -> None:
+    """Scoring an athlete when others remain advances to next athlete."""
+    from kakumi_app.models.tournament_model import CategoryStatus
+
+    category = _create_informal_cat(sample_tournament.id)
+    a1 = _create_athlete("A1 Advance", "ad1@test.local")
+    a2 = _create_athlete("A2 Advance", "ad2@test.local")
+    a3 = _create_athlete("A3 Advance", "ad3@test.local")
+
+    state = KataMatchState()
+    await _event_fn(KataMatchState.mount_informal_category)(state, category.id)
+
+    # Get first athlete from roster (order is random)
+    first_id = state.informal_selected_athlete_id
+    assert first_id > 0
+
+    # Score the first athlete
+    state.informal_selected_athlete_id = first_id
+    for slot in ("J1", "J2", "J3", "J4", "J5"):
+        await _event_fn(KataMatchState.set_informal_judge_score)(state, slot, "8.0")
+
+    events = [event async for event in state.finalize_match()]
+
+    # Should advance to next, NOT finalize
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        assert db_cat.status != CategoryStatus.COMPLETED.value
+
+    # Should have advanced to a different athlete
+    assert state.informal_selected_athlete_id != first_id
+    assert state.informal_selected_athlete_id > 0
+    assert state.error_message == ""
+    assert state.result_message == ""

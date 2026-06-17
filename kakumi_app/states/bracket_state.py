@@ -17,6 +17,7 @@ from kakumi_app.models.tournament_model import (
     Tournament,
     TournamentCategory,
 )
+from kakumi_app.services.kata_informal_service import KataInformalService
 from kakumi_app.utils import (
     BracketCategoryData,
     TournamentBracketData,
@@ -61,6 +62,39 @@ class BracketState(rx.State):
             select(model.id, model.name).where(model.id.in_(sorted(ids)))
         ).all()
         return {row[0]: row[1] for row in rows}
+
+    @staticmethod
+    def _build_informal_standings(category_id: int) -> list[dict[str, object]]:
+        """Build standings payload for an INFORMAL kata category."""
+        ranking = KataInformalService.rank_category(category_id)
+        if not ranking:
+            return []
+
+        athlete_ids = {
+            int(row["athlete_id"])
+            for row in ranking
+            if row.get("athlete_id") is not None
+        }
+        with rx.session() as session:
+            rows = session.exec(
+                select(Athlete.id, Athlete.name).where(
+                    Athlete.id.in_(sorted(athlete_ids))
+                )
+            ).all() if athlete_ids else []
+        name_by_id: dict[int, str] = {row[0]: row[1] for row in rows}
+
+        return [
+            {
+                "rank": index + 1,
+                "athlete_id": int(row["athlete_id"]),
+                "athlete_name": name_by_id.get(
+                    int(row["athlete_id"]), "—"
+                ),
+                "final_score": f"{float(row['final_score']):.3f}",
+                "needs_extra_kata": bool(row.get("needs_extra_kata", False)),
+            }
+            for index, row in enumerate(ranking)
+        ]
 
     @rx.event
     async def load_bracket(self) -> None:
@@ -146,6 +180,10 @@ class BracketState(rx.State):
                     "modality": category.modality,
                     "competition_system": category.competition_system,
                     "status": category.status,
+                    "kata_flow_mode": getattr(
+                        category, "kata_flow_mode", "STANDARD"
+                    ),
+                    "standings": [],
                     "rounds": group_matches_by_round(
                         build_match_cards(
                             matches_by_category.get(category.id, []),
@@ -161,6 +199,12 @@ class BracketState(rx.State):
                 }
                 for category in categories
             ]
+
+            for cat_data in self.categories:
+                if cat_data["kata_flow_mode"] == "INFORMAL":
+                    cat_data["standings"] = self._build_informal_standings(
+                        cat_data["id"]
+                    )
         except ValueError:
             self.error_message = "ID de torneo inválido"
         except Exception:

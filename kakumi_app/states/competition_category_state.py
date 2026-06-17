@@ -18,7 +18,7 @@ from kakumi_app.models.tournament_model import (
     TournamentCategory,
 )
 from kakumi_app.services.kata_informal_service import KataInformalService
-from kakumi_app.states.kata_informal_state import KataInformalState
+from kakumi_app.states.kata_match_state import KataMatchState
 from kakumi_app.utils import (
     BELT_RANKS,
     BELT_RANK_ORDER,
@@ -177,7 +177,7 @@ class CompetitionCategoryState(rx.State):
                     for index, row in enumerate(standings)
                 ]
                 self.matches = []
-                return KataInformalState.load_category_session
+                return KataMatchState.mount_informal_category(category.id)
             else:
                 self.matches = build_match_cards(
                     matches,

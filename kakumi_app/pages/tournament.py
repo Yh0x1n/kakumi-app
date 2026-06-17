@@ -296,6 +296,39 @@ def _categories_card() -> rx.Component:
                                     ),
                                     width="100%",
                                 ),
+                                rx.cond(
+                                    (state.modality == "Kata Individual")
+                                    | (state.modality == "Kata por Equipos"),
+                                    rx.vstack(
+                                        rx.select(
+                                            ["3", "5", "7"],
+                                            value=state.form_judge_panel_size,
+                                            on_change=state.set_judge_panel_size,
+                                        ),
+                                        rx.select(
+                                            ["STANDARD", "INFORMAL"],
+                                            value=state.form_kata_flow_mode,
+                                            on_change=state.set_kata_flow_mode,
+                                        ),
+                                        rx.cond(
+                                            state.form_kata_flow_mode == "INFORMAL",
+                                            rx.text(
+                                                "INFORMAL (automático)",
+                                                color_scheme="gray",
+                                            ),
+                                            rx.select(
+                                                [
+                                                    "average-with-discard",
+                                                    "majority-by-judge",
+                                                ],
+                                                value=state.form_scoring_type,
+                                                on_change=state.set_scoring_type,
+                                            ),
+                                        ),
+                                        spacing="3",
+                                        width="100%",
+                                    ),
+                                ),
                                 rx.hstack(
                                     rx.button(
                                         "Guardar categoría",
