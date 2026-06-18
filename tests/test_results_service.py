@@ -8,6 +8,7 @@ import pytest
 import reflex as rx
 
 from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.kata_model import KataInformalPerformance
 from kakumi_app.models.tournament_model import (
     CategoryStatus,
     CompetitionSystem,
@@ -342,7 +343,7 @@ def _create_athlete_for_test(*, name: str) -> Athlete:
             name=name,
             age=31,
             gender="MALE",
-            email=f"{name.lower().replace(' ','')}@test.com",
+            email=f"{name.lower().replace(' ', '')}@test.com",
         )
         session.add(athlete)
         session.commit()
@@ -519,9 +520,7 @@ def test_get_statistics_view_aggregates_through_category_ids() -> None:
         name="Kumite NoTournID",
         status=CategoryStatus.COMPLETED.value,
     )
-    _create_match(
-        category.id, status=MatchStatus.COMPLETED.value, tournament_id=None
-    )
+    _create_match(category.id, status=MatchStatus.COMPLETED.value, tournament_id=None)
 
     result = ResultsService.get_statistics_view(tournament.id)
 
@@ -597,3 +596,279 @@ def test_get_podiums_view_invalid_id_raises_value_error() -> None:
         ResultsService.get_podiums_view(-5)
     with pytest.raises(ValueError):
         ResultsService.get_podiums_view(999999)
+
+
+# ==============================================================================
+# Recent Winners — RED tests for get_recent_winners()
+# ==============================================================================
+
+
+def _create_kata_informal_performance(
+    category_id: int,
+    athlete_id: int,
+    final_score: float,
+) -> None:
+    """Create a scored kata informal performance row."""
+    with rx.session() as session:
+        perf = KataInformalPerformance(
+            category_id=category_id,
+            athlete_id=athlete_id,
+            sequence_number=1,
+            performance_round=1,
+            status="SCORED",
+            final_score=final_score,
+        )
+        session.add(perf)
+        session.commit()
+
+
+def test_get_recent_winners_empty_db() -> None:
+    """No tournaments at all → empty list."""
+    result = ResultsService.get_recent_winners()
+    assert result == []
+
+
+def test_get_recent_winners_no_completed_categories() -> None:
+    """Tournament exists but no COMPLETED categories → empty list."""
+    tournament = _create_tournament(name="No Winners Yet")
+    _create_category(
+        tournament.id,
+        name="Pending Cat",
+        status=CategoryStatus.PENDING.value,
+    )
+    result = ResultsService.get_recent_winners()
+    assert result == []
+
+
+def test_get_recent_winners_single_kumite() -> None:
+    """1 completed kumite category with winner + match → card with correct data."""
+    tournament = _create_tournament(name="Kumite Cup")
+    athlete = _create_athlete_for_test(name="Kumite Champ")
+    category = _create_category(
+        tournament.id,
+        name="Kumite -70kg",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KUMITE_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+    )
+    # Assign winner
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = athlete.id
+        session.add(db_cat)
+        session.commit()
+    # Create match where athlete wins as aka
+    with rx.session() as session:
+        match = Match(
+            category_id=category.id,
+            round=1,
+            match_number=1,
+            position=1,
+            match_type=MatchType.FINAL.value,
+            status=MatchStatus.COMPLETED.value,
+            aka_id=athlete.id,
+            ao_id=None,
+            aka_score=3,
+            ao_score=0,
+            winner_id=athlete.id,
+        )
+        session.add(match)
+        session.commit()
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 1
+    card = result[0]
+    assert card["winner_name"] == "Kumite Champ"
+    assert card["winner_score"] == "3"
+    assert card["category_name"] == "Kumite -70kg"
+    assert card["tournament_name"] == "Kumite Cup"
+    assert card["category_id"] == category.id
+
+
+def test_get_recent_winners_single_kata_informal() -> None:
+    """1 completed kata informal category → score from final_score."""
+    tournament = _create_tournament(name="Kata Fest")
+    athlete = _create_athlete_for_test(name="Kata Master")
+    category = _create_category(
+        tournament.id,
+        name="Kata Informal Senior",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KATA_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ROUND_ROBIN.value,
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = athlete.id
+        session.add(db_cat)
+        session.commit()
+    _create_kata_informal_performance(
+        category_id=category.id,
+        athlete_id=athlete.id,
+        final_score=25.5,
+    )
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 1
+    assert result[0]["winner_name"] == "Kata Master"
+    assert result[0]["winner_score"] == "25.5"
+    assert result[0]["category_name"] == "Kata Informal Senior"
+
+
+def test_get_recent_winners_limits_to_4() -> None:
+    """6 completed categories → only 4, ordered by id DESC."""
+    tournament = _create_tournament(name="Big Event")
+    categories: list[TournamentCategory] = []
+    for i in range(6):
+        athlete = _create_athlete_for_test(name=f"Athlete {i}")
+        cat = _create_category(
+            tournament.id,
+            name=f"Cat {i}",
+            status=CategoryStatus.COMPLETED.value,
+            modality=Modality.KUMITE_INDIVIDUAL.value,
+            competition_system=CompetitionSystem.ELIMINATION.value,
+        )
+        with rx.session() as session:
+            db_cat = session.get(TournamentCategory, cat.id)
+            assert db_cat is not None
+            db_cat.first_place_id = athlete.id
+            session.add(db_cat)
+            session.commit()
+        categories.append(cat)
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 4
+    # Ordered by category id DESC → highest ids first
+    expected_ids = sorted([c.id for c in categories], reverse=True)[:4]
+    assert [r["category_id"] for r in result] == expected_ids
+
+
+def test_get_recent_winners_filters_incomplete() -> None:
+    """Only COMPLETED categories with first_place_id appear."""
+    tournament = _create_tournament(name="Filter Test")
+    athlete = _create_athlete_for_test(name="Only Winner")
+    # Completed with winner
+    cat_done = _create_category(
+        tournament.id,
+        name="Done",
+        status=CategoryStatus.COMPLETED.value,
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, cat_done.id)
+        assert db_cat is not None
+        db_cat.first_place_id = athlete.id
+        session.add(db_cat)
+        session.commit()
+    # Completed without winner
+    _create_category(
+        tournament.id,
+        name="No Winner",
+        status=CategoryStatus.COMPLETED.value,
+    )
+    # PENDING
+    _create_category(
+        tournament.id,
+        name="Pending",
+        status=CategoryStatus.PENDING.value,
+    )
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 1
+    assert result[0]["category_name"] == "Done"
+
+
+def test_get_recent_winners_no_match_found_score_zero() -> None:
+    """Completed category with winner but no completed match → score "0"."""
+    tournament = _create_tournament(name="No Match")
+    athlete = _create_athlete_for_test(name="Lonely Winner")
+    category = _create_category(
+        tournament.id,
+        name="No Match Cat",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KUMITE_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = athlete.id
+        session.add(db_cat)
+        session.commit()
+    # No match created at all
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 1
+    assert result[0]["winner_score"] == "0"
+
+
+def test_get_recent_winners_team_modality_score_zero() -> None:
+    """Team modality → score "0"."""
+    tournament = _create_tournament(name="Team Event")
+    athlete = _create_athlete_for_test(name="Team Leader")
+    category = _create_category(
+        tournament.id,
+        name="Kata Team",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KATA_TEAM.value,
+        competition_system=CompetitionSystem.ROUND_ROBIN.value,
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = athlete.id
+        session.add(db_cat)
+        session.commit()
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 1
+    assert result[0]["winner_score"] == "0"
+
+
+def test_get_recent_winners_kata_elimination_score_from_match() -> None:
+    """Kata elimination (not ROUND_ROBIN) → score from match aka/ao_score."""
+    tournament = _create_tournament(name="Kata Elim")
+    athlete = _create_athlete_for_test(name="Kata Elim Champ")
+    category = _create_category(
+        tournament.id,
+        name="Kata Elim Senior",
+        status=CategoryStatus.COMPLETED.value,
+        modality=Modality.KATA_INDIVIDUAL.value,
+        competition_system=CompetitionSystem.ELIMINATION.value,
+    )
+    with rx.session() as session:
+        db_cat = session.get(TournamentCategory, category.id)
+        assert db_cat is not None
+        db_cat.first_place_id = athlete.id
+        session.add(db_cat)
+        session.commit()
+    # Match where athlete wins as ao
+    with rx.session() as session:
+        match = Match(
+            category_id=category.id,
+            round=1,
+            match_number=1,
+            position=1,
+            match_type=MatchType.FINAL.value,
+            status=MatchStatus.COMPLETED.value,
+            aka_id=None,
+            ao_id=athlete.id,
+            aka_score=0,
+            ao_score=24,
+            winner_id=athlete.id,
+        )
+        session.add(match)
+        session.commit()
+
+    result = ResultsService.get_recent_winners()
+
+    assert len(result) == 1
+    assert result[0]["winner_name"] == "Kata Elim Champ"
+    # Winner was ao_id, so score = ao_score = 24
+    assert result[0]["winner_score"] == "24"
