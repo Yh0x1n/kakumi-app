@@ -149,14 +149,33 @@ def category_results() -> rx.Component:
                             lambda entry: rx.card(
                                 rx.hstack(
                                     rx.text(
+                                        rx.match(
+                                            entry.get("rank", 0),
+                                            (1, "🥇"),
+                                            (2, "🥈"),
+                                            (3, "🥉"),
+                                            "",
+                                        ),
+                                        font_size="lg",
+                                    ),
+                                    rx.text(
                                         entry.get("name", "Atleta"),
                                         font_weight="medium",
                                     ),
-                                    rx.text(
-                                        f"{entry.get('total_score', '')}",
+                                    rx.spacer(),
+                                    rx.badge(
+                                        f"{entry.get('total_score', '')} pts",
+                                        variant="soft",
+                                        color_scheme="green",
+                                    ),
+                                    rx.badge(
+                                        f"{entry.get('victory_points', 0)} VP",
+                                        variant="soft",
+                                        color_scheme="blue",
                                     ),
                                     spacing="3",
                                     align="center",
+                                    width="100%",
                                 ),
                                 width="100%",
                             ),
@@ -235,9 +254,36 @@ def tournament_results() -> rx.Component:
                                     f"{category['modality']} · "
                                     f"{category['competition_system']}",
                                 ),
-                                rx.text(
-                                    f"Progreso: {category['completed_match_count']}"
-                                    f"/{category['total_match_count']}",
+                                rx.cond(
+                                    category.get("podium_status") == "available",
+                                    rx.vstack(
+                                        rx.text(
+                                            f"🥇 {category.get('first_place_name', '—')}",
+                                            font_weight="bold",
+                                        ),
+                                        rx.text(
+                                            f"🥈 {category.get('second_place_name', '—')}",
+                                        ),
+                                        rx.cond(
+                                            category.get("third_place_display", ""),
+                                            rx.text(
+                                                f"🥉 {category.get('third_place_display', '')}",
+                                            ),
+                                        ),
+                                        spacing="1",
+                                        width="100%",
+                                        align="start",
+                                    ),
+                                    rx.cond(
+                                        category.get("is_informal", False),
+                                        rx.text(
+                                            f"Estado: {category.get('podium_status', '—')}",
+                                        ),
+                                        rx.text(
+                                            f"Progreso: {category['completed_match_count']}"
+                                            f"/{category['total_match_count']}",
+                                        ),
+                                    ),
                                 ),
                                 rx.badge(
                                     f"Podio: {category['podium_status']}",

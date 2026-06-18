@@ -127,6 +127,9 @@ class ResultsService:
                 Modality.KATA_TEAM.value,
                 Modality.KUMITE_TEAM.value,
             }
+            is_informal = (
+                getattr(category, "kata_flow_mode", "STANDARD") == "INFORMAL"
+            )
             if category.status == CategoryStatus.COMPLETED.value:
                 if is_team_modality:
                     podium_status = "unsupported_team"
@@ -143,13 +146,84 @@ class ResultsService:
                     "modality": category.modality,
                     "competition_system": category.competition_system,
                     "status": category.status,
-                    "total_match_count": len(category_matches),
-                    "completed_match_count": completed_match_count,
+                    "total_match_count": (
+                        0 if is_informal else len(category_matches)
+                    ),
+                    "completed_match_count": (
+                        0 if is_informal else completed_match_count
+                    ),
                     "podium_status": podium_status,
+                    "is_informal": is_informal,
                     "category_results_href": f"/results/category/{category.id}",
                     "bracket_href": f"/tournaments/{tournament.id}/bracket",
                 }
             )
+
+        # Second pass: enrich completed categories with podium names
+        athlete_ids_for_podium: set[int] = set()
+        for cat in categories:
+            if cat.status == CategoryStatus.COMPLETED.value:
+                if cat.first_place_id:
+                    athlete_ids_for_podium.add(cat.first_place_id)
+                if cat.second_place_id:
+                    athlete_ids_for_podium.add(cat.second_place_id)
+                if cat.third_place_ids:
+                    try:
+                        parsed = json.loads(cat.third_place_ids)
+                        if isinstance(parsed, list):
+                            athlete_ids_for_podium.update(
+                                int(pid) for pid in parsed if pid is not None
+                            )
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+
+        athletes_by_id: dict[int, str] = {}
+        if athlete_ids_for_podium:
+            with rx.session() as session:
+                athlete_rows = session.exec(
+                    select(Athlete).where(Athlete.id.in_(sorted(athlete_ids_for_podium)))
+                ).all()
+                for a in athlete_rows:
+                    athletes_by_id[a.id] = a.name
+
+        # Add podium names to category rows
+        for row in category_rows:
+            cat_id = int(row["id"])
+            matching_cat = next((c for c in categories if c.id == cat_id), None)
+            if (
+                matching_cat
+                and matching_cat.status == CategoryStatus.COMPLETED.value
+            ):
+                row["first_place_name"] = (
+                    athletes_by_id.get(matching_cat.first_place_id)
+                    if matching_cat.first_place_id
+                    else None
+                )
+                row["second_place_name"] = (
+                    athletes_by_id.get(matching_cat.second_place_id)
+                    if matching_cat.second_place_id
+                    else None
+                )
+                third_names: list[str] = []
+                if matching_cat.third_place_ids:
+                    try:
+                        parsed = json.loads(matching_cat.third_place_ids)
+                        if isinstance(parsed, list):
+                            third_names = [
+                                athletes_by_id.get(int(pid), "") or ""
+                                for pid in parsed
+                                if pid is not None
+                                and int(pid) in athletes_by_id
+                            ]
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+                row["third_place_display"] = (
+                    ", ".join(third_names) if third_names else ""
+                )
+            else:
+                row["first_place_name"] = None
+                row["second_place_name"] = None
+                row["third_place_display"] = ""
 
         completed_categories = sum(
             1
@@ -196,18 +270,44 @@ class ResultsService:
                 "competition_system": category.competition_system,
                 "status": category.status,
                 "gender": category.gender,
+                "kata_flow_mode": getattr(category, "kata_flow_mode", "STANDARD"),
             }
 
             is_kata_informal = (
-                category.modality == Modality.KATA_INDIVIDUAL.value
-                and category.competition_system == CompetitionSystem.ROUND_ROBIN.value
+                getattr(category, "kata_flow_mode", "STANDARD") == "INFORMAL"
             )
 
             if is_kata_informal:
                 standings = KataInformalService.rank_category(category_id)
+                athlete_ids = {
+                    int(s["athlete_id"])
+                    for s in standings
+                    if "athlete_id" in s
+                }
+                athlete_names: dict[int, str] = {}
+                if athlete_ids:
+                    athletes = session.exec(
+                        select(Athlete).where(Athlete.id.in_(athlete_ids))
+                    ).all()
+                    athlete_names = {a.id: a.name for a in athletes}
+                enriched_standings = []
+                for s in standings:
+                    athlete_id = int(s.get("athlete_id", 0))
+                    enriched_standings.append(
+                        {
+                            "name": athlete_names.get(athlete_id, "—"),
+                            "total_score": f"{float(s['final_score']):.3f}",
+                            "athlete_id": athlete_id,
+                            "rank": int(s.get("rank", 0)),
+                            "victory_points": int(s.get("victory_points", 0)),
+                            "needs_extra_kata": bool(
+                                s.get("needs_extra_kata", False)
+                            ),
+                        }
+                    )
                 return {
                     "category": category_info,
-                    "standings": standings,
+                    "standings": enriched_standings,
                     "matches": [],
                 }
 

@@ -276,6 +276,9 @@ class TournamentService:
                 )
             ).all()
             for category in categories:
+                # Skip INFORMAL kata categories — they use manual performance flow
+                if getattr(category, "kata_flow_mode", "STANDARD") == "INFORMAL":
+                    continue
                 if category.competition_system not in {
                     CompetitionSystem.ELIMINATION.value,
                     CompetitionSystem.ROUND_ROBIN.value,
