@@ -125,7 +125,9 @@ async def test_save_category_creates_manual_category_with_age_and_belt_fields(
     assert created.max_belt_rank == "Negro"
     assert created.competition_system == CompetitionSystem.ROUND_ROBIN.value
     assert created.bracket_size == 4
-    assert any(category["name"] == "Kumite Cadete Danes" for category in state.categories)
+    assert any(
+        category["name"] == "Kumite Cadete Danes" for category in state.categories
+    )
 
 
 @pytest.mark.anyio
@@ -245,7 +247,10 @@ async def test_delete_category_blocks_when_related_matches_exist(
         persisted = session.get(TournamentCategory, sample_category.id)
 
     assert result is None
-    assert state.error_message == "No se puede eliminar categoría con encuentros relacionados"
+    assert (
+        state.error_message
+        == "No se puede eliminar categoría con encuentros relacionados"
+    )
     assert persisted is not None
 
 

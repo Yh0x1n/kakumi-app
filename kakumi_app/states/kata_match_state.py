@@ -10,7 +10,7 @@ from sqlmodel import func, select
 
 from kakumi_app.models.athlete_model import Athlete
 from kakumi_app.models.kata_model import KataDecisionRule
-from kakumi_app.models.referee_model import Referee, RefereeRole
+from kakumi_app.models.referee_model import Referee
 from kakumi_app.models.tournament_model import (
     CategoryGender,
     Match,
@@ -713,11 +713,8 @@ class KataMatchState(rx.State):
             self.judge_entries = self._build_judge_entries(panel_size)
             self.panel_complete = False
 
-            judges = session.exec(
-                select(Referee)
-                .where(Referee.role == RefereeRole.JUDGE.value)
-                .order_by(Referee.id.asc())
-            ).all()
+            # Kata does not use referee roles; load ALL referees
+            judges = session.exec(select(Referee).order_by(Referee.id.asc())).all()
             self._judge_ids_by_slot = {
                 f"J{index + 1}": judge.id
                 for index, judge in enumerate(judges[:panel_size])
@@ -886,9 +883,7 @@ class KataMatchState(rx.State):
 
         # Check if ALL athletes have been scored
         roster_ids = [
-            self._coerce_int(row["id"])
-            for row in self.informal_roster
-            if "id" in row
+            self._coerce_int(row["id"]) for row in self.informal_roster if "id" in row
         ]
         scored_ids = {
             self._coerce_int(row["athlete_id"])

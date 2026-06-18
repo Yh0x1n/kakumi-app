@@ -14,6 +14,7 @@ from kakumi_app.models.tournament_model import (
     Modality,
     Tournament,
     TournamentCategory,
+    TournamentStatus,
 )
 from kakumi_app.services.import_service import ImportService
 from kakumi_app.utils import BELT_RANKS
@@ -31,6 +32,7 @@ class TournamentCategoryState(rx.State):
 
     current_tournament_id: int = 0
     current_tournament_name: str = ""
+    _current_tournament_status: str = ""
     categories: list[dict[str, Any]] = []
     current_category: Optional[dict[str, Any]] = None
 
@@ -265,6 +267,7 @@ class TournamentCategoryState(rx.State):
         if tournament is None:
             self.current_tournament_id = 0
             self.current_tournament_name = ""
+            self._current_tournament_status = ""
             self.categories = []
             self.error_message = "Torneo no encontrado"
             self.show_form = False
@@ -273,6 +276,7 @@ class TournamentCategoryState(rx.State):
 
         self.current_tournament_id = tournament.id
         self.current_tournament_name = tournament.name
+        self._current_tournament_status = tournament.status
         self.error_message = ""
         self.show_form = False
         self.reset_form()
@@ -284,6 +288,15 @@ class TournamentCategoryState(rx.State):
         category: Optional[dict[str, Any]] = None,
     ) -> None:
         """Open form in create or edit mode for selected tournament."""
+        if self._current_tournament_status not in {
+            TournamentStatus.PLANIFICADO.value,
+            TournamentStatus.INSCRIPCION.value,
+            TournamentStatus.VERIFICACION.value,
+        }:
+            self.error_message = (
+                "Solo se pueden gestionar categorías en torneos no iniciados"
+            )
+            return
         if category:
             self.current_category = category
             self._set_form_open(editing=True)
@@ -304,9 +317,7 @@ class TournamentCategoryState(rx.State):
             )
             self.bracket_size = str(category.get("bracket_size", 8))
             self.form_judge_panel_size = str(category.get("judge_panel_size", 3))
-            self.form_kata_flow_mode = category.get(
-                "kata_flow_mode", "STANDARD"
-            )
+            self.form_kata_flow_mode = category.get("kata_flow_mode", "STANDARD")
             self.form_scoring_type = category.get(
                 "scoring_type", "average-with-discard"
             )
@@ -415,9 +426,18 @@ class TournamentCategoryState(rx.State):
     @rx.event
     async def save_category(self) -> Any:
         """Create or update operator-managed category within selected tournament."""
+        if self._current_tournament_status not in {
+            TournamentStatus.PLANIFICADO.value,
+            TournamentStatus.INSCRIPCION.value,
+            TournamentStatus.VERIFICACION.value,
+        }:
+            self.error_message = (
+                "Solo se pueden crear categorías en torneos no iniciados"
+            )
+            return rx.toast.error(self.error_message)
         category_data = self._validate_form()
         if category_data is None:
-            return None
+            return
 
         with rx.session() as session:
             try:
