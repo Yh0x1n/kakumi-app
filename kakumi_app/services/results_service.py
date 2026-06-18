@@ -9,6 +9,7 @@ import reflex as rx
 from sqlmodel import select
 
 from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.kata_model import KataInformalPerformance
 from kakumi_app.models.tournament_model import (
     CategoryStatus,
     CompetitionSystem,
@@ -199,8 +200,7 @@ class ResultsService:
 
             is_kata_informal = (
                 category.modality == Modality.KATA_INDIVIDUAL.value
-                and category.competition_system
-                == CompetitionSystem.ROUND_ROBIN.value
+                and category.competition_system == CompetitionSystem.ROUND_ROBIN.value
             )
 
             if is_kata_informal:
@@ -300,8 +300,16 @@ class ResultsService:
             else:
                 podium_status = "incomplete"
 
-            first_place_name = athletes_by_id.get(category.first_place_id) if category.first_place_id else None  # type: ignore[arg-type]
-            second_place_name = athletes_by_id.get(category.second_place_id) if category.second_place_id else None  # type: ignore[arg-type]
+            first_place_name = (
+                athletes_by_id.get(category.first_place_id)
+                if category.first_place_id
+                else None
+            )  # type: ignore[arg-type]
+            second_place_name = (
+                athletes_by_id.get(category.second_place_id)
+                if category.second_place_id
+                else None
+            )  # type: ignore[arg-type]
             third_place_names: list[str] = []
             if category.third_place_ids:
                 try:
@@ -315,9 +323,9 @@ class ResultsService:
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
-            third_place_display = ", ".join(
-                third_place_names
-            ) if third_place_names else ""
+            third_place_display = (
+                ", ".join(third_place_names) if third_place_names else ""
+            )
 
             cards.append(
                 {
@@ -337,6 +345,104 @@ class ResultsService:
         return {"categories": cards}
 
     @staticmethod
+    def get_recent_winners() -> list[dict[str, Any]]:
+        """Return up to 4 most recently completed category winners.
+
+        Returns a list of dicts with keys:
+        winner_name, winner_score (str), category_name, tournament_name, category_id.
+        """
+        with rx.session() as session:
+            rows = session.exec(
+                select(
+                    TournamentCategory.id,
+                    TournamentCategory.name,
+                    TournamentCategory.modality,
+                    TournamentCategory.competition_system,
+                    TournamentCategory.first_place_id,
+                    Tournament.name,
+                )
+                .join(Tournament, Tournament.id == TournamentCategory.tournament_id)
+                .where(
+                    TournamentCategory.status == CategoryStatus.COMPLETED.value,
+                    TournamentCategory.first_place_id.is_not(None),
+                )
+                .order_by(TournamentCategory.id.desc())
+                .limit(4)
+            ).all()
+
+            if not rows:
+                return []
+
+            # Collect unique athlete IDs for bulk name lookup
+            athlete_ids = {row.first_place_id for row in rows if row.first_place_id}
+            athletes_by_id: dict[int, str] = {}
+            if athlete_ids:
+                athlete_rows = session.exec(
+                    select(Athlete).where(Athlete.id.in_(athlete_ids))
+                ).all()
+                for a in athlete_rows:
+                    athletes_by_id[a.id] = a.name
+
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                category_id = int(row.id)
+                first_place_id = int(row.first_place_id)  # type: ignore[arg-type]
+                winner_name = athletes_by_id.get(first_place_id, "")
+
+                # Resolve score per modality
+                is_kata_informal = (
+                    row.modality == Modality.KATA_INDIVIDUAL.value
+                    and row.competition_system == CompetitionSystem.ROUND_ROBIN.value
+                )
+                is_team = row.modality in {
+                    Modality.KATA_TEAM.value,
+                    Modality.KUMITE_TEAM.value,
+                }
+
+                if is_team:
+                    score = 0
+                elif is_kata_informal:
+                    perf = session.exec(
+                        select(KataInformalPerformance)
+                        .where(
+                            KataInformalPerformance.category_id == category_id,
+                            KataInformalPerformance.athlete_id == first_place_id,
+                        )
+                        .order_by(KataInformalPerformance.id.desc())
+                    ).first()
+                    score = perf.final_score if perf else 0.0
+                else:
+                    match = session.exec(
+                        select(Match)
+                        .where(
+                            Match.category_id == category_id,
+                            Match.status == MatchStatus.COMPLETED.value,
+                            Match.winner_id == first_place_id,
+                        )
+                        .order_by(Match.id.desc())
+                    ).first()
+                    if match:
+                        score = (
+                            match.aka_score
+                            if match.winner_id == match.aka_id
+                            else match.ao_score
+                        )
+                    else:
+                        score = 0
+
+                results.append(
+                    {
+                        "winner_name": winner_name,
+                        "winner_score": str(score),
+                        "category_name": row.name,
+                        "tournament_name": row.name_1,
+                        "category_id": category_id,
+                    }
+                )
+
+            return results
+
+    @staticmethod
     def get_statistics_view(tournament_id: int) -> dict[str, Any]:
         """Return aggregate statistics for a tournament."""
         if tournament_id <= 0:
@@ -348,8 +454,9 @@ class ResultsService:
                 raise ValueError("Torneo no encontrado")
 
             categories = session.exec(
-                select(TournamentCategory)
-                .where(TournamentCategory.tournament_id == tournament_id)
+                select(TournamentCategory).where(
+                    TournamentCategory.tournament_id == tournament_id
+                )
             ).all()
 
             category_ids = [c.id for c in categories if c.id is not None]

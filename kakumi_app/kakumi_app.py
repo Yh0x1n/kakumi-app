@@ -36,6 +36,7 @@ from .pages.viewer import viewer_dashboard_page, viewer_login_page
 from .states.auth_state import DEV_AUTH_BYPASS, AuthState
 from .states.bracket_state import BracketState
 from .states.competition_category_state import CompetitionCategoryState
+from .states.dashboard_state import DashboardState
 from .states.kata_match_state import KataMatchState
 from .states.kumite_match_state import KumiteMatchState
 from .states.results_state import ResultsState
@@ -153,38 +154,63 @@ def dashboard() -> rx.Component:
         rx.vstack(
             rx.hstack(
                 sidebar(),
-                rx.heading(
-                    "Welcome to Kakumi Tournament Manager!",
-                    font_size=50,
-                    align="left",
-                    padding_y="0.5em",
-                    font_weight="bold",
+                rx.vstack(
+                    rx.heading(
+                        "Welcome to Kakumi Tournament Manager!",
+                        font_size=50,
+                        align="left",
+                        padding_y="0.5em",
+                        font_weight="bold",
+                    ),
+                    rx.heading(
+                        "Resumen de resultados",
+                        font_size="30",
+                        align="center",
+                        padding_y="0.2em",
+                        font_weight="bold",
+                    ),
+                    spacing="1",
+                    align="start",
                 ),
                 spacing="4",
             ),
         ),
         rx.center(
-            rx.grid(
-                rx.foreach(
-                    rx.Var.range(4),
-                    lambda i: rx.card(
-                        rx.link(
-                            rx.text(
-                                f"Resultado {i + 1}",
-                                weight="bold",
-                                font_size="10",
+            rx.cond(
+                DashboardState.winner_cards.length() > 0,
+                rx.grid(
+                    rx.foreach(
+                        DashboardState.winner_cards,
+                        lambda card: rx.card(
+                            rx.vstack(
+                                rx.text(card["winner_name"], weight="bold", size="4"),
+                                rx.text(f"Puntaje: {card['winner_score']}", size="2"),
+                                rx.text(card["category_name"], size="1"),
+                                rx.text(
+                                    card["tournament_name"],
+                                    size="1",
+                                    color_scheme="gray",
+                                ),
+                                align="center",
+                                spacing="1",
+                                padding="0.5em",
                             ),
-                            underline="none",
-                            height="100%",
+                            border_width="thick",
+                            border_radius="1em",
+                            width="100%",
                         ),
-                        border_width="thick",
-                        border_radius="1em",
                     ),
+                    columns="2",
+                    spacing="4",
+                    width="50%",
+                    padding="0.5em",
                 ),
-                columns="2",
-                spacing="4",
-                width="50%",
-                padding="0.5em",
+                rx.card(
+                    rx.text("Sin resultados aún", weight="bold", size="3"),
+                    border_width="thick",
+                    border_radius="1em",
+                    padding="1em",
+                ),
             ),
         ),
         height="100vh",
@@ -204,7 +230,7 @@ app.add_page(
     dashboard,
     route="/home",
     title="Kakumi Tournament Manager",
-    on_load=AuthState.check_auth_redirect,
+    on_load=[AuthState.check_auth_redirect, DashboardState.load_recent_winners],
 )
 app.add_page(registries, title="Kakumi | Registros")
 app.add_page(
