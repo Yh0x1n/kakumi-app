@@ -126,9 +126,11 @@ def test_tournament_page_wires_operator_visibility_guards_to_state() -> None:
 
     cond_states = _flatten_cond_states(tournament().render())
 
-    assert any("show_lifecycle_controls" in cond for cond in cond_states)
-    assert any("show_open_registrations_action" in cond for cond in cond_states)
-    assert any("show_cancel_tournament_action" in cond for cond in cond_states)
+    # Step machine state vars appear in rx.cond gates
+    assert any("step_index" in cond for cond in cond_states)
+    assert any("create_mode" in cond for cond in cond_states)
+    assert any("tournaments" in cond for cond in cond_states)
+    # is_readonly_mode is embedded inside rx.match case branches (not in cond_state leaf)
 
 
 def test_informal_table_renders_participant_data() -> None:

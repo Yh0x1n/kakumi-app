@@ -17,6 +17,7 @@ from kakumi_app.services.tournament_service import TournamentService
 from kakumi_app.services.auth_service import AuthService
 from kakumi_app.states.auth_state import AuthState
 from kakumi_app.states.tournament_category_state import TournamentCategoryState
+from kakumi_app.states.tournament_crud_state import TournamentCrudState
 from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
 import datetime
 from kakumi_app.services.viewer_service import ViewerService
@@ -25,6 +26,15 @@ from kakumi_app.services.qr_helper import _make_qr_data_url
 
 # Rol mínimo requerido para gestionar estados de torneos
 MANAGE_TOURNAMENT_STATUS_ROLE = "OPERATOR"
+
+# ── Step machine constants (must match rx.match slots in tournament.py) ──
+SELECTION_STEP = 0
+STATUS_STEP = 1
+FORM_STEP = 2
+CATEGORIES_STEP = 3
+TATAMIS_STEP = 4
+CONFIRM_STEP = 5
+EDIT_CHOICE_STEP = 6
 
 
 class TournamentState(rx.State):
@@ -57,6 +67,13 @@ class TournamentState(rx.State):
     _current_user_id: int = 0
     _current_user_role: str = ""
 
+    # ── Step machine vars ──────────────────────────────
+    step_index: int = 0
+    create_mode: bool = False
+    edit_mode: bool = False
+    _step_count: int = 7
+    _form_saved_tournament_id: int = 0
+
     @rx.var
     def has_selected_tournament(self) -> bool:
         """Whether workspace currently has selected tournament."""
@@ -85,6 +102,139 @@ class TournamentState(rx.State):
     def _is_missing_workspace_state_error(exc: Exception) -> bool:
         """Ignore Reflex cache misses when optional workspace substates are absent."""
         return "is not cached and cannot be accessed without redis" in str(exc)
+
+    # ── Transition validation ─────────────────────────
+
+    def _validate_step_transition(self, from_step: int, to_step: int) -> bool:
+        """Validates step transitions. Returns True if allowed.
+
+        Normal: adjacent steps always allowed within [0, _step_count-1].
+        Special: create/edit flow shortcuts gated by mode flags.
+        """
+        if to_step >= 1 and not self.has_selected_tournament and to_step not in (0, 6):
+            return False
+        if abs(to_step - from_step) == 1:
+            return 0 <= to_step < self._step_count
+        special = {
+            (0, 2): self.create_mode,
+            (0, 6): self.edit_mode,
+            (0, 3): self.edit_mode,
+            (2, 0): not self.create_mode,
+            (2, 1): not self.create_mode,
+            (3, 1): self.edit_mode,
+            (3, 2): False,
+            (5, 1): True,
+            (2, 3): self.create_mode,
+            (3, 4): self.create_mode,
+            (4, 5): self.create_mode,
+            (6, 2): self.edit_mode,
+            (6, 3): self.edit_mode,
+            (6, 1): self.edit_mode,
+            (6, 0): self.edit_mode,
+        }
+        return special.get((from_step, to_step), False)
+
+    # ── Navigation handlers ───────────────────────────
+
+    @rx.event
+    def go_next(self) -> None:
+        """Advance one step. Guards via can_go_next."""
+        if not self.can_go_next:
+            return
+        self.step_index += 1
+
+    @rx.event
+    def go_previous(self) -> None:
+        """Go back one step. Guards via can_go_previous.
+        
+        Special case: in create flow, going back from form (step 2)
+        returns to selection (step 0) and exits create mode.
+        """
+        if not self.can_go_previous:
+            return
+        if self.create_mode and self.step_index == FORM_STEP:
+            self.step_index = SELECTION_STEP
+            self.create_mode = False
+        else:
+            self.step_index -= 1
+
+    @rx.event
+    def go_to_step(self, target_step: int) -> None:
+        """Non-sequential jump (create/edit shortcuts). Validated via transition map."""
+        if not self._validate_step_transition(self.step_index, target_step):
+            return
+        self.step_index = target_step
+
+    # ── Flow handlers ─────────────────────────────────
+
+    @rx.event
+    async def start_create_flow(self) -> None:
+        """Start create tournament flow. Jump to form step."""
+        self.create_mode = True
+        self.edit_mode = False
+        try:
+            crud = await self.get_state(TournamentCrudState)
+            crud.set_form_values(None, None)
+        except Exception:
+            pass
+        self.go_to_step(FORM_STEP)
+
+    @rx.event
+    async def start_edit_flow(self) -> None:
+        """Start edit tournament flow. Jump based on status."""
+        if not self.current_tournament:
+            yield rx.toast.error("Selecciona torneo primero")
+            return
+        self.edit_mode = True
+        self.create_mode = False
+        status = self._current_status()
+        if status == TournamentStatus.PLANIFICADO:
+            self.go_to_step(EDIT_CHOICE_STEP)
+        elif self.is_readonly_mode:
+            self.go_to_step(CATEGORIES_STEP)
+        else:
+            self.go_to_step(STATUS_STEP)
+
+    @rx.event
+    async def complete_create_flow(self) -> None:
+        """Finish create flow: transition tournament to EN_CURSO."""
+        tournament_id = self._get_tournament_id()
+        if tournament_id is None:
+            yield rx.toast.error("No hay torneo seleccionado")
+            return
+        async for event in self._execute_transition(TournamentStatus.EN_CURSO):
+            yield event
+        if not self.transition_error:
+            self.create_mode = False
+            self.go_to_step(STATUS_STEP)
+
+    @rx.event
+    async def advance_after_form_saved(self) -> None:
+        """Advance after form save: categories (create) or status (edit)."""
+        if self.create_mode:
+            self.go_to_step(CATEGORIES_STEP)
+        else:
+            self.go_to_step(STATUS_STEP)
+
+    @rx.event
+    def cancel_create_flow(self) -> None:
+        """Cancel create flow: reset mode, go back to selection."""
+        self.create_mode = False
+        self.edit_mode = False
+        self.step_index = SELECTION_STEP
+
+    # ── Bridge: TournamentCrudState coordinator ───────
+
+    @rx.event
+    async def handle_form_submit(self) -> None:
+        """Bridge: delegates to TournamentCrudState.save_tournament, advances on success."""
+        crud = await self.get_state(TournamentCrudState)
+        await crud.save_tournament()
+        if not crud.show_form and not crud.error_message:
+            self._form_saved_tournament_id = (
+                crud.current_tournament.get("id", 0) if crud.current_tournament else 0
+            )
+            await self.advance_after_form_saved()
 
     def _can_show_transition(self, target_status: TournamentStatus) -> bool:
         """Whether workspace should expose given lifecycle action."""
@@ -131,6 +281,60 @@ class TournamentState(rx.State):
             return False
         return AuthService.check_permission(self._current_user_role, "ADMIN")
 
+    # ── Step machine computed guards ───────────────────
+
+    @rx.var
+    def can_go_next(self) -> bool:
+        """Whether 'Siguiente' button is enabled."""
+        if self.step_index >= self._step_count - 1:
+            return False
+        if self.step_index == 0 and not self.has_selected_tournament:
+            return False
+        status = self._current_status()
+        if status == TournamentStatus.ARCHIVADO and self.step_index > 0:
+            return False
+        return self._validate_step_transition(self.step_index, self.step_index + 1)
+
+    @rx.var
+    def can_go_previous(self) -> bool:
+        """Whether 'Anterior' button is enabled."""
+        return self.step_index > 0
+
+    @rx.var
+    def is_readonly_mode(self) -> bool:
+        """Cards render readonly when tournament is in advanced state."""
+        if not self.current_tournament:
+            return False
+        status = self._current_status()
+        if not status:
+            return False
+        advanced = {
+            TournamentStatus.INSCRIPCION,
+            TournamentStatus.VERIFICACION,
+            TournamentStatus.EN_CURSO,
+            TournamentStatus.FINALIZADO,
+            TournamentStatus.ARCHIVADO,
+        }
+        return status in advanced
+
+    @rx.var
+    def _step_labels(self) -> list[str]:
+        """Dynamic step labels based on create/edit mode."""
+        if self.create_mode:
+            return [
+                "Seleccion", "Estado", "Formulario",
+                "Categorias", "Tatamis", "Confirmar",
+            ]
+        if self.edit_mode:
+            return [
+                "Seleccion", "Estado", "Editar",
+                "Categorias", "Tatamis",
+            ]
+        return [
+            "Seleccion", "Estado",
+            "Categorias", "Tatamis",
+        ]
+
     @rx.event
     async def sync_auth_context(self) -> None:
         """Sync lifecycle auth context from AuthState session."""
@@ -155,6 +359,11 @@ class TournamentState(rx.State):
     @rx.event
     async def load_workspace(self) -> None:
         """Load tournament workspace data and default selection."""
+        # Reset step machine
+        self.step_index = 0
+        self.create_mode = False
+        self.edit_mode = False
+        self._form_saved_tournament_id = 0
         await self.sync_auth_context()
         with rx.session() as session:
             tournaments = session.exec(select(Tournament).order_by(Tournament.id)).all()

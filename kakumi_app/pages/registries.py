@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import reflex as rx
 
 from kakumi_app.components.registries_items import reg_items
@@ -345,9 +347,21 @@ def _referee_form() -> rx.Component:
     )
 
 
-def _tournament_form() -> rx.Component:
-    """Render create/edit tournament form."""
+def _tournament_form(
+    on_submit_override: Any | None = None,
+    on_cancel_override: Any | None = None,
+) -> rx.Component:
+    """Render create/edit tournament form.
+
+    Args:
+        on_submit_override: Optional handler to replace state.save_tournament.
+            Used by TournamentState bridge to advance step after save.
+        on_cancel_override: Optional handler to replace state.cancel_form.
+            Used by TournamentState bridge to cancel the create flow.
+    """
     state = TournamentCrudState
+    submit_handler = on_submit_override or state.save_tournament
+    cancel_handler = on_cancel_override or state.cancel_form
 
     def row(left: rx.Component, right: rx.Component) -> rx.Component:
         # 1 columna en mobile/tablet, 2 columnas en desktop
@@ -442,14 +456,14 @@ def _tournament_form() -> rx.Component:
                 ),
                 rx.hstack(
                     rx.button("Guardar", type="submit", color_scheme="green"),
-                    rx.button("Cancelar", on_click=state.cancel_form),
+                    rx.button("Cancelar", on_click=cancel_handler),
                     spacing="3",
                 ),
                 width="100%",
                 spacing="3",
                 flex_direction="column",
             ),
-            on_submit=state.save_tournament,
+            on_submit=submit_handler,
         ),
         width="100%",
     )

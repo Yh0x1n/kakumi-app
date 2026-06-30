@@ -1,11 +1,23 @@
-"""Tournament operator workspace page."""
+"""Tournament operator workspace page — sequential card flow."""
 
 import reflex as rx
 
 from kakumi_app.components.registry_crud import registry_page_shell
+from kakumi_app.pages.registries import _tournament_form
 from kakumi_app.states.tournament_category_state import TournamentCategoryState
-from kakumi_app.states.tournament_state import TournamentState
+from kakumi_app.states.tournament_crud_state import TournamentCrudState
+from kakumi_app.states.tournament_state import (
+    CATEGORIES_STEP,
+    CONFIRM_STEP,
+    EDIT_CHOICE_STEP,
+    FORM_STEP,
+    SELECTION_STEP,
+    STATUS_STEP,
+    TATAMIS_STEP,
+    TournamentState,
+)
 from kakumi_app.states.tournament_tatami_state import TournamentTatamiState
+from kakumi_app.styles.tokens import BRAND_RED
 
 
 def _workspace_header() -> rx.Component:
@@ -19,8 +31,96 @@ def _workspace_header() -> rx.Component:
     )
 
 
+def _step_indicator() -> rx.Component:
+    """Progress dots. Hidden on step 0. Visited/current dots in brand red."""
+    return rx.cond(
+        TournamentState.step_index > 0,
+        rx.hstack(
+            rx.foreach(
+                TournamentState._step_labels,
+                lambda label, idx: rx.tooltip(
+                    rx.box(
+                        width="12px",
+                        height="12px",
+                        border_radius="50%",
+                        bg=rx.cond(
+                            TournamentState.step_index >= idx,
+                            BRAND_RED,
+                            "gray.300",
+                        ),
+                        opacity=rx.cond(
+                            TournamentState.step_index == idx,
+                            "1",
+                            rx.cond(
+                                TournamentState.step_index > idx,
+                                "0.8",
+                                "0.4",
+                            ),
+                        ),
+                        role="img",
+                        aria_current=rx.cond(
+                            TournamentState.step_index == idx,
+                            "step",
+                            None,
+                        ),
+                    ),
+                    label=label,
+                ),
+            ),
+            role="navigation",
+            aria_label="Progreso del flujo",
+            justify="center",
+            spacing="3",
+            width="100%",
+            padding_y="2",
+        ),
+    )
+
+
+def _navigation_bar() -> rx.Component:
+    """Render Anterior/Siguiente buttons. Context-sensitive labels."""
+    state = TournamentState
+    return rx.hstack(
+        rx.button(
+            "← Anterior",
+            on_click=state.go_previous,
+            disabled=~state.can_go_previous,
+            variant="outline",
+            width={"base": "100%", "md": "auto"},
+        ),
+        rx.hstack(
+            rx.cond(
+                (TournamentState.step_index == CONFIRM_STEP)
+                & TournamentState.create_mode,
+                rx.button(
+                    "Comenzar torneo",
+                    on_click=state.complete_create_flow,
+                    color_scheme="green",
+                    width={"base": "100%", "md": "auto"},
+                ),
+                rx.button(
+                    rx.cond(
+                        TournamentState.step_index >= TournamentState._step_count - 1,
+                        "Finalizar",
+                        "Siguiente →",
+                    ),
+                    on_click=state.go_next,
+                    disabled=~state.can_go_next,
+                    color_scheme="red",
+                    width={"base": "100%", "md": "auto"},
+                ),
+            ),
+        ),
+        justify="between",
+        width="100%",
+        padding_top="4",
+        direction={"base": "column", "md": "row"},
+        align="stretch",
+    )
+
+
 def _selector_card() -> rx.Component:
-    """Render tournament selection card."""
+    """Card 0: Tournament selection with create/edit action buttons."""
     state = TournamentState
     return rx.card(
         rx.vstack(
@@ -46,11 +146,31 @@ def _selector_card() -> rx.Component:
                     ),
                 ),
             ),
+            rx.cond(
+                state.show_lifecycle_controls,
+                rx.hstack(
+                    rx.button(
+                        "Crear torneo",
+                        on_click=state.start_create_flow,
+                        color_scheme="green",
+                    ),
+                    rx.button(
+                        "Editar torneo",
+                        on_click=state.start_edit_flow,
+                        variant="outline",
+                    ),
+                    spacing="2",
+                    width="100%",
+                    justify="center",
+                ),
+            ),
             spacing="3",
             align="stretch",
             width="100%",
         ),
         width="100%",
+        role="region",
+        aria_label="Selección de torneo",
     )
 
 
@@ -85,119 +205,94 @@ def _selection_summary() -> rx.Component:
     )
 
 
-def _lifecycle_card() -> rx.Component:
-    """Render lifecycle control scaffold."""
+def _lifecycle_buttons() -> rx.Component:
+    """Render lifecycle action buttons (extracted from old _lifecycle_card)."""
     state = TournamentState
-    return rx.card(
-        rx.vstack(
-            rx.heading("Controles de ciclo", size="5"),
-            _selection_summary(),
-            rx.text(
-                "Solo operadores autorizados pueden ejecutar transiciones.",
-            ),
+    return rx.vstack(
+        rx.hstack(
             rx.cond(
-                state.transition_error,
-                rx.callout(
-                    state.transition_error,
-                    icon="triangle_alert",
-                    color="red",
+                state.show_open_registrations_action,
+                rx.button(
+                    "Abrir inscripciones",
+                    on_click=state.open_registrations,
+                    disabled=~state.has_selected_tournament,
                 ),
                 rx.fragment(),
             ),
             rx.cond(
-                state.show_lifecycle_controls,
-                rx.fragment(
-                    rx.hstack(
-                        rx.cond(
-                            state.show_open_registrations_action,
-                            rx.button(
-                                "Abrir inscripciones",
-                                on_click=state.open_registrations,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            state.show_close_registrations_action,
-                            rx.button(
-                                "Cerrar inscripciones",
-                                on_click=state.close_registrations,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            state.show_start_competition_action,
-                            rx.button(
-                                "Iniciar competencia",
-                                on_click=state.start_competition,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        wrap="wrap",
-                        spacing="2",
-                    ),
-                    rx.hstack(
-                        rx.cond(
-                            state.show_finish_competition_action,
-                            rx.button(
-                                "Finalizar torneo",
-                                variant="outline",
-                                on_click=state.finish_competition,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            state.show_archive_tournament_action,
-                            rx.button(
-                                "Archivar torneo",
-                                variant="outline",
-                                on_click=state.archive_tournament,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            state.show_reopen_registrations_action,
-                            rx.button(
-                                "Reabrir inscripciones",
-                                variant="outline",
-                                on_click=state.reopen_registrations,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            state.show_cancel_tournament_action,
-                            rx.button(
-                                "Cancelar torneo",
-                                variant="outline",
-                                on_click=state.cancel_tournament,
-                                disabled=~state.has_selected_tournament,
-                            ),
-                            rx.fragment(),
-                        ),
-                        spacing="2",
-                        wrap="wrap",
-                    ),
+                state.show_close_registrations_action,
+                rx.button(
+                    "Cerrar inscripciones",
+                    on_click=state.close_registrations,
+                    disabled=~state.has_selected_tournament,
                 ),
-                rx.text(
-                    "No tienes permisos para operar ciclo de torneo.",
-                ),
+                rx.fragment(),
             ),
-            spacing="3",
-            align="start",
-            width="100%",
+            rx.cond(
+                state.show_start_competition_action,
+                rx.button(
+                    "Iniciar competencia",
+                    on_click=state.start_competition,
+                    disabled=~state.has_selected_tournament,
+                ),
+                rx.fragment(),
+            ),
+            wrap="wrap",
+            spacing="2",
         ),
+        rx.hstack(
+            rx.cond(
+                state.show_finish_competition_action,
+                rx.button(
+                    "Finalizar torneo",
+                    variant="outline",
+                    on_click=state.finish_competition,
+                    disabled=~state.has_selected_tournament,
+                ),
+                rx.fragment(),
+            ),
+            rx.cond(
+                state.show_archive_tournament_action,
+                rx.button(
+                    "Archivar torneo",
+                    variant="outline",
+                    on_click=state.archive_tournament,
+                    disabled=~state.has_selected_tournament,
+                ),
+                rx.fragment(),
+            ),
+            rx.cond(
+                state.show_reopen_registrations_action,
+                rx.button(
+                    "Reabrir inscripciones",
+                    variant="outline",
+                    on_click=state.reopen_registrations,
+                    disabled=~state.has_selected_tournament,
+                ),
+                rx.fragment(),
+            ),
+            rx.cond(
+                state.show_cancel_tournament_action,
+                rx.button(
+                    "Cancelar torneo",
+                    variant="outline",
+                    on_click=state.cancel_tournament,
+                    disabled=~state.has_selected_tournament,
+                ),
+                rx.fragment(),
+            ),
+            spacing="2",
+            wrap="wrap",
+        ),
+        spacing="2",
         width="100%",
     )
 
 
 def _categories_card() -> rx.Component:
-    """Render manual categories CRUD inside tournament workspace."""
+    """Card 3: Categories CRUD with readonly mode guard."""
     state = TournamentCategoryState
+    ts = TournamentState
     return rx.card(
         rx.vstack(
             rx.heading("Categorías manuales", size="5"),
@@ -219,9 +314,12 @@ def _categories_card() -> rx.Component:
                             "Categorías del torneo seleccionado",
                             size="4",
                         ),
-                        rx.button(
-                            "Nueva categoría",
-                            on_click=state.set_form_values,
+                        rx.cond(
+                            ~ts.is_readonly_mode,
+                            rx.button(
+                                "Nueva categoría",
+                                on_click=state.set_form_values,
+                            ),
                         ),
                         justify="between",
                         width="100%",
@@ -377,29 +475,32 @@ def _categories_card() -> rx.Component:
                                             category["competition_system"],
                                         ),
                                         rx.table.cell(
-                                            rx.hstack(
-                                                rx.button(
-                                                    "Editar",
-                                                    size="2",
-                                                    on_click=lambda event: (
-                                                        state.set_form_values(
-                                                            event,
-                                                            category,
-                                                        )
+                                            rx.cond(
+                                                ~ts.is_readonly_mode,
+                                                rx.hstack(
+                                                    rx.button(
+                                                        "Editar",
+                                                        size="2",
+                                                        on_click=lambda event: (
+                                                            state.set_form_values(
+                                                                event,
+                                                                category,
+                                                            )
+                                                        ),
                                                     ),
-                                                ),
-                                                rx.button(
-                                                    "Eliminar categoría",
-                                                    size="2",
-                                                    variant="outline",
-                                                    on_click=lambda: (
-                                                        state.delete_category(
-                                                            category["id"]
-                                                        )
+                                                    rx.button(
+                                                        "Eliminar categoría",
+                                                        size="2",
+                                                        variant="outline",
+                                                        on_click=lambda: (
+                                                            state.delete_category(
+                                                                category["id"]
+                                                            )
+                                                        ),
                                                     ),
+                                                    spacing="2",
                                                 ),
-                                                spacing="2",
-                                            )
+                                            ),
                                         ),
                                     ),
                                 )
@@ -423,12 +524,15 @@ def _categories_card() -> rx.Component:
             width="100%",
         ),
         width="100%",
+        role="region",
+        aria_label="Categorías del torneo",
     )
 
 
 def _tatami_card() -> rx.Component:
-    """Render tournament-scoped tatami CRUD and source-of-truth summary."""
+    """Card 4: Tatami CRUD with readonly mode guard."""
     state = TournamentTatamiState
+    ts = TournamentState
     return rx.card(
         rx.vstack(
             rx.heading(
@@ -455,9 +559,12 @@ def _tatami_card() -> rx.Component:
                             "Tatamis del torneo seleccionado",
                             size="4",
                         ),
-                        rx.button(
-                            "Nuevo tatami",
-                            on_click=state.set_form_values,
+                        rx.cond(
+                            ~ts.is_readonly_mode,
+                            rx.button(
+                                "Nuevo tatami",
+                                on_click=state.set_form_values,
+                            ),
                         ),
                         justify="between",
                         width="100%",
@@ -556,44 +663,47 @@ def _tatami_card() -> rx.Component:
                                             ),
                                         ),
                                         rx.table.cell(
-                                            rx.hstack(
-                                                rx.button(
-                                                    "Editar",
-                                                    size="2",
-                                                    on_click=lambda event: (
-                                                        state.set_form_values(
-                                                            event,
-                                                            tatami,
-                                                        )
+                                            rx.cond(
+                                                ~ts.is_readonly_mode,
+                                                rx.hstack(
+                                                    rx.button(
+                                                        "Editar",
+                                                        size="2",
+                                                        on_click=lambda event: (
+                                                            state.set_form_values(
+                                                                event,
+                                                                tatami,
+                                                            )
+                                                        ),
                                                     ),
+                                                    rx.button(
+                                                        rx.cond(
+                                                            tatami["is_active"],
+                                                            "Desactivar",
+                                                            "Activar",
+                                                        ),
+                                                        size="2",
+                                                        variant="outline",
+                                                        on_click=lambda: (
+                                                            state.toggle_tatami_active(
+                                                                tatami["id"]
+                                                            )
+                                                        ),
+                                                    ),
+                                                    rx.button(
+                                                        "Eliminar tatami",
+                                                        size="2",
+                                                        variant="outline",
+                                                        on_click=lambda: (
+                                                            state.delete_tatami(
+                                                                tatami["id"]
+                                                            )
+                                                        ),
+                                                    ),
+                                                    spacing="2",
+                                                    wrap="wrap",
                                                 ),
-                                                rx.button(
-                                                    rx.cond(
-                                                        tatami["is_active"],
-                                                        "Desactivar",
-                                                        "Activar",
-                                                    ),
-                                                    size="2",
-                                                    variant="outline",
-                                                    on_click=lambda: (
-                                                        state.toggle_tatami_active(
-                                                            tatami["id"]
-                                                        )
-                                                    ),
-                                                ),
-                                                rx.button(
-                                                    "Eliminar tatami",
-                                                    size="2",
-                                                    variant="outline",
-                                                    on_click=lambda: (
-                                                        state.delete_tatami(
-                                                            tatami["id"]
-                                                        )
-                                                    ),
-                                                ),
-                                                spacing="2",
-                                                wrap="wrap",
-                                            )
+                                            ),
                                         ),
                                     ),
                                 )
@@ -613,77 +723,218 @@ def _tatami_card() -> rx.Component:
             width="100%",
         ),
         width="100%",
+        role="region",
+        aria_label="Tatamis del torneo",
     )
 
 
-def _qr_card() -> rx.Component:
-    """Render QR generation card in tournament workspace."""
+def _qr_section() -> rx.Component:
+    """Render QR content inline (no card wrapper)."""
+    state = TournamentState
+    return rx.vstack(
+        rx.heading("QR de Espectadores", size="5"),
+        rx.text(
+            "Genera un código QR para que los espectadores accedan "
+            "al dashboard del torneo.",
+        ),
+        rx.cond(
+            state.qr_data_url != "",
+            rx.vstack(
+                rx.image(src=state.qr_data_url, width="200px", height="200px"),
+                rx.text(f"Código: {state.qr_code_text}"),
+                rx.text(f"Expira: {state.qr_expires_at}", font_size="sm"),
+                rx.button(
+                    "Regenerar QR",
+                    on_click=state.regenerate_qr,
+                    variant="outline",
+                ),
+                spacing="3",
+                align="center",
+                width="100%",
+            ),
+            rx.vstack(
+                rx.button(
+                    "Generar QR",
+                    on_click=state.generate_qr,
+                    disabled=~state.has_selected_tournament,
+                ),
+                spacing="3",
+                align="center",
+                width="100%",
+            ),
+        ),
+        spacing="3",
+        align="start",
+        width="100%",
+    )
+
+
+def _status_card() -> rx.Component:
+    """Card 1: Tournament summary, lifecycle controls, and QR."""
     state = TournamentState
     return rx.card(
         rx.vstack(
-            rx.heading("QR de Espectadores", size="5"),
-            rx.text(
-                "Genera un código QR para que los espectadores accedan "
-                "al dashboard del torneo.",
+            rx.heading("Estado del torneo", size="5"),
+            _selection_summary(),
+            rx.cond(
+                state.show_lifecycle_controls,
+                rx.vstack(
+                    rx.divider(),
+                    rx.heading("Controles de ciclo", size="4"),
+                    _lifecycle_buttons(),
+                    spacing="2",
+                    width="100%",
+                ),
+                rx.cond(
+                    state.has_selected_tournament,
+                    rx.text("No tienes permisos para operar ciclo de torneo."),
+                ),
             ),
             rx.cond(
-                state.qr_data_url != "",
-                rx.vstack(
-                    rx.image(
-                        src=state.qr_data_url,
-                        width="200px",
-                        height="200px",
-                    ),
-                    rx.text(
-                        f"Código: {state.qr_code_text}",
-                    ),
-                    rx.text(
-                        f"Expira: {state.qr_expires_at}",
-                        font_size="sm",
-                    ),
-                    rx.button(
-                        "Regenerar QR",
-                        on_click=state.regenerate_qr,
-                        variant="outline",
-                    ),
-                    spacing="3",
-                    align="center",
-                    width="100%",
-                ),
-                rx.vstack(
-                    rx.button(
-                        "Generar QR",
-                        on_click=state.generate_qr,
-                        disabled=~state.has_selected_tournament,
-                    ),
-                    spacing="3",
-                    align="center",
-                    width="100%",
-                ),
+                state.transition_error,
+                rx.callout(state.transition_error, icon="triangle_alert", color="red"),
+            ),
+            rx.divider(),
+            _qr_section(),
+            spacing="3",
+            align="start",
+            width="100%",
+        ),
+        width="100%",
+        role="region",
+        aria_label="Estado del torneo",
+    )
+
+
+def _form_card() -> rx.Component:
+    """Card 2: Tournament create/edit form (bridged via TournamentState)."""
+    state = TournamentState
+    return rx.card(
+        rx.vstack(
+            rx.heading(
+                rx.cond(state.create_mode, "Crear torneo", "Editar torneo"),
+                size="5",
+            ),
+            _tournament_form(
+                on_submit_override=TournamentState.handle_form_submit,
+                on_cancel_override=TournamentState.cancel_create_flow,
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+        role="region",
+        aria_label=rx.cond(state.create_mode, "Formulario de creación", "Formulario de edición"),
+    )
+
+
+def _registration_control_card() -> rx.Component:
+    """Card 5: Create flow — review and start competition."""
+    state = TournamentState
+    return rx.card(
+        rx.vstack(
+            rx.heading("Confirmar inicio", size="5"),
+            rx.text("El torneo se creó correctamente."),
+            rx.text("Revisa categorías y tatamis antes de iniciar."),
+            rx.text(
+                "Al clickear 'Comenzar torneo' se iniciará la competencia.",
+                font_size="sm",
+            ),
+            rx.divider(),
+            rx.cond(
+                state.current_tournament,
+                rx.text(f"Torneo: {state.current_tournament['name']}", weight="bold"),
             ),
             spacing="3",
             align="start",
             width="100%",
         ),
         width="100%",
+        role="region",
+        aria_label="Confirmar inicio de torneo",
+    )
+
+
+def _edit_choice_card() -> rx.Component:
+    """Card 6: Edit flow — choose what to edit."""
+    state = TournamentState
+    return rx.card(
+        rx.vstack(
+            rx.heading("¿Qué deseas editar?", size="5"),
+            rx.cond(
+                state.current_tournament,
+                rx.text(f"Torneo: {state.current_tournament['name']}"),
+                rx.text("Selecciona un torneo"),
+            ),
+            rx.vstack(
+                rx.button(
+                    "Editar categorías",
+                    on_click=state.go_to_step(CATEGORIES_STEP),
+                    width="100%",
+                ),
+                rx.cond(
+                    ~state.is_readonly_mode,
+                    rx.button(
+                        "Editar datos del torneo",
+                        on_click=state.go_to_step(FORM_STEP),
+                        width="100%",
+                        variant="outline",
+                    ),
+                ),
+                spacing="2",
+                width="100%",
+            ),
+            rx.cond(
+                state.is_readonly_mode,
+                rx.callout(
+                    "Solo visualización disponible para torneos avanzados.",
+                    icon="info",
+                ),
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+        role="region",
+        aria_label="Opciones de edición",
+    )
+
+
+def _active_card() -> rx.Component:
+    """Dispatch to the correct card component based on step_index."""
+    return rx.box(
+        rx.match(
+            TournamentState.step_index,
+            (SELECTION_STEP, _selector_card()),
+            (STATUS_STEP, _status_card()),
+            (FORM_STEP, _form_card()),
+            (CATEGORIES_STEP, _categories_card()),
+            (TATAMIS_STEP, _tatami_card()),
+            (CONFIRM_STEP, _registration_control_card()),
+            (EDIT_CHOICE_STEP, _edit_choice_card()),
+            _selector_card(),
+        ),
+        style={
+            "transition": "opacity 0.2s ease, transform 0.2s ease",
+        },
+        key=TournamentState.step_index,
+        role="region",
+        aria_live="polite",
+        aria_label=f"Paso actual del torneo",
+        width="100%",
     )
 
 
 def tournament() -> rx.Component:
-    """Render tournament operator workspace shell."""
+    """Render tournament operator workspace shell — sequential card flow."""
     body = rx.vstack(
         _workspace_header(),
-        rx.grid(
-            _selector_card(),
-            _lifecycle_card(),
-            _categories_card(),
-            _tatami_card(),
-            _qr_card(),
-            columns="2",
-            spacing="4",
-            width="100%",
-        ),
+        _step_indicator(),
+        _active_card(),
+        _navigation_bar(),
         spacing="4",
         width="100%",
+        max_width="800px",
+        margin_x="auto",
     )
     return registry_page_shell(body=body)
