@@ -17,6 +17,8 @@ class MatchCardData(TypedDict):
     match_type: str
     aka_label: str
     ao_label: str
+    aka_score: int
+    ao_score: int
     tatami_label: str | None
     referee_label: str | None
     live_match_href: str | None
@@ -114,6 +116,8 @@ def _to_display_match(match: Mapping[str, Any]) -> MatchCardData:
         "ao_label": ao_label
         if ao_label is not None
         else _resolve_participant_label(match.get("ao_name"), round_number),
+        "aka_score": int(match.get("aka_score") or 0),
+        "ao_score": int(match.get("ao_score") or 0),
         "tatami_label": match.get("tatami_label", match.get("tatami_name")),
         "referee_label": match.get("referee_label", match.get("referee_name")),
         "live_match_href": match.get("live_match_href"),
@@ -185,6 +189,8 @@ def build_match_cards(
                 ),
                 "aka_name": aka_name,
                 "ao_name": ao_name,
+                "aka_score": int(getattr(match, "aka_score", 0) or 0),
+                "ao_score": int(getattr(match, "ao_score", 0) or 0),
                 "tatami_name": tatami_names.get(tatami_id),
                 "referee_name": referee_names.get(referee_id),
                 "live_match_href": (

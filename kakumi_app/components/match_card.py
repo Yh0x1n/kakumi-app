@@ -12,7 +12,11 @@ def _optional_label(value: rx.Var | str | None) -> rx.Component:
     return rx.cond(value, rx.text(value), rx.text("—"))
 
 
-def match_card(match: MatchCardData, show_future_action: bool = False) -> rx.Component:
+def match_card(
+    match: MatchCardData,
+    show_future_action: bool = False,
+    show_scores: bool = False,
+) -> rx.Component:
     """Render a compact operator-facing match card."""
     return rx.card(
         rx.vstack(
@@ -26,9 +30,23 @@ def match_card(match: MatchCardData, show_future_action: bool = False) -> rx.Com
                 width="100%",
                 align="center",
             ),
-            rx.text(match["aka_label"], font_weight="bold"),
+            rx.hstack(
+                rx.text(match["aka_label"], font_weight="bold"),
+                rx.cond(
+                    show_scores,
+                    rx.badge(match["aka_score"], color_scheme="blue"),
+                ),
+                spacing="2",
+            ),
             rx.text("vs"),
-            rx.text(match["ao_label"], font_weight="bold"),
+            rx.hstack(
+                rx.text(match["ao_label"], font_weight="bold"),
+                rx.cond(
+                    show_scores,
+                    rx.badge(match["ao_score"], color_scheme="red"),
+                ),
+                spacing="2",
+            ),
             rx.hstack(
                 rx.text("Tatami:", font_weight="medium"),
                 _optional_label(match["tatami_label"]),

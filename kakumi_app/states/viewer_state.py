@@ -3,13 +3,30 @@ Viewer State
 Manages viewer code validation and access to tournament data.
 """
 
+import logging
 from typing import Any, Optional
 
 import reflex as rx
 from sqlmodel import select
 
-from kakumi_app.models.tournament_model import Tournament, TournamentCategory
+from kakumi_app.models.athlete_model import Athlete
+from kakumi_app.models.referee_model import Referee
+from kakumi_app.models.team_model import Team
+from kakumi_app.models.tournament_model import (
+    Match,
+    Tatami,
+    Tournament,
+    TournamentCategory,
+)
 from kakumi_app.services.viewer_service import ViewerService
+from kakumi_app.utils import (
+    BracketCategoryData,
+    BracketRoundData,
+    build_match_cards,
+    group_matches_by_round,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ViewerState(rx.State):
@@ -101,11 +118,102 @@ class ViewerState(rx.State):
             for category in categories
         ]
 
+    # Bracket data for live viewer
+    bracket_data: Optional[dict[str, Any]] = None
+    is_loading_bracket: bool = False
+
     @rx.event
     def select_category(self, category_id: int, category_type: str) -> None:
         """Select a category for viewing bracket and live match."""
         self.selected_category_id = category_id
         self.selected_category_type = category_type
+
+    @rx.event
+    async def load_category_bracket(self) -> None:
+        """Load bracket data for the selected category."""
+        if self.selected_category_id is None:
+            return
+
+        self.is_loading_bracket = True
+        self.bracket_data = None
+
+        try:
+            category_id = self.selected_category_id
+
+            with rx.session() as session:
+                category = session.get(TournamentCategory, category_id)
+                if category is None:
+                    return
+
+                matches = session.exec(
+                    select(Match)
+                    .where(Match.category_id == category_id)
+                    .order_by(Match.round, Match.position, Match.id)
+                ).all()
+
+                athlete_ids = {
+                    pid
+                    for match in matches
+                    for pid in (match.aka_id, match.ao_id)
+                    if pid is not None
+                }
+                team_ids = {
+                    pid
+                    for match in matches
+                    for pid in (match.aka_team_id, match.ao_team_id)
+                    if pid is not None
+                }
+                tatami_ids = {
+                    match.tatami_id
+                    for match in matches
+                    if match.tatami_id is not None
+                }
+                referee_ids = {
+                    match.referee_id
+                    for match in matches
+                    if match.referee_id is not None
+                }
+
+                def _name_lookup(model: Any, ids: set[int]) -> dict[int, str]:
+                    if not ids:
+                        return {}
+                    rows = session.exec(
+                        select(model.id, model.name).where(
+                            model.id.in_(sorted(ids))
+                        )
+                    ).all()
+                    return {row[0]: row[1] for row in rows}
+
+                athlete_names = _name_lookup(Athlete, athlete_ids)
+                team_names = _name_lookup(Team, team_ids)
+                tatami_names = _name_lookup(Tatami, tatami_ids)
+                referee_names = _name_lookup(Referee, referee_ids)
+
+            match_cards = build_match_cards(
+                matches,
+                athlete_names=athlete_names,
+                team_names=team_names,
+                tatami_names=tatami_names,
+                referee_names=referee_names,
+            )
+
+            rounds = group_matches_by_round(match_cards)
+
+            self.bracket_data = {
+                "id": category.id,
+                "name": category.name,
+                "modality": category.modality,
+                "competition_system": category.competition_system,
+                "status": category.status,
+                "rounds": rounds,
+                "kata_flow_mode": getattr(category, "kata_flow_mode", "STANDARD"),
+                "standings": [],
+            }
+        except Exception:
+            logger.exception("Error loading category bracket")
+            self.bracket_data = None
+        finally:
+            self.is_loading_bracket = False
 
     @rx.var
     def is_viewer_authenticated(self) -> bool:

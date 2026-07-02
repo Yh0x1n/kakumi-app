@@ -91,11 +91,43 @@ def test_group_matches_by_round_preserves_display_fields_and_none_assignments() 
                     "ao_label": "Equipo Ao",
                     "tatami_label": None,
                     "referee_label": None,
+                    "aka_score": 0,
+                    "ao_score": 0,
                     "live_match_href": None,
                 }
             ],
         }
     ]
+
+
+def test_build_match_cards_includes_scores() -> None:
+    """build_match_cards debe incluir aka_score y ao_score desde el ORM."""
+    class _Match:
+        id = 10
+        round = 1
+        position = 1
+        status = "COMPLETED"
+        match_type = "ELIMINATION"
+        aka_id = None
+        aka_team_id = None
+        ao_id = None
+        ao_team_id = None
+        tatami_id = None
+        referee_id = None
+        category_id = 1
+        aka_score = 3
+        ao_score = 1
+
+    cards = build_match_cards(
+        [_Match()],
+        athlete_names={},
+        team_names={},
+        tatami_names={},
+        referee_names={},
+    )
+
+    assert cards[0]["aka_score"] == 3
+    assert cards[0]["ao_score"] == 1
 
 
 def test_resolve_live_match_href_chooses_kata_path_for_kata_modality() -> None:

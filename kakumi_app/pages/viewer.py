@@ -5,11 +5,8 @@ Login page for viewer code entry and dashboard for live results.
 
 import reflex as rx
 
+from kakumi_app.components.bracket_round import bracket_round
 from kakumi_app.states.viewer_state import ViewerState
-
-# NOTE: Bracket components not yet implemented
-# from kakumi_app.components.bracket_view import bracket_view
-# from kakumi_app.states.bracket_state import BracketState
 
 
 def viewer_login_page() -> rx.Component:
@@ -129,9 +126,10 @@ def viewer_dashboard_page() -> rx.Component:
                             state.categories,
                             lambda cat: rx.button(
                                 f"{cat['name']} ({cat['type']})",
-                                on_click=lambda: state.select_category(
-                                    cat["id"], cat["type"]
-                                ),
+                                on_click=lambda: [
+                                    state.select_category(cat["id"], cat["type"]),
+                                    state.load_category_bracket(),
+                                ],
                                 margin_bottom="0.5em",
                                 width="100%",
                             ),
@@ -147,10 +145,29 @@ def viewer_dashboard_page() -> rx.Component:
             rx.box(
                 rx.vstack(
                     rx.heading("Bracket en Vivo", size="4"),
-                    rx.text(
-                        (
-                            "La visualización de brackets estará disponible "
-                            "cuando se implementen los modelos de partidos."
+                    rx.cond(
+                        state.selected_category_id.is_(None),
+                        rx.text("Seleccione una categoría"),
+                        rx.cond(
+                            state.is_loading_bracket,
+                            rx.spinner(),
+                            rx.cond(
+                                state.bracket_data,
+                                rx.scroll_area(
+                                    rx.hstack(
+                                        rx.foreach(
+                                            state.bracket_data["rounds"],
+                                            lambda r: bracket_round(
+                                                r, show_scores=True
+                                            ),
+                                        ),
+                                        spacing="4",
+                                        align="stretch",
+                                    ),
+                                    width="100%",
+                                ),
+                                rx.text("No hay datos disponibles"),
+                            ),
                         ),
                     ),
                     padding="1em",
