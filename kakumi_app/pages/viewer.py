@@ -146,7 +146,7 @@ def viewer_dashboard_page() -> rx.Component:
                 rx.vstack(
                     rx.heading("Bracket en Vivo", size="4"),
                     rx.cond(
-                        state.selected_category_id.is_(None),
+                        ~state.selected_category_id,
                         rx.text("Seleccione una categoría"),
                         rx.cond(
                             state.is_loading_bracket,
@@ -156,7 +156,7 @@ def viewer_dashboard_page() -> rx.Component:
                                 rx.scroll_area(
                                     rx.hstack(
                                         rx.foreach(
-                                            state.bracket_data["rounds"],
+                                            state.bracket_rounds,
                                             lambda r: bracket_round(
                                                 r, show_scores=True
                                             ),

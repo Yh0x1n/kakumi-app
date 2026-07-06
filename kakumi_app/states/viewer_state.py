@@ -89,6 +89,7 @@ class ViewerState(rx.State):
         self.selected_category_id = None
         self.selected_category_type = None
         self.access_denied = False
+        self.bracket_rounds = []
 
     @rx.event
     async def load_categories(self) -> None:
@@ -120,6 +121,7 @@ class ViewerState(rx.State):
 
     # Bracket data for live viewer
     bracket_data: Optional[dict[str, Any]] = None
+    bracket_rounds: list[dict[str, Any]] = []
     is_loading_bracket: bool = False
 
     @rx.event
@@ -209,9 +211,11 @@ class ViewerState(rx.State):
                 "kata_flow_mode": getattr(category, "kata_flow_mode", "STANDARD"),
                 "standings": [],
             }
+            self.bracket_rounds = list(rounds)
         except Exception:
             logger.exception("Error loading category bracket")
             self.bracket_data = None
+            self.bracket_rounds = []
         finally:
             self.is_loading_bracket = False
 

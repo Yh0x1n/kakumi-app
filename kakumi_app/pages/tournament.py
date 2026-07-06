@@ -729,7 +729,10 @@ def _tatami_card() -> rx.Component:
 
 
 def _qr_section() -> rx.Component:
-    """Render QR content inline (no card wrapper)."""
+    """Render QR content inline (no card wrapper).
+
+    Includes download link, copy-link button, and large QR dialog.
+    """
     state = TournamentState
     return rx.vstack(
         rx.heading("QR de Espectadores", size="5"),
@@ -740,13 +743,71 @@ def _qr_section() -> rx.Component:
         rx.cond(
             state.qr_data_url != "",
             rx.vstack(
-                rx.image(src=state.qr_data_url, width="200px", height="200px"),
+                # QR image wrapped in download link (Task 2.1)
+                rx.link(
+                    rx.image(
+                        src=state.qr_data_url,
+                        width="200px",
+                        height="200px",
+                    ),
+                    href=state.qr_data_url,
+                    download="kakumi-qr.png",
+                ),
                 rx.text(f"Código: {state.qr_code_text}"),
                 rx.text(f"Expira: {state.qr_expires_at}", font_size="sm"),
-                rx.button(
-                    "Regenerar QR",
-                    on_click=state.regenerate_qr,
-                    variant="outline",
+                # Actions row: regenerate, copy link, large view (Tasks 2.2, 2.3)
+                rx.hstack(
+                    rx.button(
+                        "Regenerar QR",
+                        on_click=state.regenerate_qr,
+                        variant="outline",
+                    ),
+                    rx.button(
+                        "Copiar enlace",
+                        on_click=rx.set_clipboard(state.qr_viewer_url),
+                        variant="outline",
+                    ),
+                    rx.dialog.root(
+                        rx.dialog.trigger(
+                            rx.button(
+                                "Ver QR grande",
+                                variant="outline",
+                            ),
+                        ),
+                        rx.dialog.content(
+                            rx.dialog.title(
+                                "QR de Espectadores",
+                                font_weight="bold",
+                            ),
+                            rx.vstack(
+                                rx.image(
+                                    src=state.qr_data_url,
+                                    width="400px",
+                                    height="400px",
+                                ),
+                                rx.text(
+                                    f"Código: {state.qr_code_text}",
+                                    font_weight="bold",
+                                ),
+                                rx.text(
+                                    f"Expira: {state.qr_expires_at}",
+                                    font_size="sm",
+                                ),
+                                rx.dialog.close(
+                                    rx.button(
+                                        "Cerrar",
+                                        variant="soft",
+                                        color_scheme="gray",
+                                    ),
+                                ),
+                                spacing="3",
+                                align="center",
+                                width="100%",
+                            ),
+                        ),
+                    ),
+                    spacing="3",
+                    wrap="wrap",
                 ),
                 spacing="3",
                 align="center",
