@@ -62,6 +62,7 @@ class TournamentState(rx.State):
     qr_code_text: str = ""
     qr_generated_at: str = ""
     qr_expires_at: str = ""
+    qr_viewer_url: str = ""
 
     # ID del usuario actual (se setea desde AuthState)
     _current_user_id: int = 0
@@ -377,6 +378,17 @@ class TournamentState(rx.State):
             self.current_tournament = None
             self.transition_error = ""
             self.validation_warnings = []
+            self._clear_qr_vars()
+
+    def _clear_qr_vars(self) -> None:
+        """Reset all QR-related state vars to empty strings."""
+        self.qr_data_url = ""
+        self.qr_code_text = ""
+        self.qr_generated_at = ""
+        self.qr_expires_at = ""
+        self.qr_viewer_url = ""
+
+    @rx.event
 
     @rx.event
     async def set_current_tournament(self, tournament_id: int) -> None:
@@ -419,6 +431,10 @@ class TournamentState(rx.State):
         await self.refresh_current_tournament_snapshot(tournament_id)
         self.transition_error = " | ".join(sync_errors)
         self.validation_warnings = []
+
+        # Clear QR state vars when switching to a different tournament
+        # to avoid showing stale QR data from a previous tournament
+        self._clear_qr_vars()
 
     @rx.event
     async def refresh_current_tournament_snapshot(self, tournament_id: int) -> None:
@@ -576,19 +592,42 @@ class TournamentState(rx.State):
 
     # ── Base URL helper ───────────────────────────────
 
-    def _get_base_url(self) -> str:
-        """Extract base URL from router context for QR generation.
+    @staticmethod
+    def _resolve_base_url(router) -> str:
+        """Extract base URL from router data (pure function, no self).
 
-        Falls back to Host header if router.url.origin unavailable.
+        Priority:
+          1. router.url.origin (if it has an 'origin' attribute)
+          2. X-Forwarded-Proto + X-Forwarded-Host (reverse proxy headers)
+          3. Host header fallback with http://
         """
         try:
-            if hasattr(self.router, "url") and getattr(self.router.url, "origin", None):
-                return self.router.url.origin
-        except Exception:
+            if hasattr(router, "url") and getattr(router.url, "origin", None):
+                return router.url.origin
+        except AttributeError:
             pass
-        # Fallback: construct from Host header
-        host = self.router.headers.get("host", "localhost:3000")
-        return f"http://{host}"
+
+        scheme = "http"
+        host = router.headers.get("host", "localhost:3000")
+
+        try:
+            raw = router.headers.raw_headers
+            if b"x-forwarded-proto" in raw:
+                proto_value = raw[b"x-forwarded-proto"]
+                if proto_value and len(proto_value) > 0:
+                    scheme = proto_value[0].decode("utf-8", errors="replace")
+            if b"x-forwarded-host" in raw:
+                host_value = raw[b"x-forwarded-host"]
+                if host_value and len(host_value) > 0:
+                    host = host_value[0].decode("utf-8", errors="replace")
+        except (AttributeError, KeyError, IndexError):
+            pass
+
+        return f"{scheme}://{host}"
+
+    def _get_base_url(self) -> str:
+        """Extract base URL from router context for QR generation."""
+        return self._resolve_base_url(self.router)
 
     # ── QR event handlers ──────────────────────────
 
@@ -610,11 +649,12 @@ class TournamentState(rx.State):
         url = f"{base_url}/viewer/dashboard/{tournament_id}?code={code}"
         data_uri = _make_qr_data_url(url)
 
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(tz=datetime.UTC)
         expires = now + datetime.timedelta(hours=5)
 
         self.qr_data_url = data_uri
         self.qr_code_text = code
+        self.qr_viewer_url = url
         self.qr_generated_at = now.strftime("%Y-%m-%d %H:%M UTC")
         self.qr_expires_at = expires.strftime("%Y-%m-%d %H:%M UTC")
 

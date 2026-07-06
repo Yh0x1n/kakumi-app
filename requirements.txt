@@ -33,6 +33,7 @@ pydantic-core==2.46.0
 pygments==2.20.0
 pyjwt==2.12.1
 pytest==9.0.3
+pytest-asyncio==0.25.3
 python-dateutil==2.9.0.post0
 python-engineio==4.13.1
 python-multipart==0.0.26
