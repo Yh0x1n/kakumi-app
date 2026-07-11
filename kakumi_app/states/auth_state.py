@@ -301,7 +301,10 @@ class AuthState(rx.State):
 
         # Check if any user exists
         with rx.session() as session:
-            from sqlmodel import select
+            from sqlmodel import SQLModel, select
+
+            # Create all tables if they don't exist (first deploy on fresh DB)
+            SQLModel.metadata.create_all(session.get_bind())
 
             user_count = session.exec(select(User)).all()
             if user_count:

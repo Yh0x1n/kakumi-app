@@ -1,0 +1,8 @@
+# Development-only dependencies
+# Install with: pip install -r requirements-dev.txt
+pytest==9.0.3
+pytest-asyncio==0.25.3
+ruff==0.15.10
+httpx==0.28.1
+keyboard==0.13.5
+watchfiles==1.1.1
