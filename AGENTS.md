@@ -6,7 +6,8 @@ This file provides instructions for agentic coding agents working on the kakumi-
 
 Para cualquier delegación a subagentes SDD, es **obligatorio** aplicar el workflow definido en:
 
-- `docs/ai/sdd-subagent-workflows.md`
+- `docs/ai/sdd-subagent-workflows.md` — skills inyectadas por fase, reglas `uv`, timeout.
+- `docs/ai/review-contract.md` — contrato de review técnica post-apply, risk classification, lentes 4R, refuter, scoped validation, lifecycle gates.
 
 El orquestador debe inyectar skills y reglas de ejecución según fase, exactamente como indica ese documento.
 
@@ -183,6 +184,91 @@ python -m pytest test_file.py::test_function_name -v
 10. **Component Reuse**: Use existing project styles and components instead of creating repetitive inline styles. In case there is no component matching the requirements, build it, as long as it doesn't break the structure
 11. **Error Handling**: Implement proper error handling with user feedback (e.g., rx.toast) when actions fail
 12. **Performance**: Consider re-renders and database query efficiency
+
+## SDD Workflow (Spec-Driven Development)
+
+Toda feature o cambio significativo en kakumi-app sigue el flujo **SDD**. No se codea de una — primero se planifica, después se ejecuta.
+
+### Fases SDD
+
+```
+proposal → spec → tasks → apply → verify → archive
+              ↑
+            design
+```
+
+| Fase | Qué produce | Gate |
+|---|---|---|
+| `explore` | Investigación del codebase, alternativas | — |
+| `propose` | Propuesta con alcance, approach, riesgos | Aprobación del usuario |
+| `spec` | Requerimientos detallados, escenarios | Gatekeeper |
+| `design` | Diseño técnico: archivos, patrones, datos | Gatekeeper |
+| `tasks` | Tareas atómicas con estimación de líneas | Review Workload Guard |
+| `apply` | Implementación con commits atómicos | Gatekeeper |
+| `verify` | Tests + validación contra spec | Gatekeeper |
+| `archive` | Cierre del cambio, persistencia final | — |
+
+### Preflight obligatorio
+
+Antes de arrancar cualquier fase SDD:
+
+1. **Modo**: `interactive` (pausa entre fases) o `auto` (gatekeeper autónomo)
+2. **Artifact store**: `engram` (por defecto), `openspec` (archivos), o `both`
+3. **Estrategia de PRs**: `ask-on-risk`, `auto-chain`, `single-pr`, `exception-ok`
+4. **Review budget**: máximo de líneas antes de partir PRs (default: 400)
+
+### Review Workload Guard
+
+Cuando `sdd-tasks` pronostica >400 líneas o riesgo alto, el orquestador aplica la estrategia de PRs definida en preflight. Si corresponde, parte el cambio en PRs encadenados usando `chained-pr` skill.
+
+### Gatekeeper (modo automático)
+
+Entre fases el orquestador valida: contrato cumplido, artifact existe y es legible, no hay alucinaciones, no hay drift contra inputs, routing coherente. Si falla, re-ejecuta la fase una vez con feedback correctivo. Si vuelve a fallar, STOP y reporta al usuario.
+
+---
+
+## 4R Review System
+
+Después de `sdd-apply`, el orquestador corre una **review técnica con subagentes especializados**, cada uno con un lente distinto y contexto fresco.
+
+### Clasificación de riesgo
+
+El orquestador clasifica el diff antes de seleccionar lentes:
+
+| Si el diff es... | Lentes que corre |
+|---|---|
+| **Trivial** (solo docs, comments, formatting, typo fixes — cero código ejecutable ni config) | Ninguno |
+| **Standard** (todo lo demás que no sea trivial ni hot path) | Exactamente **1 lente** — el que mejor matchee el riesgo dominante |
+| **Hot path** (auth/seguridad/pagos **o** >400 líneas modificadas) | **4R completo** (los 4 lentes) |
+
+### Tabla de selección de lentes
+
+| Señal de riesgo | Lente |
+|---|---|
+| Naming, estructura, maintainability, refactors chicos | `review-readability` |
+| Comportamiento, estado, tests, determinismo, regresiones | `review-reliability` |
+| Integración shell/process, fallas parciales, recovery, dependencias degradadas | `review-resilience` |
+| Seguridad, permisos, exposición de datos, arquitectura, dependencias | `review-risk` |
+
+### Contrato de ejecución
+
+- Cada reviewer es **read-only**, recibe un snapshot completo inmutable.
+- Devuelve hallazgos estructurados con evidencia concreta.
+- Los hallazgos inferenciales severos pasan por un **refuter** adversarial.
+- Después de corrección (si hace falta), un **scoped validator** verifica solo el fix delta.
+- Todo se persiste en un **Frozen Findings Ledger** con estados `open | corroborated | refuted | inconclusive | fixed | verified | info`.
+
+### Lifecycle Gates
+
+- **Pre-commit**: valida receipt existente — nunca lanza reviewer nuevo.
+- **Pre-push**: valida receipt contra commits salientes.
+- **Pre-PR**: valida receipt contra candidate tree + base.
+- **Release**: valida receipt + evidence freshness + publication boundary.
+- **Post-apply** (solo si no hay receipt válido): lanza `review/start(target)`.
+
+El contrato completo está en `docs/ai/review-contract.md`.
+
+---
 
 ## Future Improvements
 

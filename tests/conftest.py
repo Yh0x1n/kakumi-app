@@ -18,7 +18,7 @@ import sqlmodel
 import sqlalchemy as sa
 from alembic.config import Config
 from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 from sqlmodel import Session, SQLModel
 
 from kakumi_app.models.athlete_model import Athlete
@@ -148,39 +148,59 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Generator[Session, None, None
     """
     Crea una DB de test aislada por cada test function.
 
-    - Usa una DB SQLite de test separada de la producción
+    Si ``DATABASE_URL`` está set y no es SQLite → usa PostgreSQL.
+    Caso contrario → SQLite tempfile (comportamiento legacy).
+
     - Crea todas las tablas antes del test
     - Parchea rx.session() para que use la DB de test
     - Elimina la DB después de cada test
     """
-    fd, test_db_path = tempfile.mkstemp(suffix=".db", prefix="kakumi-test-")
-    os.close(fd)
-    os.unlink(test_db_path)
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    test_db_path: str | None = None
 
-    # Crear engine de test
-    test_engine = create_engine(f"sqlite:///{test_db_path}", echo=False)
+    if db_url and not db_url.startswith("sqlite"):
+        # PostgreSQL mode
+        engine = sa.create_engine(
+            db_url,
+            poolclass=NullPool,
+            echo=False,
+        )
+        SQLModel.metadata.create_all(engine)
+        # Single TRUNCATE all tables for test isolation
+        tables_csv = ", ".join(
+            f'"{t.name}"' for t in reversed(SQLModel.metadata.sorted_tables)
+        )
+        with engine.connect() as conn:
+            conn.execute(sa.text(f"TRUNCATE {tables_csv} CASCADE"))
+            conn.commit()
+    else:
+        # SQLite mode: tempfile
+        fd, test_db_path = tempfile.mkstemp(suffix=".db", prefix="kakumi-test-")
+        os.close(fd)
+        os.unlink(test_db_path)
+        engine = create_engine(f"sqlite:///{test_db_path}", echo=False)
 
-    # Crear todas las tablas en la DB de test
-    # rx.Model hereda de SQLModel, así que SQLModel.metadata tiene todos los modelos
-    SQLModel.metadata.create_all(test_engine)
+    # Crear todas las tablas
+    SQLModel.metadata.create_all(engine)
 
     # Parchear rx.model.session para que use la DB de test
     def _test_session(url: str | None = None) -> sqlmodel.Session:
         """Session que usa la DB de test en lugar de la de producción."""
-        return sqlmodel.Session(test_engine)
+        return sqlmodel.Session(engine)
 
     monkeypatch.setattr(rx.model, "session", _test_session)
 
     # Yield session para tests que la necesiten directamente
-    with sqlmodel.Session(test_engine) as session:
+    with sqlmodel.Session(engine) as session:
         yield session
 
-    # Cleanup: destruir engine y eliminar DB de test
-    test_engine.dispose()
-    for suffix in ("", "-wal", "-shm"):
-        candidate = f"{test_db_path}{suffix}"
-        if os.path.exists(candidate):
-            os.remove(candidate)
+    # Cleanup
+    engine.dispose()
+    if test_db_path:
+        for suffix in ("", "-wal", "-shm"):
+            candidate = f"{test_db_path}{suffix}"
+            if os.path.exists(candidate):
+                os.remove(candidate)
 
 
 @pytest.fixture(scope="function")

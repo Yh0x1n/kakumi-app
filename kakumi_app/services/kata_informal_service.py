@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 import reflex as rx
@@ -315,7 +314,7 @@ class KataInformalService:
             category = session.get(TournamentCategory, category_id)
             category.first_place_id = int(top[0]["athlete_id"])
             category.second_place_id = int(top[1]["athlete_id"])
-            category.third_place_ids = json.dumps([int(top[2]["athlete_id"])])
+            category.third_place_ids = [int(top[2]["athlete_id"])]
             category.status = CategoryStatus.COMPLETED.value
             session.add(category)
             session.commit()

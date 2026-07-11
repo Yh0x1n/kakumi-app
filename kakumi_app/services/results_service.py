@@ -168,14 +168,16 @@ class ResultsService:
                 if cat.second_place_id:
                     athlete_ids_for_podium.add(cat.second_place_id)
                 if cat.third_place_ids:
-                    try:
-                        parsed = json.loads(cat.third_place_ids)
-                        if isinstance(parsed, list):
-                            athlete_ids_for_podium.update(
-                                int(pid) for pid in parsed if pid is not None
-                            )
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        pass
+                    third = cat.third_place_ids
+                    if isinstance(third, str):
+                        try:
+                            third = json.loads(third)
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            third = None
+                    if isinstance(third, list):
+                        athlete_ids_for_podium.update(
+                            int(pid) for pid in third if pid is not None
+                        )
 
         athletes_by_id: dict[int, str] = {}
         if athlete_ids_for_podium:
@@ -206,17 +208,19 @@ class ResultsService:
                 )
                 third_names: list[str] = []
                 if matching_cat.third_place_ids:
-                    try:
-                        parsed = json.loads(matching_cat.third_place_ids)
-                        if isinstance(parsed, list):
-                            third_names = [
-                                athletes_by_id.get(int(pid), "") or ""
-                                for pid in parsed
-                                if pid is not None
-                                and int(pid) in athletes_by_id
-                            ]
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        pass
+                    third = matching_cat.third_place_ids
+                    if isinstance(third, str):
+                        try:
+                            third = json.loads(third)
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            third = None
+                    if isinstance(third, list):
+                        third_names = [
+                            athletes_by_id.get(int(pid), "") or ""
+                            for pid in third
+                            if pid is not None
+                            and int(pid) in athletes_by_id
+                        ]
                 row["third_place_display"] = (
                     ", ".join(third_names) if third_names else ""
                 )
@@ -366,14 +370,16 @@ class ResultsService:
                 if cat.second_place_id:
                     athlete_ids.add(cat.second_place_id)
                 if cat.third_place_ids:
-                    try:
-                        parsed = json.loads(cat.third_place_ids)
-                        if isinstance(parsed, list):
-                            athlete_ids.update(
-                                int(pid) for pid in parsed if pid is not None
-                            )
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        pass
+                    third = cat.third_place_ids
+                    if isinstance(third, str):
+                        try:
+                            third = json.loads(third)
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            third = None
+                    if isinstance(third, list):
+                        athlete_ids.update(
+                            int(pid) for pid in third if pid is not None
+                        )
 
             # Bulk-load athletes
             athletes_by_id: dict[int, str] = {}
@@ -412,16 +418,18 @@ class ResultsService:
             )  # type: ignore[arg-type]
             third_place_names: list[str] = []
             if category.third_place_ids:
-                try:
-                    parsed = json.loads(category.third_place_ids)
-                    if isinstance(parsed, list):
-                        third_place_names = [
-                            athletes_by_id.get(int(pid), "") or ""
-                            for pid in parsed
-                            if pid is not None and int(pid) in athletes_by_id
-                        ]
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    pass
+                third = category.third_place_ids
+                if isinstance(third, str):
+                    try:
+                        third = json.loads(third)
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        third = None
+                if isinstance(third, list):
+                    third_place_names = [
+                        athletes_by_id.get(int(pid), "") or ""
+                        for pid in third
+                        if pid is not None and int(pid) in athletes_by_id
+                    ]
 
             third_place_display = (
                 ", ".join(third_place_names) if third_place_names else ""

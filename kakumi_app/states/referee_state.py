@@ -224,7 +224,11 @@ class RefereeState(rx.State):
                 referee.get("license_level", "NATIONAL")
             )
             self.role = self._display_role(referee.get("role", "REFEREE"))
-            self.tatami_certified = referee.get("tatami_certified") or ""
+            tatami_val = referee.get("tatami_certified")
+            if isinstance(tatami_val, list):
+                self.tatami_certified = json.dumps(tatami_val)
+            else:
+                self.tatami_certified = tatami_val or ""
             self.is_available = bool(referee.get("is_available", True))
             self.dojo = referee.get("dojo") or ""
             self.email = referee.get("email") or ""

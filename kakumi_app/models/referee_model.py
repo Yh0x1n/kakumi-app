@@ -6,9 +6,10 @@ Implementación según specs.md sección 2.7.
 
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import reflex as rx
+import sqlalchemy as sa
 from sqlmodel import Field, Relationship
 
 if TYPE_CHECKING:
@@ -52,9 +53,10 @@ class Referee(rx.Model, table=True):
     is_available: bool = Field(default=True)
 
     # Campos opcionales
-    tatami_certified: Optional[str] = Field(
-        default=None
-    )  # JSON array de tatamis certificados
+    tatami_certified: Optional[Any] = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
     dojo: Optional[str] = Field(default=None, max_length=255)
     email: Optional[str] = Field(default=None, max_length=255)
     phone: Optional[str] = Field(default=None, max_length=20)

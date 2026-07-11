@@ -4,9 +4,10 @@ Audit Log Model
 Logs authentication events for compliance and forensic analysis.
 """
 
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 from reflex import Model
+import sqlalchemy as sa
 from sqlmodel import Field
 
 
@@ -19,5 +20,8 @@ class AuditLog(Model, table=True):
     username: Optional[str] = Field(max_length=50)
     ip_address: Optional[str] = Field(max_length=45)
     user_agent: Optional[str] = Field(max_length=255)
-    details: Optional[str] = Field(max_length=1000)  # JSON-compatible additional data
+    details: Optional[Any] = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)

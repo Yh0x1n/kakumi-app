@@ -7,9 +7,10 @@ Implementación basada en specs.md secciones 2.3, 2.4, 2.5, 2.10.
 
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import reflex as rx
+import sqlalchemy as sa
 from sqlmodel import Field, Relationship
 
 from .kata_model import KataDecisionRule
@@ -242,7 +243,10 @@ class TournamentCategory(rx.Model, table=True):
     # Resultados (nullable hasta que finalice la categoría)
     first_place_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
     second_place_id: Optional[int] = Field(default=None, foreign_key="athletes.id")
-    third_place_ids: Optional[str] = Field(default=None)  # JSON array de IDs
+    third_place_ids: Optional[Any] = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
 
     # Timestamps
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)

@@ -6,9 +6,10 @@ Persiste el historial de transiciones según WKF compliance requirements.
 """
 
 import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import reflex as rx
+import sqlalchemy as sa
 from sqlmodel import Field
 
 
@@ -35,7 +36,10 @@ class TournamentEventLog(rx.Model, table=True):
     new_status: Optional[str] = Field(default=None, max_length=50)
 
     # Detalles adicionales del evento (mensaje, razón, etc.)
-    details: Optional[str] = Field(default=None)
+    details: Optional[Any] = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
 
     # Timestamp automático de cuando ocurrió el evento
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)

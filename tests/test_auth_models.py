@@ -9,6 +9,27 @@ import pytest
 from datetime import datetime, timedelta
 from kakumi_app.models.login_attempt import LoginAttempt
 from kakumi_app.models.token_blacklist import TokenBlacklist
+from kakumi_app.models.user_model import User, UserRole
+
+
+def _create_token_blacklist(db):
+    """Create TokenBlacklist with valid User FK for PG compatibility."""
+    user = User(
+        username="tokenuser",
+        email="token@test.com",
+        password_hash="hashed",
+        full_name="Token Test User",
+        role=UserRole.ADMIN.value,
+    )
+    db.add(user)
+    db.flush()
+    return TokenBlacklist(
+        token_jti="test-jti-123",
+        user_id=user.id,
+        token_type="access",
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+        reason="LOGOUT",
+    )
 
 
 @pytest.mark.parametrize(
@@ -43,13 +64,7 @@ from kakumi_app.models.token_blacklist import TokenBlacklist
             id="login_attempt_failure_reason",
         ),
         pytest.param(
-            lambda db: TokenBlacklist(
-                token_jti="test-jti-123",
-                user_id=1,
-                token_type="access",
-                expires_at=datetime.utcnow() + timedelta(hours=1),
-                reason="LOGOUT",
-            ),
+            lambda db: _create_token_blacklist(db),
             [
                 lambda obj: obj.id is not None,
                 lambda obj: obj.token_jti == "test-jti-123",

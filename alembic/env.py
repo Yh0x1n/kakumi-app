@@ -1,6 +1,7 @@
+import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import engine_from_config, inspect
 from sqlalchemy import pool
 
 import reflex as rx  # noqa: E402
@@ -23,10 +24,10 @@ if config.config_file_name is not None:
 
 target_metadata = rx.Model.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+# Override sqlalchemy.url with DATABASE_URL env var if set.
+_env_url = os.getenv("DATABASE_URL", "").strip()
+if _env_url:
+    config.set_main_option("sqlalchemy.url", _env_url)
 
 
 def run_migrations_offline() -> None:
@@ -53,6 +54,32 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _stamp_head_if_fresh_pg(connection) -> str | None:
+    """
+    Detect a fresh PostgreSQL database (no alembic_version table)
+    and stamp the current head to avoid replaying legacy migrations.
+
+    Returns the head revision if stamped, None otherwise.
+    """
+    dialect = connection.dialect.name
+    if dialect != "postgresql":
+        return None
+
+    insp = inspect(connection)
+    if "alembic_version" in insp.get_table_names():
+        return None
+
+    # Fresh PG: stamp head instead of replaying 26 legacy CREATE TABLEs.
+    from alembic.script import ScriptDirectory
+    from alembic.runtime.migration import MigrationContext
+
+    script = ScriptDirectory.from_config(config)
+    head = "heads"
+    context_ctx = MigrationContext.configure(connection)
+    context_ctx.stamp(script, head)
+    return str(script.get_current_head())
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -60,13 +87,20 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    section = config.get_section(config.config_ini_section, {})
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
+        stamped = _stamp_head_if_fresh_pg(connection)
+        if stamped:
+            print(
+                f"[env.py] Fresh PostgreSQL detected — stamped alembic head: {stamped}"
+            )
+
         context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():

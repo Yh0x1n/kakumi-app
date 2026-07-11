@@ -68,9 +68,63 @@ Regla extra (solo apply/verify):
 - Fase crítica: cumplimiento estricto y permanente de reglas uv/reflex/timeout.
 ```
 
+## Subagentes de Review Técnica (4R System)
+
+Después de `sdd-apply`, el orquestador puede lanzar subagentes de review especializados.
+Cada uno tiene un lente distinto, contexto fresco, y es **read-only**.
+
+### Clasificación de lentes
+
+| Subagente | Lente | Señal de riesgo |
+|---|---|---|
+| `review-risk` | R1 — Seguridad y arquitectura | Permisos, data exposure, dependencias, vulnerabilidades |
+| `review-resilience` | R2 — Resiliencia y recovery | Fallas parciales, retry/backoff, degraded modes, rollback |
+| `review-readability` | R3 — Legibilidad y mantenibilidad | Naming, complejidad, estructura, intention revealing |
+| `review-reliability` | R4 — Confiabilidad y tests | Tests, edge cases, determinismo, regresiones, contratos |
+
+### Reglas de ejecución
+
+- Cada reviewer recibe un **snapshot completo inmutable** del diff.
+- Devuelve hallazgos estructurados siguiendo el **Frozen Findings Ledger** (ver `docs/ai/review-contract.md`).
+- Hallazgos inferenciales severos pasan por `review-refuter` adversarial antes de decidir acción.
+- Después de corrección, un **scoped validator** verifica solo el fix delta (no reabre la review completa).
+- Los reviewers **nunca** editan código, lanzan correcciones, ni inician otros reviewers.
+
+### Inyección para delegaciones de review
+
+```text
+Delegación - review: <LENTE>
+
+Roles:
+- Eres read-only. No edites código, no sugieras fixes inline.
+- Recibes un snapshot inmutable del diff.
+- Devuelve hallazgos en formato Frozen Findings Ledger.
+- No agregues narrativa persuasiva — solo claims neutrales + proof_refs concretos.
+- Si no encontrás hallazgos, devolvé un ledger vacío explícito.
+
+Skills obligatorias:
+- caveman
+- python-pro
+- reflex-dev
+
+Referencia obligatoria:
+- docs/ai/review-contract.md (contrato completo de review)
+```
+
 ## Criterio de verificación rápida para reviewers
+
+### Para fases SDD
 
 - [ ] La delegación incluye `caveman`.
 - [ ] La delegación incluye skills correctas de la fase.
 - [ ] La delegación incluye reglas `uv` + `uv run reflex run` + timeout 45s.
 - [ ] En `apply`/`verify`, la delegación marca explícitamente criticidad y cumplimiento estricto.
+
+### Para review técnica (4R)
+
+- [ ] El reviewer es read-only y recibe snapshot inmutable.
+- [ ] La delegación especifica el lente exacto (risk/resilience/readability/reliability).
+- [ ] La delegación referencia `docs/ai/review-contract.md`.
+- [ ] Hallazgos siguen el schema Frozen Findings Ledger.
+- [ ] No hay narrativa persuasiva — solo claims neutrales + proof_refs.
+- [ ] Los hallazgos inferenciales severos se enrutan al refuter.
