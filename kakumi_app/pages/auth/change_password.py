@@ -29,8 +29,8 @@ def change_password_form() -> rx.Component:
                 margin_bottom="0.5em",
             ),
             rx.text(
-                "Your first login requires a password change. "
-                "Please choose a new strong password.",
+                "Por seguridad, tu primer inicio de sesión requiere que cambies tu contraseña."
+                "Por favor escribe una contraseña robusta",
                 font_size="sm",
                 margin_bottom="1.5em",
             ),
@@ -38,7 +38,7 @@ def change_password_form() -> rx.Component:
                 rx.vstack(
                     # Current Password
                     rx.input(
-                        placeholder="Current Password",
+                        placeholder="Contraseña actual",
                         type_="password",
                         value=AuthState.cp_current_password,
                         on_change=AuthState.set_cp_current_password,
@@ -46,7 +46,7 @@ def change_password_form() -> rx.Component:
                     ),
                     # New Password
                     rx.input(
-                        placeholder="New Password",
+                        placeholder="Nueva contraseña",
                         type_="password",
                         value=AuthState.cp_new_password,
                         on_change=AuthState.set_cp_new_password,
@@ -54,7 +54,7 @@ def change_password_form() -> rx.Component:
                     ),
                     # Confirm New Password
                     rx.input(
-                        placeholder="Confirm New Password",
+                        placeholder="Confirmar nueva contraseña",
                         type_="password",
                         value=AuthState.cp_confirm_password,
                         on_change=AuthState.set_cp_confirm_password,
@@ -73,35 +73,37 @@ def change_password_form() -> rx.Component:
                     ),
                     # Strength hints
                     rx.box(
-                        rx.heading("Password requirements:", font_size="sm"),
+                        rx.heading("Requisitos de contraseña:", font_size="sm"),
                         rx.vstack(
                             rx.hstack(
                                 _strength_icon(AuthState.cp_new_password.length() >= 8),
-                                rx.text("Minimum 8 characters", font_size="xs"),
+                                rx.text("Mínimo 8 caracteres", font_size="xs"),
                                 spacing="2",
                                 align="center",
                             ),
                             rx.hstack(
                                 _strength_icon(AuthState.cp_has_uppercase),
-                                rx.text("Contains uppercase letter", font_size="xs"),
+                                rx.text("Contiene letra mayúscula", font_size="xs"),
                                 spacing="2",
                                 align="center",
                             ),
                             rx.hstack(
                                 _strength_icon(AuthState.cp_has_lowercase),
-                                rx.text("Contains lowercase letter", font_size="xs"),
+                                rx.text("Contiene letra minúscula", font_size="xs"),
                                 spacing="2",
                                 align="center",
                             ),
                             rx.hstack(
                                 _strength_icon(AuthState.cp_has_digit),
-                                rx.text("Contains a number", font_size="xs"),
+                                rx.text("Contiene un número", font_size="xs"),
                                 spacing="2",
                                 align="center",
                             ),
                             rx.hstack(
                                 _strength_icon(AuthState.cp_has_special),
-                                rx.text("Contains a special character", font_size="xs"),
+                                rx.text(
+                                    "Contiene un carácter especial", font_size="xs"
+                                ),
                                 spacing="2",
                                 align="center",
                             ),
@@ -114,7 +116,7 @@ def change_password_form() -> rx.Component:
                     ),
                     # Submit button
                     rx.button(
-                        "Change Password",
+                        "Cambiar contraseña",
                         on_click=AuthState.handle_change_password,
                         width="100%",
                         color_scheme="blue",
@@ -163,7 +165,7 @@ def change_password_page() -> rx.Component:
         rx.cond(
             AuthState.needs_password_change,
             page_content,
-            rx.text("Redirecting...", font_size="sm"),
+            rx.text("Redireccionando...", font_size="sm"),
         ),
-        rx.text("Redirecting...", font_size="sm"),
+        rx.text("Redireccionando...", font_size="sm"),
     )
