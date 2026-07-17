@@ -39,7 +39,7 @@ def change_password_form() -> rx.Component:
                     # Current Password
                     rx.input(
                         placeholder="Contraseña actual",
-                        type_="password",
+                        type="password",
                         value=AuthState.cp_current_password,
                         on_change=AuthState.set_cp_current_password,
                         width="100%",
@@ -47,7 +47,7 @@ def change_password_form() -> rx.Component:
                     # New Password
                     rx.input(
                         placeholder="Nueva contraseña",
-                        type_="password",
+                        type="password",
                         value=AuthState.cp_new_password,
                         on_change=AuthState.set_cp_new_password,
                         width="100%",
@@ -55,7 +55,7 @@ def change_password_form() -> rx.Component:
                     # Confirm New Password
                     rx.input(
                         placeholder="Confirmar nueva contraseña",
-                        type_="password",
+                        type="password",
                         value=AuthState.cp_confirm_password,
                         on_change=AuthState.set_cp_confirm_password,
                         width="100%",
