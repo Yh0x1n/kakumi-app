@@ -23,7 +23,7 @@ def change_password_form() -> rx.Component:
     return rx.box(
         rx.vstack(
             rx.heading(
-                "Change Password",
+                "Cambiar contraseña",
                 font_size="2xl",
                 font_weight="bold",
                 margin_bottom="0.5em",

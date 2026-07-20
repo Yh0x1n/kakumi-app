@@ -156,7 +156,7 @@ def dashboard() -> rx.Component:
                 sidebar(),
                 rx.vstack(
                     rx.heading(
-                        "Welcome to Kakumi Tournament Manager!",
+                        "Bienvenido a Kakumi Tournament Manager",
                         font_size=50,
                         align="left",
                         padding_y="0.5em",
@@ -213,7 +213,6 @@ def dashboard() -> rx.Component:
                 ),
             ),
         ),
-        height="100vh",
     )
 
     # Auth guard handled by on_load=AuthState.check_auth_redirect in app.add_page.
